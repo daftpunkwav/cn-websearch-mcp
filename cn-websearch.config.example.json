@@ -1,0 +1,49 @@
+{
+  "_note": "Example only. If you put API keys in this file, do not commit it. Environment variables override this file.",
+  "strategy": "fallback",
+  "order": [],
+  "count": 8,
+  "timeoutMs": 30000,
+  "maxProviders": 4,
+  "dedupe": true,
+  "providers": {
+    "kimi": {
+      "apiKey": "",
+      "enabled": true,
+      "priority": 0,
+      "model": "kimi-k3",
+      "options": {
+        "maxRounds": 2,
+        "maxTokens": 8192
+      }
+    },
+    "mimo": {
+      "apiKey": "",
+      "enabled": true,
+      "priority": 0,
+      "model": "mimo-v2.5",
+      "options": {
+        "location": {
+          "country": "China"
+        },
+        "maxKeyword": 3,
+        "forceSearch": true
+      }
+    },
+    "stepfun": {
+      "apiKey": "",
+      "enabled": true,
+      "priority": 0,
+      "options": {}
+    },
+    "zhipu": {
+      "apiKey": "",
+      "enabled": true,
+      "priority": 0,
+      "options": {
+        "searchEngine": "search_std",
+        "contentSize": "high"
+      }
+    }
+  }
+}
