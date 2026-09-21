@@ -21,7 +21,6 @@
 // (the mcp-broker endpoint), not the platform chat tools API — the platform chat tool is
 // plain `web_search` with no location knob. The standalone Web Search API above is the
 // documented, structured, model-independent path, and is what this adapter uses.
-// See REPORT.md open questions.
 
 import { asArray, asObject, clampInt, str, toItem, truncate } from "../normalize.js";
 import { postJson } from "../http.js";

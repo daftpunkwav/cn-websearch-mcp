@@ -47,7 +47,7 @@ const STRATEGIES: readonly SearchStrategy[] = ["fallback", "aggregate"];
 
 export function usage(): string {
   return [
-    "cn-websearch-mcp - multi-provider web search over Chinese LLM providers",
+    "cn-websearch-mcp - multi-channel web search over OpenAI-compatible chat-completions and standalone search REST APIs",
     "",
     "Usage:",
     "  cn-websearch-mcp                        Start the MCP server on stdio (default; use this in MCP clients)",

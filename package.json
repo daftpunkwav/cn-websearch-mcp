@@ -1,7 +1,7 @@
 {
   "name": "cn-websearch-mcp",
   "version": "0.2.0",
-  "description": "MCP server and CLI that unify the built-in web search of Chinese LLM providers (Kimi / MiMo / GLM / StepFun) behind one tool, with configurable provider priority, fallback and multi-source aggregation, per-attempt timeout and retry.",
+  "description": "MCP server and CLI that fronts multiple built-in web-search channels (OpenAI-compatible chat-completions with a multi-round tool loop or a server-side web_search tool, plus standalone search REST endpoints) behind a single tool, with configurable slot priority, fallback, multi-source aggregation, per-attempt timeout, and one transient retry.",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
@@ -26,15 +26,10 @@
     "modelcontextprotocol",
     "web-search",
     "multi-source",
+    "fallback",
+    "aggregate",
     "cli",
-    "kimi",
-    "moonshot",
-    "mimo",
-    "xiaomi",
-    "glm",
-    "zhipu",
-    "bigmodel",
-    "stepfun"
+    "tool-use"
   ],
   "license": "MIT",
   "dependencies": {

@@ -3,7 +3,7 @@
  * @description Xiaomi MiMo adapter: web_search over OpenAI chat completions.
  *
  * Responsibilities:
- * - Send the request shape verified by the shim (tools[0].type=web_search, limit=count)
+ * - Send the request shape verified against the private reference (tools[0].type=web_search, limit=count)
  * - Merge url_citation titles and web_search_highlight snippets by URL
  * - Expose the LLM's synthesized answer via _meta.answer
  * - Configurable options: location, maxKeyword, forceSearch
@@ -11,8 +11,7 @@
 
 // Xiaomi MiMo adapter: server-side web_search over OpenAI chat completions.
 //
-// Ported from a verified shim:
-//   ~/.zcode/cli/mcp-servers/mimo-websearch/server.js (verified live in 2026-08)
+// Ported from a verified private reference implementation (validated live in 2026-08).
 // MiMo offers web search only on the OpenAI chat completions format
 // (neither responses nor the anthropic gateway supports it). The response is the LLM's
 // synthesized answer plus structured references in message.annotations:
@@ -61,8 +60,8 @@ function itemsFromAnnotations(annotations: unknown[]): NormalizedItem[] {
 }
 
 /**
- * Assemble the user_location parameter. Fill only the levels explicitly given in config; do not guess a city when unset
- * (the earlier shim hardcoded Wuhan — a personal default, removed in the open-source version).
+ * Assemble the user_location parameter. Fill only the levels explicitly given in config; the
+ * open-source adapter deliberately does not guess a city when unset.
  */
 function userLocation(options: Record<string, unknown> | undefined): Record<string, unknown> {
   const loc = maybeObject(options?.location);
@@ -83,8 +82,9 @@ export function createMimoProvider(cfg: ProviderConfig): SearchProvider {
     isConfigured: () => cfg.apiKey.trim() !== "",
     async search(req: SearchRequest, ctx: SearchContext): Promise<NormalizedSearchResult> {
       const options = cfg.options;
-      // `limit` (max result pages) is MiMo's closest knob to `count`; the shim defaulted it to 1.
-      // This is a mapping assumption — see REPORT.md open questions.
+      // `limit` (max result pages) is the channel's closest knob to `count`; the historical shim
+      // defaulted it to 1. This is a mapping assumption that should be revisited if the upstream
+      // semantics change.
       const limit = clampInt(req.count, 1, 1, 10);
       const payload = {
         model: cfg.model ?? "mimo-v2.5",

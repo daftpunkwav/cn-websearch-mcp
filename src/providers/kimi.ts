@@ -11,8 +11,7 @@
 
 // Moonshot Kimi adapter: the web-search "formula" on top of the OpenAI chat format.
 //
-// Ported from a verified shim:
-//   ~/.zcode/cli/mcp-servers/kimi-tools/server.js (verified live in 2026-08)
+// Ported from a verified private reference implementation (validated live in 2026-08).
 //
 // Why this flow is needed: Kimi's built-in $web_search channel is currently unavailable
 // (officially marked "under upgrade"; the various echo variants all return empty results), and

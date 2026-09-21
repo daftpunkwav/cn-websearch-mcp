@@ -61,13 +61,12 @@ export function buildToolDefinitions(defaultCount: number, defaultStrategy: Sear
     {
       name: "web_search",
       description:
-        "Search the web through multiple Chinese LLM providers (any of: Kimi, MiMo, StepFun, Zhipu GLM), " +
-        "depending on which ones you configured. Two strategies: 'fallback' tries providers in your " +
-        "configured priority order and returns the first success; 'aggregate' queries several providers in " +
-        "parallel and merges the results (deduplicated by URL, each item tagged with its source provider). " +
-        "Per-attempt timeout, one retry on transient failures. Returns normalized results " +
-        "{ title, url, snippet, content?, published_date?, source? } plus _meta with the answering provider(s), " +
-        "total latency and a per-attempt audit trail.",
+        "Search the web through any of the configured built-in search channels. " +
+        "Two strategies: 'fallback' tries slots in your configured priority order and returns the first success; " +
+        "'aggregate' queries several slots in parallel and merges the results (deduplicated by URL, each item tagged " +
+        "with its source slot). Per-attempt timeout, one retry on transient failures. Returns normalized results " +
+        "{ title, url, snippet, content?, published_date?, source? } plus _meta with the answering slot(s), " +
+        "total latency, and a per-attempt audit trail.",
       inputSchema: {
         type: "object",
         properties: {
