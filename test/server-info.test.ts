@@ -23,4 +23,14 @@ describe("server-info", () => {
   it("keeps SERVER_VERSION in sync with package.json", () => {
     expect(SERVER_VERSION).toBe(pkg.version);
   });
+
+  it("keeps the lock file root version in sync with package.json", () => {
+    // npm ci fails outright when the lock file's root version drifts from package.json,
+    // so the mismatch must surface in tests rather than only on the CI runner.
+    const lock = JSON.parse(
+      readFileSync(fileURLToPath(new URL("../package-lock.json", import.meta.url)), "utf8"),
+    ) as { version?: string; packages?: { "": { version?: string } } };
+    expect(lock.version).toBe(pkg.version);
+    expect(lock.packages?.[""]?.version).toBe(pkg.version);
+  });
 });
