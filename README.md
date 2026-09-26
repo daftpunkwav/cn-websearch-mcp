@@ -208,7 +208,7 @@ Read-only: effective strategy and settings, and per slot whether it is enabled, 
 
 - Only channels that are enabled **and** have a key participate. `fallback` walks them in priority order; `aggregate` queries them in parallel.
 - Per attempt: one wall-clock budget (`timeoutMs`); hung requests are aborted and recorded as `timeout`.
-- Transient failures (network errors, HTTP 5xx, 429, timeout) are retried **once**, then the next channel is tried.
+- Transient failures (network errors, HTTP 5xx, 429) are retried **once**, then the next channel is tried. A budget `timeout` is not retried — its wall-clock budget is already spent, so the chain moves on to the next channel instead.
 - Permanent failures (HTTP 4xx other than 429) skip the retry and move on immediately.
 - In `aggregate`, partial failure is not failure: successful channels' results are returned and the failures stay in `_meta.attempts`.
 - Every attempt is recorded in `_meta.attempts` — success, retry, timeout or error.
