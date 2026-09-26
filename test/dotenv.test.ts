@@ -26,6 +26,20 @@ describe("loadDotEnv", () => {
     }
   });
 
+  it("strips a leading UTF-8 BOM so the first key is not silently corrupted", () => {
+    const dir = makeDir();
+    try {
+      // Windows editors commonly save .env as UTF-8 with BOM; without stripping it the
+      // first key would carry an invisible prefix and never match env lookups.
+      writeFileSync(join(dir, ".env"), "\uFEFFKIMI_API_KEY=secret\nB=2");
+      const env: Record<string, string> = {};
+      loadDotEnv(dir, env as NodeJS.ProcessEnv);
+      expect(env).toEqual({ KIMI_API_KEY: "secret", B: "2" });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("never overwrites existing entries", () => {
     const dir = makeDir();
     try {

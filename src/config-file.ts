@@ -14,6 +14,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { redactSecrets } from "./errors.js";
 
 /** Conventional file name looked up in the current working directory when no explicit path is set. */
 export const CONFIG_FILENAME = "cn-websearch.config.json";
@@ -73,11 +74,16 @@ export function readConfigFile(
     warn(`config file not readable (${path}): ${err instanceof Error ? err.message : String(err)}`);
     return undefined;
   }
+  // JSON.parse rejects a leading UTF-8 BOM (common in Windows-edited files); strip it first.
+  if (raw.charCodeAt(0) === 0xfeff) raw = raw.slice(1);
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch (err) {
-    warn(`config file is not valid JSON (${path}): ${err instanceof Error ? err.message : String(err)}`);
+    // Some V8 versions echo a snippet of the source in JSON syntax errors; the
+    // file may contain API keys, so redact before the warning goes to stderr.
+    const detail = err instanceof Error ? err.message : String(err);
+    warn(`config file is not valid JSON (${path}): ${redactSecrets(detail)}`);
     return undefined;
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {

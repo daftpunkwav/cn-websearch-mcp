@@ -29,6 +29,9 @@ export function loadDotEnv(dir: string = process.cwd(), into: NodeJS.ProcessEnv 
   } catch {
     return;
   }
+  // Editors on Windows commonly save with a UTF-8 BOM; without stripping it the
+  // first key would silently carry an invisible prefix and never match env lookups.
+  if (raw.charCodeAt(0) === 0xfeff) raw = raw.slice(1);
   for (const line of raw.split(/\r?\n/)) {
     const t = line.trim();
     if (t === "" || t.startsWith("#")) continue;

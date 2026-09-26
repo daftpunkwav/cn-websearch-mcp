@@ -284,7 +284,7 @@ export function loadConfig(options: LoadConfigOptions = {}): GatewayConfig {
       enabled: asBool(env[providerEnvKey(name, "ENABLED")]) ?? boolField(entry, "enabled") ?? true,
       priority: asNonNegativeInt(env[providerEnvKey(name, "PRIORITY")]) ?? intField(entry, "priority") ?? 0,
       timeoutMs:
-        asNonNegativeInt(env[providerEnvKey(name, "TIMEOUT_MS")]) || optionalPositiveInt(entry, "timeoutMs"),
+        asNonNegativeInt(env[providerEnvKey(name, "TIMEOUT_MS")]) ?? optionalPositiveInt(entry, "timeoutMs"),
       options: Object.keys(providerOptions).length ? providerOptions : undefined,
     };
   }

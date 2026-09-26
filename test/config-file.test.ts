@@ -35,6 +35,21 @@ describe("readConfigFile", () => {
     expect(cfg).toEqual({ strategy: "aggregate" });
   });
 
+  it("parses JSON with a leading UTF-8 BOM (common in Windows-edited files)", () => {
+    const cfg = readConfigFile("/bom.json", () => {}, () => "\uFEFF{\"strategy\":\"aggregate\"}");
+    expect(cfg).toEqual({ strategy: "aggregate" });
+  });
+
+  it("never echoes credential-looking config content in JSON error warnings", () => {
+    const warnings: string[] = [];
+    // Some V8 versions include a source snippet in JSON syntax errors; the file
+    // may hold API keys, so the warning must be redacted before it reaches stderr.
+    const raw = `{"providers":{"kimi":{"apiKey":"sk-abcdefghijklmnop123"}},}`;
+    expect(readConfigFile("/bad.json", (m) => warnings.push(m), () => raw)).toBeUndefined();
+    expect(warnings[0]).toContain("not valid JSON");
+    expect(warnings.join("\n")).not.toContain("sk-abcdefghijklmnop123");
+  });
+
   it("warns and returns undefined when the file cannot be read", () => {
     const warnings: string[] = [];
     const cfg = readConfigFile("/missing.json", (m) => warnings.push(m), () => {

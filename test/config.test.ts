@@ -136,6 +136,18 @@ describe("config file layer", () => {
     expect(cfg.providers.kimi.model).toBe("from-file-model");
   });
 
+  it("lets a per-provider TIMEOUT_MS env value (including 0) override the file", () => {
+    const cfg = loadConfig({
+      env: env({ KIMI_TIMEOUT_MS: "0", ZHIPU_TIMEOUT_MS: "5000" }),
+      warn: noWarn,
+      file: { providers: { kimi: { timeoutMs: 9_000 }, zhipu: { timeoutMs: 9_000 } } },
+    });
+    // 0 is a valid explicit env override (the orchestrator then falls back to the
+    // global budget); the config file value must not win over it.
+    expect(cfg.providers.kimi.timeoutMs).toBe(0);
+    expect(cfg.providers.zhipu.timeoutMs).toBe(5000);
+  });
+
   it("warns about unknown provider names in the file but keeps going", () => {
     const warnings: string[] = [];
     const cfg = loadConfig({

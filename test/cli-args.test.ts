@@ -60,8 +60,13 @@ describe("parseArgs", () => {
     expect(ok(["test", "-q", "custom probe"]).query).toBe("custom probe");
   });
 
-  it("combines --query with trailing words", () => {
-    expect(ok(["test", "-q", "first", "second"]).query).toBe("first second");
+  it("takes trailing bare words after `test` as provider names", () => {
+    expect(ok(["test", "stepfun", "zhipu"])).toMatchObject({ providers: ["stepfun", "zhipu"], query: "" });
+    expect(ok(["test", "-q", "probe", "kimi"])).toMatchObject({ providers: ["kimi"], query: "probe" });
+  });
+
+  it("combines --query with trailing words for query-taking commands", () => {
+    expect(ok(["search", "-q", "first", "second"]).query).toBe("first second");
   });
 
   it("favours the last provided list/number value", () => {

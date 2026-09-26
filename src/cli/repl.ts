@@ -183,7 +183,8 @@ export async function runRepl(deps: CliDeps, io: { input: NodeJS.ReadableStream 
           write("providers: (all available)");
           return false;
         }
-        const list = argText.split(",").map((s) => s.trim()).filter((s) => s !== "");
+        // Provider names are case-insensitive, matching the one-shot commands.
+        const list = argText.split(",").map((s) => s.trim().toLowerCase()).filter((s) => s !== "");
         const unknown = list.filter((n) => !(KNOWN_PROVIDERS as readonly string[]).includes(n));
         if (unknown.length) {
           write(`error: unknown provider(s): ${unknown.join(", ")} (known: ${KNOWN_PROVIDERS.join(", ")})`);

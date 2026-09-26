@@ -43,16 +43,21 @@ export function pickProviders(
   chain: SearchProvider[],
 ): { ok: true; providers: SearchProvider[] } | { ok: false; error: string } {
   if (!names || !names.length) return { ok: true, providers: chain };
-  const unknown = names.filter((n) => !(KNOWN_PROVIDERS as readonly string[]).includes(n));
+  // Normalize like the MCP tool layer: provider names are case-insensitive;
+  // flag and positional names are deduplicated preserving first occurrence.
+  const normalized = [
+    ...new Set(names.map((n) => n.trim().toLowerCase()).filter((n) => n !== "")),
+  ];
+  const unknown = normalized.filter((n) => !(KNOWN_PROVIDERS as readonly string[]).includes(n));
   if (unknown.length) {
     return { ok: false, error: `unknown provider(s): ${unknown.join(", ")} (known: ${KNOWN_PROVIDERS.join(", ")})` };
   }
   const byName = new Map(chain.map((p) => [p.name, p]));
-  const unavailable = names.filter((n) => !byName.has(n));
+  const unavailable = normalized.filter((n) => !byName.has(n));
   if (unavailable.length) {
     return { ok: false, error: `provider(s) unavailable: ${unavailable.join(", ")} (disabled or missing API key)` };
   }
-  return { ok: true, providers: names.map((n) => byName.get(n)!) };
+  return { ok: true, providers: normalized.map((n) => byName.get(n)!) };
 }
 
 /**

@@ -69,6 +69,11 @@ describe("pickProviders", () => {
     expect(picked.ok && picked.providers.map((p) => p.name)).toEqual(["stepfun", "kimi"]);
   });
 
+  it("normalizes case and deduplicates names like the MCP tool layer", () => {
+    const picked = pickProviders(["StepFun", "STEPFUN", " kimi "], chain);
+    expect(picked.ok && picked.providers.map((p) => p.name)).toEqual(["stepfun", "kimi"]);
+  });
+
   it("reports unknown and unavailable names", () => {
     expect(pickProviders(["openai"], chain)).toMatchObject({ ok: false });
     expect((pickProviders(["openai"], chain) as { error: string }).error).toContain("unknown provider(s): openai");

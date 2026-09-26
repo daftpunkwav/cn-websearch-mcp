@@ -86,12 +86,14 @@ function parsePositiveInt(raw: string): number | undefined {
 /**
  * Parse argv.
  * - Empty arguments mean serve (MCP clients launch this process with no args; this default must be preserved)
- * - Bare words (tokens not starting with `-`) are consumed in order: the first resolves the command, the rest join into the query
+ * - Bare words (tokens not starting with `-`) are consumed in order: the first resolves the command,
+ *   the rest become the command payload (query text for `search`, provider names for `test`)
  * - Unknown commands/options/missing values always return an error message (instead of guessing intent)
  */
 export function parseArgs(argv: string[]): ParseResult {
   const args: CliArgs = { command: "serve", query: "", json: false };
   const words: string[] = [];
+  const providerWords: string[] = [];
   let commandSet = false;
 
   for (let i = 0; i < argv.length; i++) {
@@ -159,7 +161,7 @@ export function parseArgs(argv: string[]): ParseResult {
       return { ok: false, message: `unknown option: ${token}` };
     }
 
-    // Bare words: the first picks the command, the rest become the query.
+    // Bare words: the first picks the command, the rest are command payloads.
     if (!commandSet) {
       const command = COMMAND_ALIASES[token.toLowerCase()];
       if (command) {
@@ -169,9 +171,16 @@ export function parseArgs(argv: string[]): ParseResult {
       }
       return { ok: false, message: `unknown command: ${token} (try \`search ${token}\` or --help)` };
     }
-    words.push(token);
+    // `test` takes trailing bare words as provider names (documented usage
+    // `test [provider...]`, mirroring the repl's /test); other commands join
+    // them into the query text.
+    if (args.command === "test") providerWords.push(token);
+    else words.push(token);
   }
 
+  if (providerWords.length) {
+    args.providers = args.providers ? [...args.providers, ...providerWords] : providerWords;
+  }
   const joined = words.join(" ").trim();
   if (joined) args.query = args.query ? `${args.query} ${joined}`.trim() : joined;
   return { ok: true, args };
