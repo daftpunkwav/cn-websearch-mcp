@@ -7,8 +7,7 @@
  * - Provide one shared implementation for the CLI's `test` command and `npm run smoke`
  */
 
-// Probe logic lives in its own module so the CLI and the smoke script don't
-// each keep a copy (smoke.ts previously inlined this).
+// Probe logic lives in its own module so the CLI and the smoke script share one implementation.
 
 import { summarizeError } from "./errors.js";
 import type { FetchLike, SearchProvider, SearchRequest } from "./types.js";

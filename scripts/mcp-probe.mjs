@@ -1,5 +1,6 @@
-// Drain stdin by reading from it in a loop with a fresh handler — proves whether
-// the child process even sees what we wrote.
+// Manual stdio probe: spawn dist/index.js, send two MCP initialize frames, and
+// echo everything the child prints — proves whether the child process even
+// sees what we wrote.
 import { spawn } from "node:child_process";
 import process from "node:process";
 

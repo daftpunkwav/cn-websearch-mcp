@@ -54,7 +54,7 @@ export function textContent(payload: unknown, isError = false): ToolOutput {
 
 /**
  * Build the tool definitions. The default result count comes from config, so
- * the schema's default always matches actual behavior (no more hard-coded 8).
+ * the schema's default always matches actual behavior.
  */
 export function buildToolDefinitions(defaultCount: number, defaultStrategy: SearchStrategy) {
   return [

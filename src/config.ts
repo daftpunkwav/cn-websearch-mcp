@@ -270,7 +270,7 @@ export function loadConfig(options: LoadConfigOptions = {}): GatewayConfig {
     const rawBase = env[providerEnvKey(name, "BASE_URL")] ?? strField(entry, "baseUrl") ?? defaults.baseUrl;
     const baseUrl = defaults.openAiCompatible ? ensureV1(rawBase) : trimSlash(rawBase);
 
-    // zhipu's searchEngine was historically exposed via an environment variable; kept for backward compatibility.
+    // ZHIPU_SEARCH_ENGINE is a legacy knob kept for backward compatibility; the option normally comes from the config file.
     const providerOptions: Record<string, unknown> = { ...maybeObject(entry?.options) };
     if (name === "zhipu") {
       const envEngine = (env.ZHIPU_SEARCH_ENGINE ?? "").trim();

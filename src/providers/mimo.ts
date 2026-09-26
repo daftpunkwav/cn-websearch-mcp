@@ -3,7 +3,7 @@
  * @description Xiaomi MiMo adapter: web_search over OpenAI chat completions.
  *
  * Responsibilities:
- * - Send the request shape verified against the private reference (tools[0].type=web_search, limit=count)
+ * - Send the request shape the channel expects (tools[0].type=web_search, limit=count)
  * - Merge url_citation titles and web_search_highlight snippets by URL
  * - Expose the LLM's synthesized answer via _meta.answer
  * - Configurable options: location, maxKeyword, forceSearch
@@ -11,14 +11,13 @@
 
 // Xiaomi MiMo adapter: server-side web_search over OpenAI chat completions.
 //
-// Ported from a verified private reference implementation (validated live in 2026-08).
 // MiMo offers web search only on the OpenAI chat completions format
 // (neither responses nor the anthropic gateway supports it). The response is the LLM's
 // synthesized answer plus structured references in message.annotations:
 //   { type: "url_citation", title, url }
 //   { type: "web_search_highlight", title /* highlighted text */, url }
 //
-// Location parameters always come from config (no built-in fixed city anymore); when unset, only the country level is given.
+// Location parameters always come from config; when unset, only the country level is given.
 
 import { hostnameOf, asObject, asArray, clampInt, maybeObject, str, toItem } from "../normalize.js";
 import { postJson } from "../http.js";
@@ -82,8 +81,8 @@ export function createMimoProvider(cfg: ProviderConfig): SearchProvider {
     isConfigured: () => cfg.apiKey.trim() !== "",
     async search(req: SearchRequest, ctx: SearchContext): Promise<NormalizedSearchResult> {
       const options = cfg.options;
-      // `limit` (max result pages) is the channel's closest knob to `count`; the historical shim
-      // defaulted it to 1. This is a mapping assumption that should be revisited if the upstream
+      // `limit` (max result pages) is the channel's closest knob to `count`. This
+      // mapping is an assumption that should be revisited if the upstream
       // semantics change.
       const limit = clampInt(req.count, 1, 1, 10);
       const payload = {

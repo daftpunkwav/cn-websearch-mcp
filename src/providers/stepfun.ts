@@ -19,10 +19,10 @@
 //   Here `content` is the page's full text — consistent with the known
 //   "structured results + full text" behavior.
 //
-// The StepSearch MCP endpoint used by the early shim (step_plan/v1/mcp/web_search/mcp)
+// The provider's StepSearch MCP endpoint (step_plan/v1/mcp/web_search/mcp)
 // also works, but the REST API is simpler and returns structured fields directly. web_fetch
-// and chat-embedded web_search are deliberately not used (the chat channel returns a text
-// placeholder; fetch has a known 30-second timeout issue, and both are out of scope for v0.1).
+// and chat-embedded web_search are deliberately not used: the chat channel returns a text
+// placeholder, and fetch has a known 30-second timeout issue.
 
 import { asArray, asObject, clampInt, str, toItem } from "../normalize.js";
 import { postJson } from "../http.js";

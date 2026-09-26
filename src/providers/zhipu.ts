@@ -16,11 +16,11 @@
 //   POST {base}/api/paas/v4/web_search, Bearer auth; returns a structured
 //   search_result array: { title, content, link, media, icon, refer, publish_date }.
 //
-// Note: the chat-completions tool originally considered, `web_search_prime` (with a
-// `location: cn|us` parameter), is actually a remote MCP tool of the GLM Coding Plan
-// (the mcp-broker endpoint), not the platform chat tools API — the platform chat tool is
-// plain `web_search` with no location knob. The standalone Web Search API above is the
-// documented, structured, model-independent path, and is what this adapter uses.
+// Note: `web_search_prime` (with a `location: cn|us` parameter) is actually a
+// remote MCP tool of the GLM Coding Plan (the mcp-broker endpoint), not the
+// platform chat tools API — the platform chat tool is plain `web_search` with
+// no location knob. The standalone Web Search API above is the documented,
+// structured, model-independent path, and is what this adapter uses.
 
 import { asArray, asObject, clampInt, str, toItem, truncate } from "../normalize.js";
 import { postJson } from "../http.js";
