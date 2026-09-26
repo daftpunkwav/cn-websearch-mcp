@@ -35,8 +35,8 @@ branches change.
 
 | Slot | Wire channel | Result items | `_meta.answer` |
 |---|---|---|---|
-| `kimi.ts` | OpenAI-compatible chat-completions with a declared `web_search` function tool; tool calls execute against `POST {base}/v1/formulas/moonshot/web-search:latest/fibers`; the fiber context's reference URLs become result items (URL-only items) | reference URLs from the fiber context | LLM-synthesized final answer |
-| `mimo.ts` | OpenAI-compatible chat-completions with a server-side `web_search` tool (`tools[0].type = "web_search"`); `message.annotations` carry `url_citation` / `web_search_highlight` entries, merged by URL into items | annotations merged by URL | LLM message content |
+| `kimi.ts` | chat-completions with a declared `web_search` function tool; tool calls execute against `POST {base}/v1/formulas/moonshot/web-search:latest/fibers`; the fiber context's reference URLs become result items (URL-only items) | reference URLs from the fiber context | LLM-synthesized final answer |
+| `mimo.ts` | chat-completions with a server-side `web_search` tool (`tools[0].type = "web_search"`); `message.annotations` carry `url_citation` / `web_search_highlight` entries, merged by URL into items | annotations merged by URL | LLM message content |
 | `stepfun.ts` | Standalone search REST endpoint: `POST {base}/v1/search` with `{ query, n, category? }` | `results[]`: title, time, snippet, full-text `content` | — |
 | `zhipu.ts` | Standalone web-search API: `POST {base}/api/paas/v4/web_search` | `search_result[]`: title, link, summary→snippet, full-text `content`, `publish_date` | — |
 

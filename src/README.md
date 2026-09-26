@@ -45,8 +45,9 @@ index.ts ─┬─→ tools.ts ───────┐
 ```
 
 - `types.ts` / `errors.ts` / `normalize.ts` / `config-file.ts` form the
-  bottom: they never import an upper layer, and the only internal edge among
-  them is `normalize.ts` → `errors.ts`. The tree's only disk readers are
+  bottom: they never import an upper layer, and the only internal edges among
+  them point at `errors.ts` (`normalize.ts` → `errors.ts` and
+  `config-file.ts` → `errors.ts`). The tree's only disk readers are
   `config-file.ts` (its own config file) and `dotenv.ts` (`.env`).
 - `config.ts` and `http.ts` sit above them.
 - `orchestrator.ts` and `probe.ts` coordinate providers; adapters stay thin

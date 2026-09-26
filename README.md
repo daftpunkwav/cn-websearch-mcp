@@ -2,7 +2,7 @@
 
 > Language: **English** | [简体中文](README.zh.md)
 
-**One MCP tool, several built-in web-search channels.** A [Model Context Protocol](https://modelcontextprotocol.io) server that fronts a set of upstream web-search APIs behind a single `web_search` tool. Channels ship in different wire formats — some are OpenAI-compatible chat-completions with a server-side tool-call or fiber loop, others are standalone search REST endpoints — and this server normalizes all of them into one schema and gives you two strategies:
+**One MCP tool, several built-in web-search channels.** A [Model Context Protocol](https://modelcontextprotocol.io) server that fronts a set of upstream web-search APIs behind a single `web_search` tool. Channels ship in different wire formats — some are chat-completions-style APIs with a server-side tool-call or fiber loop, others are standalone search REST endpoints — and this server normalizes all of them into one schema and gives you two strategies:
 
 - **`fallback`** (default) — try channels in your priority order, return the first success. Few calls, low latency.
 - **`aggregate`** — query several channels in parallel, merge results, dedupe by URL, and tag each item with its source. Wider coverage.
@@ -162,7 +162,7 @@ The four built-in channel slots and the `options` keys each one recognises:
 | `stepfun` | standalone search REST endpoint (`POST {base}/v1/search`)                | `category` (omitted unless set) |
 | `zhipu`   | standalone web-search API (`POST {base}/api/paas/v4/web_search`)         | `searchEngine` (default `search_std`), `contentSize` (default `high`); `searchEngine` is also readable from `ZHIPU_SEARCH_ENGINE` |
 
-The `kimi` slot's multi-round loop caps at `maxRounds` tool-call rounds before forcing one final chat call (without tools) for the answer; `maxTokens` is the token budget per chat call. The `mimo` slot sends a server-side `web_search` tool with `maxKeyword` and `forceSearch` knobs and an approximate `user_location` assembled from the configured `location` keys (`country` is always sent and defaults to `China`; `region` and `city` only when explicitly configured). The `stepfun` and `zhipu` slots are direct REST calls — their options map one-to-one to documented request fields.
+The `kimi` slot's multi-round loop caps at `maxRounds` tool-call rounds; only when the last round still returns tool calls does it force one final chat call (without tools) for the answer. `maxTokens` is the token budget per chat call. The `mimo` slot sends a server-side `web_search` tool with `maxKeyword` and `forceSearch` knobs and an approximate `user_location` assembled from the configured `location` keys (`country` is always sent and defaults to `China`; `region` and `city` only when explicitly configured). The `stepfun` and `zhipu` slots are direct REST calls — their options map one-to-one to documented request fields.
 
 Keys are never logged or echoed: error text is scrubbed of credential-looking strings, and status output only reports whether a key is set.
 
@@ -219,7 +219,7 @@ Read-only: effective strategy and settings, and per slot whether it is enabled, 
 | Slot | Wire channel | Structured fields | Body excerpt |
 |---|---|---|---|
 | `kimi`    | chat-completions + multi-round tool-call loop + `POST {base}/v1/formulas/moonshot/web-search:latest/fibers` | reference URLs from fiber | LLM answer in `_meta.answer` |
-| `mimo`    | OpenAI-compatible chat-completions with a server-side `web_search` tool | `url_citation` + `web_search_highlight` annotations | LLM answer in `_meta.answer` |
+| `mimo`    | chat-completions with a server-side `web_search` tool | `url_citation` + `web_search_highlight` annotations | LLM answer in `_meta.answer` |
 | `stepfun` | `POST {base}/v1/search` | title, time, snippet, content | full text in `content` |
 | `zhipu`   | `POST {base}/api/paas/v4/web_search` | title, link, content, publish_date | summary in `snippet`, full text in `content` |
 

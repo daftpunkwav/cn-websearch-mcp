@@ -2,7 +2,7 @@
 
 > 语言: **English** [README.md](README.md) | **简体中文**
 
-**一个 MCP 工具,多条内置联网搜索通道。** 一个 [Model Context Protocol](https://modelcontextprotocol.io) server,把若干上游联网搜索 API 收敛在单个 `web_search` 工具之后。各通道的 wire 格式互不兼容——有的走 OpenAI 兼容 chat-completions,带服务端 tool-call 或 fiber 循环;有的是独立的搜索 REST 端点——本 server 把它们归一化为同一 schema,并提供两种策略:
+**一个 MCP 工具,多条内置联网搜索通道。** 一个 [Model Context Protocol](https://modelcontextprotocol.io) server,把若干上游联网搜索 API 收敛在单个 `web_search` 工具之后。各通道的 wire 格式互不兼容——有的走 chat-completions 风格的 API,带服务端 tool-call 或 fiber 循环;有的是独立的搜索 REST 端点——本 server 把它们归一化为同一 schema,并提供两种策略:
 
 - **`fallback`**(默认)——按**你的**优先级顺序依次尝试,第一个成功的即返回。请求少、延迟低。
 - **`aggregate`**——并行查询多个通道,合并结果、按 URL 去重,并给每条结果标注来源通道。覆盖更广。
@@ -160,7 +160,7 @@ STEPFUN_PRIORITY=10
 | `stepfun` | 独立搜索 REST 端点(`POST {base}/v1/search`) | `category`(未设置则不发送) |
 | `zhipu`   | 独立联网搜索 API(`POST {base}/api/paas/v4/web_search`) | `searchEngine`(默认 `search_std`)、`contentSize`(默认 `high`);`searchEngine` 也可用 `ZHIPU_SEARCH_ENGINE` 设置 |
 
-`kimi` 槽位的多轮循环最多 `maxRounds` 轮 tool-call,最后一轮再发起一次不带工具的 chat 调用强制拿到答案;`maxTokens` 是每次 chat 调用的 token 上限。`mimo` 槽位发送一个服务端 `web_search` 工具,带 `maxKeyword` 与 `forceSearch` 开关,以及由配置的 `location` key 组装的近似 `user_location`(`country` 恒发送,未配置时默认 `China`;`region` 与 `city` 仅在显式配置时发送)。`stepfun` 与 `zhipu` 槽位都是直接的 REST 调用,`options` 与文档化请求字段一一对应。
+`kimi` 槽位的多轮循环最多 `maxRounds` 轮 tool-call;只有当最后一轮仍返回 tool call 时,才会追加一次不带工具的 chat 调用强制拿到答案。`maxTokens` 是每次 chat 调用的 token 上限。`mimo` 槽位发送一个服务端 `web_search` 工具,带 `maxKeyword` 与 `forceSearch` 开关,以及由配置的 `location` key 组装的近似 `user_location`(`country` 恒发送,未配置时默认 `China`;`region` 与 `city` 仅在显式配置时发送)。`stepfun` 与 `zhipu` 槽位都是直接的 REST 调用,`options` 与文档化请求字段一一对应。
 
 密钥永不落日志、永不回显:错误文本会先洗净疑似凭据的片段,状态输出只报告"是否已配置"。
 
@@ -217,7 +217,7 @@ STEPFUN_PRIORITY=10
 | 槽位 | 使用的通道 | 结构化字段 | 文本返回 |
 |---|---|---|---|
 | `kimi`    | chat-completions + 多轮 tool-call 循环 + `POST {base}/v1/formulas/moonshot/web-search:latest/fibers` | fiber 引用 URL | LLM 答案在 `_meta.answer` |
-| `mimo`    | OpenAI 兼容 chat-completions + 服务端 `web_search` 工具 | `url_citation` + `web_search_highlight` 注解 | LLM 答案在 `_meta.answer` |
+| `mimo`    | chat-completions + 服务端 `web_search` 工具 | `url_citation` + `web_search_highlight` 注解 | LLM 答案在 `_meta.answer` |
 | `stepfun` | `POST {base}/v1/search` | title, time, snippet, content | 全文在 `content` |
 | `zhipu`   | `POST {base}/api/paas/v4/web_search` | title, link, content, publish_date | 摘要放 `snippet`,全文放 `content` |
 

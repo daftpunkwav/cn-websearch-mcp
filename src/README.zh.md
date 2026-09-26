@@ -41,7 +41,7 @@ index.ts ─┬─→ tools.ts ───────┐
                                      types.ts(纯契约,被所有层引用)
 ```
 
-- `types.ts` / `errors.ts` / `normalize.ts` / `config-file.ts` 构成底层:它们不引用任何上层,内部仅有一条边(`normalize.ts` → `errors.ts`)。全树只有 `config-file.ts`(自己的配置文件)与 `dotenv.ts`(`.env`)触碰磁盘。
+- `types.ts` / `errors.ts` / `normalize.ts` / `config-file.ts` 构成底层:它们不引用任何上层,内部依赖边只有指向 `errors.ts` 的两条(`normalize.ts` → `errors.ts` 与 `config-file.ts` → `errors.ts`)。全树只有 `config-file.ts`(自己的配置文件)与 `dotenv.ts`(`.env`)触碰磁盘。
 - 其上为 `config.ts` 与 `http.ts`。
 - `orchestrator.ts` 与 `probe.ts` 负责协调适配器;适配器保持单薄(只做请求构造与响应解析)。
 - `runtime.ts` / `tools.ts` / `cli/` 位于顶层:消费装配好的依赖,从不自行重建。

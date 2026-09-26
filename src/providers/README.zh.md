@@ -21,8 +21,8 @@
 
 | 槽位 | Wire 通道 | 结果条目 | `_meta.answer` |
 |---|---|---|---|
-| `kimi.ts` | OpenAI 兼容 chat-completions,声明 `web_search` 函数工具;tool call 通过 `POST {base}/v1/formulas/moonshot/web-search:latest/fibers` 执行;fiber 上下文中的参考 URL 成为结果条目(仅有 URL 的条目) | fiber 上下文中的参考 URL | LLM 合成的最终答案 |
-| `mimo.ts` | OpenAI 兼容 chat-completions,带服务端 `web_search` 工具(`tools[0].type = "web_search"`);`message.annotations` 携带 `url_citation` / `web_search_highlight`,按 URL 合并为条目 | 按 URL 合并的 annotations | LLM message content |
+| `kimi.ts` | chat-completions,声明 `web_search` 函数工具;tool call 通过 `POST {base}/v1/formulas/moonshot/web-search:latest/fibers` 执行;fiber 上下文中的参考 URL 成为结果条目(仅有 URL 的条目) | fiber 上下文中的参考 URL | LLM 合成的最终答案 |
+| `mimo.ts` | chat-completions,带服务端 `web_search` 工具(`tools[0].type = "web_search"`);`message.annotations` 携带 `url_citation` / `web_search_highlight`,按 URL 合并为条目 | 按 URL 合并的 annotations | LLM message content |
 | `stepfun.ts` | 独立搜索 REST 端点:`POST {base}/v1/search`,请求体 `{ query, n, category? }` | `results[]`:title、time、snippet、全文 `content` | — |
 | `zhipu.ts` | 独立联网搜索 API:`POST {base}/api/paas/v4/web_search` | `search_result[]`:title、link、摘要→snippet、全文 `content`、`publish_date` | — |
 
