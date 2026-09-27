@@ -37,7 +37,7 @@ export interface NormalizedItem {
   source?: string;
 }
 
-export type AttemptStatus = "ok" | "timeout" | "transient_error" | "permanent_error";
+export type AttemptStatus = "ok" | "timeout" | "transient_error" | "permanent_error" | "cancelled";
 
 /** One row of the audit trail of a web_search call. */
 export interface AttemptRecord {
@@ -72,7 +72,11 @@ export interface SearchContext {
    * per-HTTP-request timeout cap.
    */
   timeoutMs: number;
-  /** Aborted when the budget is exhausted or the caller's deadline passes. */
+  /**
+   * Aborted when the budget is exhausted or the caller goes away (MCP client
+   * cancellation). The orchestrator merges both, so an adapter only has to
+   * forward this signal to the HTTP layer.
+   */
   signal: AbortSignal;
   fetchImpl: FetchLike;
 }

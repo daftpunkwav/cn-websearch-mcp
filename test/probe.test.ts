@@ -64,6 +64,21 @@ describe("probeProvider", () => {
     const row = await probeProvider(provider("a", () => ok("a", ["T".repeat(100)])), req, { timeoutMs: 1_000 });
     expect(row.sample).toHaveLength(60);
   });
+
+  it("reports its own timeout with the shared timeout error type", async () => {
+    // An adapter forwards the signal and rethrows its reason, so a probe timeout
+    // must surface as the same TimeoutError as every other layer.
+    const hung = provider(
+      "d",
+      (_r, ctx) =>
+        new Promise<NormalizedSearchResult>((_res, reject) => {
+          ctx.signal.addEventListener("abort", () => reject(ctx.signal.reason));
+        }),
+    );
+    const row = await probeProvider(hung, req, { timeoutMs: 30 });
+    expect(row.ok).toBe(false);
+    expect(row.error).toBe("TimeoutError: request timed out");
+  });
 });
 
 describe("probeAll", () => {

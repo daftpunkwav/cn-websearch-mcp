@@ -5,15 +5,17 @@
  * Responsibilities:
  * - Single entry point runSearch: dispatch to fallback or aggregate by strategy
  * - Enforce the wall-clock timeout budget for each attempt via an abort signal
- * - Retry transient failures once; assemble _meta (provider, latency, attempt audit) or a structured failure
+ * - Honor caller cancellation (MCP client disconnect) by aborting the search instead of walking the rest of the chain
+ * - Retry transient failures once after a short backoff; assemble _meta (provider, latency, attempt audit) or a structured failure
  * - Under aggregate, query several providers in parallel, merge/dedupe by URL and tag sources
  */
 
 // Orchestration layer: timeout circuit-breaking, at most one transient retry
-// per provider, fallback and aggregation. Adapters stay thin; all cross-cutting
-// concerns (timeout/retry/fallback/aggregate/audit) live here.
+// per provider, caller-cancellation, fallback and aggregation. Adapters stay
+// thin; all cross-cutting concerns (timeout/retry/fallback/aggregate/audit)
+// live here.
 
-import { isTransient, summarizeError, TimeoutError } from "./errors.js";
+import { HttpError, isTransient, summarizeError, TimeoutError } from "./errors.js";
 import { mergeSourceItems } from "./normalize.js";
 import type {
   AttemptRecord,
@@ -25,10 +27,32 @@ import type {
   SearchStrategy,
 } from "./types.js";
 
+/** Pause before the single retry; long enough for a rate-limit window to move, short enough to stay invisible. */
+const RETRY_BACKOFF_MS = 250;
+/** 429 means the upstream explicitly asked us to slow down, so wait longer than for an ordinary 5xx. */
+const RATE_LIMIT_BACKOFF_MS = 1_000;
+
 export class NoProviderConfiguredError extends Error {
   constructor() {
     super("no provider is configured: set at least one provider API key (see .env.example or cn-websearch.config.json)");
     this.name = "NoProviderConfiguredError";
+  }
+}
+
+/**
+ * Thrown when the caller gave up before the search finished (an MCP client sent
+ * `notifications/cancelled`, or the connection closed). It is deliberately not
+ * AllProvidersFailedError: a client walking away is not a provider outage and
+ * must not be reported as one. It carries the same audit trail so the
+ * cancellation is reported as precisely as a failure would be. The message
+ * never echoes the abort reason, because that reason is supplied by the peer.
+ */
+export class CallCancelledError extends Error {
+  readonly attempts: AttemptRecord[];
+  constructor(attempts: AttemptRecord[]) {
+    super("search cancelled by the caller");
+    this.name = "CallCancelledError";
+    this.attempts = attempts;
   }
 }
 
@@ -45,15 +69,42 @@ export class AllProvidersFailedError extends Error {
   }
 }
 
+/** How long to wait before retrying a transient failure. */
+function backoffFor(err: unknown): number {
+  return err instanceof HttpError && err.status === 429 ? RATE_LIMIT_BACKOFF_MS : RETRY_BACKOFF_MS;
+}
+
+/** Wait for ms, returning early when the caller cancels (so a retry backoff is never stranded). */
+function delay(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal?.aborted) return resolve();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const finish = (): void => {
+      if (timer) clearTimeout(timer);
+      signal?.removeEventListener("abort", finish);
+      resolve();
+    };
+    timer = setTimeout(finish, ms);
+    signal?.addEventListener("abort", finish, { once: true });
+  });
+}
+
 export interface OrchestratorOptions {
   /** Providers participating in this call, in priority order. */
   providers: SearchProvider[];
   /**
    * Wall-clock budget per attempt; a retry gets its own equal budget, so a
    * single provider's worst case is roughly 2 × timeoutMs (first try plus one
-   * retry). A provider with its own configured budget uses that instead.
+   * retry) plus the retry backoff. A provider with its own configured budget
+   * uses that instead.
    */
   timeoutMs: number;
+  /**
+   * The caller's own cancellation signal, when there is one (MCP client went
+   * away). Aborting it stops the whole search immediately instead of walking
+   * the rest of the chain against a peer that no longer listens.
+   */
+  signal?: AbortSignal;
   fetchImpl?: FetchLike;
 }
 
@@ -67,9 +118,10 @@ export interface DispatchOptions extends OrchestratorOptions {
 
 /**
  * Run a single provider: at most two attempts (first try + one retry after a
- * transient failure). Hung calls are aborted when the budget runs out and
- * recorded as "timeout". Every attempt, including failed retries, ends up in
- * the returned audit records.
+ * transient failure, with a short backoff). Hung calls are aborted when the
+ * budget runs out and recorded as "timeout"; a cancelled caller aborts the
+ * in-flight request and records "cancelled". Every attempt, including failed
+ * retries, ends up in the returned audit records.
  *
  * This function is total: any exception thrown by the provider is caught and
  * converted into audit records, so callers can schedule it directly with
@@ -82,10 +134,20 @@ async function runProvider(
 ): Promise<{ records: AttemptRecord[]; result?: NormalizedSearchResult }> {
   const records: AttemptRecord[] = [];
   const budget = p.timeoutMs && p.timeoutMs > 0 ? p.timeoutMs : opts.timeoutMs;
+  const callerSignal = opts.signal;
   // The only path that keeps looping is a transient failure on the first try,
   // so this iterates at most twice; every other path returns, so the loop terminates.
   for (let tryIndex = 0; ; tryIndex++) {
+    if (callerSignal?.aborted) {
+      records.push({ provider: p.name, status: "cancelled", latency_ms: 0 });
+      return { records };
+    }
     const ac = new AbortController();
+    // A dedicated marker reason, so a cancellation is never mistaken for this
+    // layer's own timeout and never surfaces a peer-supplied message. It is only
+    // ever an abort reason here; the trail travels on the thrown error.
+    const onCallerAbort = (): void => ac.abort(new CallCancelledError([]));
+    callerSignal?.addEventListener("abort", onCallerAbort, { once: true });
     const timer = setTimeout(() => ac.abort(new TimeoutError()), budget);
     const t0 = Date.now();
     try {
@@ -101,18 +163,30 @@ async function runProvider(
       // The timeout verdict comes from this layer's controller's abort reason:
       // only an abort raised here with a TimeoutError counts as "timeout";
       // timeout-like errors thrown by the adapter itself are still classified
-      // by isTransient.
-      const timedOut = ac.signal.aborted && ac.signal.reason instanceof TimeoutError;
-      const status: AttemptStatus = timedOut
-        ? "timeout"
-        : isTransient(err)
-          ? "transient_error"
-          : "permanent_error";
-      records.push({ provider: p.name, status, latency_ms, error: summarizeError(err) });
-      // Transient failures retry once; any other failure abandons the provider immediately.
+      // by isTransient. A cancellation is judged by the same single signal — the
+      // controller's own abort reason — so an adapter that throws an unrelated
+      // error is still reported as what it is.
+      const cancelled = ac.signal.reason instanceof CallCancelledError;
+      const timedOut = !cancelled && ac.signal.aborted && ac.signal.reason instanceof TimeoutError;
+      const status: AttemptStatus = cancelled
+        ? "cancelled"
+        : timedOut
+          ? "timeout"
+          : isTransient(err)
+            ? "transient_error"
+            : "permanent_error";
+      records.push({
+        provider: p.name,
+        status,
+        latency_ms,
+        ...(cancelled ? {} : { error: summarizeError(err) }),
+      });
+      // Transient failures retry once after a backoff; cancellation and every other failure abandon immediately.
       if (status !== "transient_error" || tryIndex === 1) return { records };
+      await delay(backoffFor(err), callerSignal);
     } finally {
       clearTimeout(timer);
+      callerSignal?.removeEventListener("abort", onCallerAbort);
     }
   }
 }
@@ -120,7 +194,8 @@ async function runProvider(
 /**
  * Single-source fallback: walk in order and return the first successful
  * result; throw AllProvidersFailedError (with the full audit trail) when all
- * fail. Throw NoProviderConfiguredError when the chain is empty.
+ * fail. Throw NoProviderConfiguredError when the chain is empty, and
+ * CallCancelledError as soon as the caller aborts.
  */
 export async function searchWithFallback(req: SearchRequest, opts: OrchestratorOptions): Promise<NormalizedSearchResult> {
   if (!opts.providers.length) throw new NoProviderConfiguredError();
@@ -142,6 +217,7 @@ export async function searchWithFallback(req: SearchRequest, opts: OrchestratorO
         },
       };
     }
+    if (opts.signal?.aborted) throw new CallCancelledError(attempts);
   }
   throw new AllProvidersFailedError(attempts);
 }
@@ -160,6 +236,7 @@ function joinAnswers(answered: Array<{ provider: string; answer?: string }>): st
  * Multi-source aggregation: query all providers in parallel and merge results.
  * - Partial failure is not failure: successful providers' results are returned, failure details stay in _meta.attempts
  * - All failing throws AllProvidersFailedError
+ * - A cancelled caller throws CallCancelledError instead, so a client that walked away is never reported as an outage
  * - Results are deduplicated by URL (configurable) and tagged with their source provider
  */
 export async function searchAggregate(
@@ -171,6 +248,7 @@ export async function searchAggregate(
   // runProvider is total (absorbs all exceptions internally), so parallel scheduling is safe.
   const outcomes = await Promise.all(opts.providers.map((p) => runProvider(p, req, opts)));
   const attempts = outcomes.flatMap((o) => o.records);
+  if (opts.signal?.aborted) throw new CallCancelledError(attempts);
   const answered = outcomes.flatMap((o) => (o.result ? [o.result] : []));
   if (!answered.length) throw new AllProvidersFailedError(attempts);
 
@@ -201,7 +279,12 @@ export async function runSearch(req: SearchRequest, opts: DispatchOptions): Prom
   const max = Math.max(1, opts.maxProviders ?? opts.providers.length);
   const providers = opts.providers.slice(0, max);
   if (!providers.length) throw new NoProviderConfiguredError();
-  const scoped: OrchestratorOptions = { providers, timeoutMs: opts.timeoutMs, fetchImpl: opts.fetchImpl };
+  const scoped: OrchestratorOptions = {
+    providers,
+    timeoutMs: opts.timeoutMs,
+    signal: opts.signal,
+    fetchImpl: opts.fetchImpl,
+  };
   return opts.strategy === "aggregate"
     ? searchAggregate(req, { ...scoped, dedupe: opts.dedupe })
     : searchWithFallback(req, scoped);

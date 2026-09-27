@@ -6,6 +6,7 @@
 import { describe, expect, it } from "vitest";
 import {
   AllProvidersFailedError,
+  CallCancelledError,
   NoProviderConfiguredError,
   runSearch,
   searchAggregate,
@@ -234,6 +235,122 @@ describe("searchAggregate", () => {
     expect((await searchAggregate(req, { ...opts, providers: [silent.provider, one] }))._meta.answer).toBe("only");
     const noAnswer = await searchAggregate(req, { ...opts, providers: [silent.provider] });
     expect(noAnswer._meta.answer).toBeUndefined();
+  });
+});
+
+describe("caller cancellation", () => {
+  it("aborts the in-flight attempt and stops walking the chain", async () => {
+    const controller = new AbortController();
+    const a = makeProvider(
+      "a",
+      (_r, ctx) =>
+        new Promise<NormalizedSearchResult>((_resolve, reject) => {
+          ctx.signal.addEventListener("abort", () => reject(ctx.signal.reason));
+          setTimeout(() => controller.abort(), 5);
+        }),
+    );
+    const b = makeProvider("b", async () => okResult("b"));
+    const err = await searchWithFallback(req, {
+      ...opts,
+      providers: [a.provider, b.provider],
+      signal: controller.signal,
+    }).catch((e) => e);
+    // A client that walked away is not a provider outage, so it must not be
+    // reported as AllProvidersFailedError, and the chain must not continue.
+    expect(err).toBeInstanceOf(CallCancelledError);
+    expect(b.calls()).toBe(0);
+  });
+
+  it("records a cancelled attempt in the audit trail it carries", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const a = makeProvider("a", async () => okResult("a"));
+    const err = await searchWithFallback(req, { ...opts, providers: [a.provider], signal: controller.signal }).catch(
+      (e) => e,
+    );
+    expect(err).toBeInstanceOf(CallCancelledError);
+    // The audit trail must survive the cancellation, otherwise the caller is
+    // told "cancelled" with no record of what was in flight.
+    expect((err as CallCancelledError).attempts).toEqual([
+      { provider: "a", status: "cancelled", latency_ms: 0 },
+    ]);
+  });
+
+  it("reports cancellation instead of an all-failed aggregate", async () => {
+    const controller = new AbortController();
+    const dead = makeProvider("dead", async () => {
+      controller.abort();
+      throw new HttpError(500, "HTTP 500: boom");
+    });
+    const err = await searchAggregate(req, { ...opts, providers: [dead.provider], signal: controller.signal }).catch(
+      (e) => e,
+    );
+    expect(err).toBeInstanceOf(CallCancelledError);
+    expect(err).not.toBeInstanceOf(AllProvidersFailedError);
+  });
+
+  it("never echoes the abort reason, which is supplied by the peer", async () => {
+    const controller = new AbortController();
+    controller.abort("client supplied \u001b[31m text");
+    const a = makeProvider("a", async () => okResult("a"));
+    const err = await searchWithFallback(req, { ...opts, providers: [a.provider], signal: controller.signal }).catch(
+      (e) => e,
+    );
+    expect((err as Error).message).toBe("search cancelled by the caller");
+  });
+
+  it("still succeeds normally when no signal is supplied", async () => {
+    const a = makeProvider("a", async () => okResult("a"));
+    const out = await searchWithFallback(req, { ...opts, providers: [a.provider] });
+    expect(out._meta.provider).toBe("a");
+  });
+});
+
+describe("transient retry backoff", () => {
+  it("waits before the single retry instead of hammering a rate-limited upstream", async () => {
+    const stamps: number[] = [];
+    const a = makeProvider("a", async (_r, _c, call) => {
+      stamps.push(Date.now());
+      if (call === 1) throw new HttpError(429, "HTTP 429: slow down");
+      return okResult("a");
+    });
+    const t0 = Date.now();
+    const out = await searchWithFallback(req, { ...opts, providers: [a.provider] });
+    expect(out._meta.provider).toBe("a");
+    expect(stamps[1]! - stamps[0]!).toBeGreaterThanOrEqual(200);
+    expect(Date.now() - t0).toBeLessThan(5_000);
+  });
+
+  it("does not retry a permanent failure, so no backoff is paid", async () => {
+    const a = makeProvider("a", async () => {
+      throw new HttpError(401, "HTTP 401: bad key");
+    });
+    const t0 = Date.now();
+    await searchWithFallback(req, { ...opts, providers: [a.provider] }).catch(() => undefined);
+    expect(a.calls()).toBe(1);
+    expect(Date.now() - t0).toBeLessThan(200);
+  });
+
+  it("is cut short when the caller cancels during the backoff", async () => {
+    // A non-abortable wait would strand the whole call for the full 429 delay.
+    const controller = new AbortController();
+    const a = makeProvider("a", async (_r, _c, call) => {
+      if (call === 1) {
+        setTimeout(() => controller.abort(), 10);
+        throw new HttpError(429, "HTTP 429: slow down");
+      }
+      return okResult("a");
+    });
+    const t0 = Date.now();
+    const err = await searchWithFallback(req, { ...opts, providers: [a.provider], signal: controller.signal }).catch(
+      (e) => e,
+    );
+    const elapsed = Date.now() - t0;
+    expect(err).toBeInstanceOf(CallCancelledError);
+    // The 429 backoff is 1s; finishing far below that proves the wait was cut short.
+    expect(elapsed).toBeLessThan(500);
+    // The first attempt keeps its own verdict; the second is the cancellation.
+    expect((err as CallCancelledError).attempts.map((x) => x.status)).toEqual(["transient_error", "cancelled"]);
   });
 });
 

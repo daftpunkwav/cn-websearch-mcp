@@ -9,7 +9,7 @@
 
 // Probe logic lives in its own module so the CLI and the smoke script share one implementation.
 
-import { summarizeError } from "./errors.js";
+import { summarizeError, TimeoutError } from "./errors.js";
 import type { FetchLike, SearchProvider, SearchRequest } from "./types.js";
 
 export interface ProbeOptions {
@@ -40,7 +40,7 @@ export async function probeProvider(
   opts: ProbeOptions,
 ): Promise<ProbeRow> {
   const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(new Error("probe timeout")), opts.timeoutMs);
+  const timer = setTimeout(() => ac.abort(new TimeoutError()), opts.timeoutMs);
   const t0 = Date.now();
   try {
     const out = await p.search(req, {
