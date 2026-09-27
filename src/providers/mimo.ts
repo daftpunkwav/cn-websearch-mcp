@@ -19,7 +19,7 @@
 //
 // Location parameters always come from config; when unset, only the country level is given.
 
-import { hostnameOf, asObject, asArray, clampInt, maybeObject, str, toItem } from "../normalize.js";
+import { hostnameOf, asObject, asArray, clampInt, maybeObject, str } from "../normalize.js";
 import { postJson } from "../http.js";
 import type { NormalizedItem, NormalizedSearchResult, SearchContext, SearchProvider, SearchRequest } from "../types.js";
 import type { ProviderConfig } from "../config.js";
@@ -30,9 +30,16 @@ interface Annotation {
   url?: unknown;
 }
 
-/** Merges url_citation (title) and web_search_highlight (snippet) entries by URL. */
+/**
+ * Merges url_citation (title) and web_search_highlight (snippet) entries by URL.
+ *
+ * The two annotation kinds can arrive in either order, so a hostname placeholder
+ * is recorded explicitly: whenever a real title shows up later it must replace
+ * the placeholder instead of being dropped by a non-empty check.
+ */
 function itemsFromAnnotations(annotations: unknown[]): NormalizedItem[] {
   const byUrl = new Map<string, NormalizedItem>();
+  const placeholderTitles = new Set<string>();
   for (const raw of annotations) {
     const a = raw as Annotation;
     const url = str(a.url).trim();
@@ -43,15 +50,17 @@ function itemsFromAnnotations(annotations: unknown[]): NormalizedItem[] {
     const existing = byUrl.get(urlNorm);
     if (kind === "url_citation") {
       if (existing) {
-        if (title && !existing.title) existing.title = title;
+        if (title && placeholderTitles.delete(urlNorm)) existing.title = title;
       } else {
         byUrl.set(urlNorm, { title: title || hostnameOf(urlNorm), url: urlNorm, snippet: "" });
+        if (!title) placeholderTitles.add(urlNorm);
       }
     } else if (kind === "web_search_highlight") {
       if (existing) {
         if (!existing.snippet && title) existing.snippet = title;
       } else if (title) {
         byUrl.set(urlNorm, { title: hostnameOf(urlNorm), url: urlNorm, snippet: title });
+        placeholderTitles.add(urlNorm);
       }
     }
   }

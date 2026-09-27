@@ -25,7 +25,7 @@
 // K2.5/K2.6 thinking mode requires the assistant turn to pass reasoning_content back,
 // otherwise the server rejects subsequent requests.
 
-import { hostnameOf, asObject, asArray, clampInt, str, toItem } from "../normalize.js";
+import { asObject, asArray, clampInt, str, toItem } from "../normalize.js";
 import { postJson } from "../http.js";
 import { ParseError } from "../errors.js";
 import type { NormalizedItem, NormalizedSearchResult, SearchContext, SearchProvider, SearchRequest } from "../types.js";

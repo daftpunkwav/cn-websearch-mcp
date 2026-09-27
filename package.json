@@ -15,6 +15,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.check.json",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "smoke": "tsx scripts/smoke.ts",

@@ -20,5 +20,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+      # test/ and scripts/ are outside the build's tsconfig, so they need their own type check
+      - run: npm run typecheck
       # e2e tests in test/e2e/ exercise dist/, so build must precede tests
       - run: npm run test:coverage

@@ -3,6 +3,8 @@ dist/
 .env
 *.log
 coverage/
+# Local-only notes and review reports; keep them out of the repository.
+docs-local/
 # The JSON config file may contain API keys, so it is ignored by default to make
 # committing a secret by accident harder. Use `git add -f` if you keep a keyless,
 # shareable config there (see cn-websearch.config.example.json).
