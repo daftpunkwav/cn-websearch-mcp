@@ -17,7 +17,7 @@ const ctx = (fetchImpl: FetchLike): SearchContext => ({
   fetchImpl,
 });
 
-const cfg = { apiKey: "test-key", baseUrl: "https://kimi.example/v1", model: "kimi-test" };
+const cfg = { apiKey: "test-key", baseUrl: "https://kimi.example/v1", model: "kimi-test", enabled: true, priority: 0 };
 
 function jsonResponse(payload: unknown): Response {
   return new Response(JSON.stringify(payload), { status: 200, headers: { "Content-Type": "application/json" } });
@@ -125,7 +125,7 @@ describe("kimi provider", () => {
       () => jsonResponse({ context: { output: "PLAIN OUTPUT", references: [{ nope: true }, null, "https://ok.example/1"] } }),
       () => jsonResponse({ choices: [{ message: { content: "done" } }] }),
     ]);
-    const out = await createKimiProvider({ apiKey: "k", baseUrl: "https://kimi.example/v1" }).search(
+    const out = await createKimiProvider({ ...cfg, apiKey: "k", model: undefined }).search(
       { query: "q", count: 8 },
       ctx(fetchImpl),
     );

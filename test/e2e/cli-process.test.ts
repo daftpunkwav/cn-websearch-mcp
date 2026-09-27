@@ -5,7 +5,7 @@
  * Responsibilities:
  * - Spawn `node dist/index.js` for every CLI command and assert on stdout / stderr / exit code
  * - Cover happy paths, error paths, JSON output, flag overrides, and aliases (mcp == serve)
- * - Never touch the network: clean env strips provider keys, so `search`/`test` paths
+ * - Never touch the network: the clean env inherits nothing, so `search`/`test` paths
  *   exercise the "no provider ready" branch deterministically
  *
  * Why: cli-index.test.ts and cli-commands.test.ts call runCli() in-process and
@@ -92,7 +92,7 @@ describe("CLI process end-to-end", () => {
     expect(Array.isArray(payload.providers)).toBe(false);
     const stepfun = (payload.providers as Record<string, { apiKey: string }>).stepfun;
     expect(stepfun).toBeDefined();
-    expect(stepfun.apiKey).toBe("(unset)");
+    expect(stepfun?.apiKey).toBe("(unset)");
     // Belt-and-suspenders: assert no key-shaped substring appears anywhere.
     expect(stdout).not.toMatch(/sk-[A-Za-z0-9._-]{12,}/);
   });

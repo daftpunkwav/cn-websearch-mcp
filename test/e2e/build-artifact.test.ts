@@ -85,7 +85,7 @@ describe("build artifact", () => {
     const bin = (pkg.default as { bin: Record<string, string> }).bin["cn-websearch-mcp"];
     expect(bin).toBe("dist/index.js");
     // And the file we tested above lives at <pkg root>/<bin>.
-    const normalized = `${PKG_ROOT.replace(/\\/g, "/")}/${bin.replace(/\\/g, "/")}`;
+    const normalized = `${PKG_ROOT.replace(/\\/g, "/")}/${String(bin).replace(/\\/g, "/")}`;
     expect(normalized.replace(/\/+/g, "/")).toBe(DIST_ENTRY.replace(/\\/g, "/"));
   });
 });

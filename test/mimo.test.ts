@@ -13,7 +13,7 @@ const ctx = (fetchImpl: FetchLike): SearchContext => ({
   fetchImpl,
 });
 
-const cfg = { apiKey: "test-key", baseUrl: "https://mimo.example/v1", model: "mimo-test" };
+const cfg = { apiKey: "test-key", baseUrl: "https://mimo.example/v1", model: "mimo-test", enabled: true, priority: 0 };
 
 function jsonResponse(payload: unknown, status = 200): Response {
   return new Response(JSON.stringify(payload), { status, headers: { "Content-Type": "application/json" } });
@@ -120,13 +120,43 @@ describe("mimo provider", () => {
     expect(out.results).toHaveLength(2);
   });
 
+  it("keeps a real title that arrives after a highlight placeholder", async () => {
+    // Order matters: web_search_highlight can precede url_citation for the same
+    // URL, and the hostname placeholder must not swallow the real title.
+    const fetchImpl: FetchLike = async () =>
+      jsonResponse({
+        choices: [{ message: { content: "答案", annotations: [
+          { type: "web_search_highlight", title: "高亮片段", url: "https://dup.example/1" },
+          { type: "url_citation", title: "真实标题", url: "https://dup.example/1" },
+        ] } }],
+      });
+    const out = await createMimoProvider(cfg).search({ query: "q", count: 8 }, ctx(fetchImpl));
+    expect(out.results).toEqual([
+      { title: "真实标题", url: "https://dup.example/1", snippet: "高亮片段" },
+    ]);
+  });
+
+  it("keeps the first real title when two citations follow a placeholder", async () => {
+    const fetchImpl: FetchLike = async () =>
+      jsonResponse({
+        choices: [{ message: { content: "答案", annotations: [
+          { type: "web_search_highlight", title: "片段", url: "https://dup.example/1" },
+          { type: "url_citation", title: "标题一", url: "https://dup.example/1" },
+          { type: "url_citation", title: "标题二", url: "https://dup.example/1" },
+          { type: "url_citation", title: "", url: "https://dup.example/1" },
+        ] } }],
+      });
+    const out = await createMimoProvider(cfg).search({ query: "q", count: 8 }, ctx(fetchImpl));
+    expect(out.results.map((r) => r.title)).toEqual(["标题一"]);
+  });
+
   it("falls back to the default model when config has none", async () => {
     let seen: any;
     const fetchImpl: FetchLike = async (_url, init) => {
       seen = JSON.parse(init!.body as string);
       return jsonResponse({ choices: [{ message: { content: "", annotations: [] } }] });
     };
-    await createMimoProvider({ apiKey: "k", baseUrl: "https://m.example/v1" }).search(
+    await createMimoProvider({ ...cfg, baseUrl: "https://m.example/v1", model: undefined }).search(
       { query: "q", count: 1 },
       ctx(fetchImpl),
     );
@@ -137,6 +167,14 @@ describe("mimo provider", () => {
     const fetchImpl: FetchLike = async () => jsonResponse({ error: "rate limited" }, 429);
     await expect(createMimoProvider(cfg).search({ query: "q", count: 8 }, ctx(fetchImpl))).rejects.toMatchObject({
       status: 429,
+    });
+  });
+
+  it("throws ParseError when a choice carries no message", async () => {
+    const fetchImpl: FetchLike = async () => jsonResponse({ choices: [{ finish_reason: "stop" }] });
+    await expect(createMimoProvider(cfg).search({ query: "q", count: 8 }, ctx(fetchImpl))).rejects.toMatchObject({
+      name: "ParseError",
+      message: expect.stringContaining("mimo message"),
     });
   });
 

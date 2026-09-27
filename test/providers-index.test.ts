@@ -1,6 +1,6 @@
 /**
- * @file test/registry
- * @description Provider registry unit tests: adapters built in configured order, each factory receives its own config.
+ * @file test/providers-index
+ * @description Provider factory registry unit tests: adapters built in configured order, each factory receives its own config.
  */
 
 import { describe, expect, it } from "vitest";

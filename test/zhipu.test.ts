@@ -13,7 +13,7 @@ const ctx = (fetchImpl: FetchLike): SearchContext => ({
   fetchImpl,
 });
 
-const cfg = { apiKey: "test-key", baseUrl: "https://zhipu.example" };
+const cfg = { apiKey: "test-key", baseUrl: "https://zhipu.example", enabled: true, priority: 0 };
 
 function jsonResponse(payload: unknown, status = 200): Response {
   return new Response(JSON.stringify(payload), { status, headers: { "Content-Type": "application/json" } });

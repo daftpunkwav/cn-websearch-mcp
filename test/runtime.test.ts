@@ -3,7 +3,7 @@
  * @description Runtime assembly unit tests: config file loading, enabled/key filtering and warning degradation.
  */
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createRuntime } from "../src/runtime.js";
 
 const env = (over: Record<string, string> = {}): NodeJS.ProcessEnv => over;
@@ -68,6 +68,15 @@ describe("createRuntime", () => {
     expect(warnings.some((w) => w.includes("not valid JSON"))).toBe(true);
     expect(runtime.config.strategy).toBe("fallback");
     expect(runtime.chain.map((p) => p.name)).toEqual(["stepfun"]);
+  });
+
+  it("reports config problems on stderr when no warn callback is given", () => {
+    // The default sink keeps a broken configuration visible instead of silent.
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    createRuntime({ env: env({ WEBSEARCH_TIMEOUT_MS: "abc" }), configPath: undefined });
+    expect(errSpy).toHaveBeenCalledOnce();
+    expect(String(errSpy.mock.calls[0]![0])).toContain("WEBSEARCH_TIMEOUT_MS");
+    errSpy.mockRestore();
   });
 
   it("discovers the conventional config file when present", () => {

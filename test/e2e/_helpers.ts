@@ -4,7 +4,7 @@
  *
  * Responsibilities:
  * - Spawn the built entry point as a real subprocess (Node child_process)
- * - Provide a clean env helper that strips provider keys so E2E runs never
+ * - Provide a clean env helper that inherits nothing, so E2E runs never
  *   accidentally hit a real upstream API (we only test the protocol/process layer)
  * - Provide a tiny JSON-RPC client that speaks the stdio framing the MCP SDK uses
  *   (Content-Length: N\r\n\r\n<body>) so a single MCP message round-trip can be tested
@@ -24,65 +24,21 @@ export const PKG_ROOT = resolve(HERE, "..", "..");
 export const DIST_ENTRY = resolve(PKG_ROOT, "dist", "index.js");
 export const SRC_ENTRY = resolve(PKG_ROOT, "src", "index.ts");
 
-/** Provider key variables the runtime reads; clearing these keeps E2E hermetic. */
-const PROVIDER_KEY_VARS = [
-  "STEPFUN_API_KEY",
-  "STEPFUN_BASE_URL",
-  "STEPFUN_MODEL",
-  "STEPFUN_ENABLED",
-  "STEPFUN_PRIORITY",
-  "STEPFUN_TIMEOUT_MS",
-  "KIMI_API_KEY",
-  "KIMI_BASE_URL",
-  "KIMI_MODEL",
-  "KIMI_ENABLED",
-  "KIMI_PRIORITY",
-  "KIMI_TIMEOUT_MS",
-  "MIMO_API_KEY",
-  "MIMO_BASE_URL",
-  "MIMO_MODEL",
-  "MIMO_ENABLED",
-  "MIMO_PRIORITY",
-  "MIMO_TIMEOUT_MS",
-  "ZHIPU_API_KEY",
-  "ZHIPU_BASE_URL",
-  "ZHIPU_MODEL",
-  "ZHIPU_ENABLED",
-  "ZHIPU_PRIORITY",
-  "ZHIPU_TIMEOUT_MS",
-  "ZHIPU_SEARCH_ENGINE",
-];
-
-/** Generic gateway control variables (not provider-specific). */
-const GATEWAY_KEY_VARS = [
-  "WEBSEARCH_STRATEGY",
-  "WEBSEARCH_ORDER",
-  "WEBSEARCH_COUNT",
-  "WEBSEARCH_TIMEOUT_MS",
-  "WEBSEARCH_DEDUPE",
-  "WEBSEARCH_CONFIG",
-  "WEBSEARCH_MAX_PROVIDERS",
-];
-
 /**
- * Build an env map with all provider / gateway variables cleared so the
- * subprocess has no usable API keys (the runtime sees every provider as
- * disabled / missing-key). Path / locale vars are preserved so the binary
- * can still launch.
+ * Build a minimal env map for a spawned subprocess: only what node needs to
+ * start, plus the caller's overrides.
  *
- * Important: variables are *removed* (not set to "") so the in-process dotenv
- * loader can still fill them from a .env file when the test CWD provides one.
- * Setting them to "" would satisfy Object.hasOwn() and suppress .env loading,
- * which is exactly what the priority-chain tests want to detect.
+ * Nothing is inherited, so no provider key or gateway variable can reach the
+ * child and every slot is seen as disabled / missing-key. Note that the
+ * runtime treats a *blank* value as "not set", so deliberately emptying a
+ * variable would not have been equivalent to omitting it — omission is what
+ * makes these tests deterministic.
+ *
+ * The returned map holds strings only, which is exactly what both `spawn` and
+ * the MCP SDK's StdioClientTransport expect for `env`.
  */
-export function cleanEnv(overrides: Record<string, string> = {}): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = {};
-  for (const v of [...PROVIDER_KEY_VARS, ...GATEWAY_KEY_VARS]) env[v] = "";
-  // Strip the provider / gateway vars entirely so the child sees them as
-  // unset; this matches how a real MCP client launches the binary without any
-  // pre-existing env.
-  for (const v of [...PROVIDER_KEY_VARS, ...GATEWAY_KEY_VARS]) delete env[v];
-  // Minimal passthrough so node itself can start.
+export function cleanEnv(overrides: Record<string, string> = {}): Record<string, string> {
+  const env: Record<string, string> = {};
   for (const k of ["PATH", "SystemRoot", "PATHEXT", "TMP", "TEMP"]) {
     if (process.env[k] !== undefined) env[k] = process.env[k];
   }

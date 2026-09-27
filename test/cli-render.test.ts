@@ -61,6 +61,24 @@ describe("formatSearchResult", () => {
     expect(text).not.toContain("[kimi]");
   });
 
+  it("prints the error summary of a failed attempt in the trail", () => {
+    // A caller diagnosing a failure reads this line; it must carry the summary.
+    const text = formatSearchResult(
+      result({
+        providers: ["zhipu"],
+        attempts: [
+          { provider: "kimi", status: "transient_error", latency_ms: 611, error: "HttpError: HTTP 429: slow down" },
+          { provider: "zhipu", status: "ok", latency_ms: 900 },
+          { provider: "mimo", status: "cancelled", latency_ms: 0 },
+        ],
+      }),
+    );
+    expect(text).toContain("kimi:transient_error(611ms) HttpError: HTTP 429: slow down");
+    expect(text).toContain("zhipu:ok(900ms)");
+    // A cancellation carries no error summary, so its line ends at the status.
+    expect(text).toContain("mimo:cancelled(0ms)");
+  });
+
   it("falls back to _meta.provider when providers is absent, and handles missing fields", () => {
     const text = formatSearchResult({
       results: [{ title: "", url: "https://x.example", snippet: "" }],
@@ -94,6 +112,20 @@ describe("formatStatus", () => {
 
     const empty = formatStatus(cfg, []);
     expect(empty).toContain("no provider is ready");
+  });
+
+  it("marks a disabled slot and a slot without a key as such", () => {
+    const cfg = loadConfig({ env: { KIMI_API_KEY: "k", ZHIPU_ENABLED: "false" }, warn: () => {} });
+    const rows = formatStatus(cfg, ["kimi"]).split("\n");
+    const kimi = rows.find((l) => l.trim().startsWith("kimi"))!;
+    const zhipu = rows.find((l) => l.trim().startsWith("zhipu"))!;
+    expect(kimi).toContain("yes");
+    expect(zhipu).toMatch(/zhipu\s+no\s+no\s+no/);
+  });
+
+  it("falls back to a placeholder when no order could be resolved", () => {
+    const cfg = { ...loadConfig({ env: {}, warn: () => {} }), order: [] };
+    expect(formatStatus(cfg, [])).toContain("order         : (none)");
   });
 });
 
