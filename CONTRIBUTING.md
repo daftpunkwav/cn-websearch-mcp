@@ -7,6 +7,7 @@ Requires Node >= 18.
 ```bash
 npm install
 npm run build          # tsc → dist/
+npm run typecheck      # tsc over src/, test/ and scripts/ (no emit)
 npm test               # vitest run, all HTTP mocked (no API keys needed)
 npm run test:coverage  # test run plus the coverage gate (95% minimum on src/)
 ```
@@ -18,8 +19,8 @@ checks (`npm run smoke`) need real API keys and are not part of the test suite.
 ## Pull requests
 
 - One change per pull request, described in imperative mood.
-- The full gate (`npm run build` + `npm run test:coverage`) must pass locally
-  before opening a PR; CI runs the same steps.
+- The full gate (`npm run build` + `npm run typecheck` + `npm run test:coverage`)
+  must pass locally before opening a PR; CI runs the same steps.
 - New runtime code needs tests; the coverage thresholds in `vitest.config.ts`
   are enforced, not advisory.
 - Comments and file headers are written in English, in the `@file` /

@@ -6,7 +6,9 @@ live in [README.md](README.md).
 ## Placement
 
 - Unit/integration tests go in `test/` as `<module>.test.ts`, mirroring the
-  `src/` file name. A new `src/foo.ts` means a new `test/foo.test.ts`.
+  `src/` file name. A new `src/foo.ts` means a new `test/foo.test.ts`. When the
+  src name would collide (`src/index.ts` and `src/providers/index.ts`), the test
+  file is qualified by its path: `test/index.test.ts`, `test/providers-index.test.ts`.
 - Subprocess end-to-end tests go in [e2e/](e2e/), one journey per file
   (protocol round-trip, CLI process behavior, config priority, build
   artifact). Shared scaffolding lives in `e2e/_helpers.ts`; vitest only
@@ -16,8 +18,9 @@ live in [README.md](README.md).
 ## Hermeticity
 
 - Never inject real API keys into any test. Unit tests stub `fetchImpl`; e2e
-  tests use `cleanEnv()` from `_helpers.ts`, which strips every provider and
-  gateway variable so the subprocess sees no usable keys. Tests that need a
+  tests use `cleanEnv()` from `_helpers.ts`, which starts from an empty map and
+  forwards only what node needs to start, so no provider key or gateway
+  variable can reach the subprocess. Tests that need a
   deterministic "no keys" state must run the binary with cwd in a fresh temp
   dir (`runCliInEphemeralCwd`), because the project root's real `.env` would
   otherwise be picked up by the in-process dotenv loader.

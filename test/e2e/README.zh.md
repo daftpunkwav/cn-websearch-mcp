@@ -11,7 +11,7 @@
 
 `_helpers.ts` 提供上述测试复用的一切:
 
-- `cleanEnv()` —— 移除所有通道与网关变量的 env 映射,子进程因此绝不可能触达真实上游 API。
+- `cleanEnv()` —— 从零构造、只转发 node 启动所需变量的 env 映射,子进程因此绝不可能触达真实上游 API。
 - `freshTempDir()` / `runCliInEphemeralCwd()` —— 在一次性临时目录中作为 cwd 运行二进制,避免项目根目录真实的 `.env` 经由进程内 dotenv 加载器渗入。
 - `runCli()` / `spawnServer()` / `attachClient()` —— 子进程运行工具与一个极简 MCP stdio 客户端。
 

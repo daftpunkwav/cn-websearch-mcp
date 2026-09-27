@@ -16,6 +16,7 @@
 | `orchestrator.ts` | 搜索编排:`runSearch` 按策略分发;`searchWithFallback` 依次遍历链路,`searchAggregate` 并行调用各通道并合并。独占每次尝试的墙钟预算、单次瞬时重试与 `_meta.attempts` 审计轨迹。 |
 | `probe.ts` | 单通道在线探测(`probeProvider`),以数据行代替抛错返回;`probeAll` 顺序执行探测。CLI `test` 命令与 `scripts/smoke.ts` 共用。 |
 | `providers/` | 各通道适配器(`kimi`、`mimo`、`stepfun`、`zhipu`)与工厂注册表。见 [providers/README.zh.md](providers/README.zh.md)。 |
+| `provider-selection.ts` | 把请求的通道名列表解析为可用适配器的唯一规则;由 `tools.ts` 与 `cli/` 共用。 |
 | `runtime.ts` | 唯一的运行时装配点:解析配置文件、加载配置、构建全部适配器、计算可用链路(已启用 + 有密钥)。从不抛错——配置问题只告警。 |
 | `tools.ts` | MCP 工具层:`web_search` 与 `provider_status` 的定义、参数校验、分发到编排层、结构化错误输出。仅依赖注入的 deps。 |
 | `server-info.ts` | `SERVER_NAME` / `SERVER_VERSION` 常量;`test/server-info.test.ts` 断言其与 `package.json` 一致。 |
@@ -27,15 +28,17 @@
 依赖单向指向,下层从不引用上层:
 
 ```
-index.ts ─┬─→ tools.ts ───────┐
-          ├─→ cli/ ───────────┤
+index.ts ─┬─→ tools.ts ─────────┐
+          ├─→ cli/ ─────────────┤
           └─→ runtime.ts ─→ providers/ ─┐
                             orchestrator ┤
                             probe ───────┤
                             config ──────┤
-                            config-file ─┤
+                  config-file ┤         │
+                  dotenv ─────┤         │
+                  provider-   ┤         │
+                  selection ──┘         │
                             http ────────┤
-                            dotenv ──────┤
                             normalize ───┤
                             errors ──────┘
                                      types.ts(纯契约,被所有层引用)
@@ -43,6 +46,7 @@ index.ts ─┬─→ tools.ts ───────┐
 
 - `types.ts` / `errors.ts` / `normalize.ts` / `config-file.ts` 构成底层:它们不引用任何上层,内部依赖边只有指向 `errors.ts` 的两条(`normalize.ts` → `errors.ts` 与 `config-file.ts` → `errors.ts`)。全树只有 `config-file.ts`(自己的配置文件)与 `dotenv.ts`(`.env`)触碰磁盘。
 - 其上为 `config.ts` 与 `http.ts`。
+- `provider-selection.ts` 与 `config.ts` 同层:它只需要已知通道名与适配器接口,由顶层共用而非只服务一个调用方。
 - `orchestrator.ts` 与 `probe.ts` 负责协调适配器;适配器保持单薄(只做请求构造与响应解析)。
 - `runtime.ts` / `tools.ts` / `cli/` 位于顶层:消费装配好的依赖,从不自行重建。
 

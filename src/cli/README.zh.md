@@ -17,6 +17,8 @@
 
 选项:`-n/--count <1-50>`、`--strategy fallback|aggregate`、`--providers a,b`(限定单次调用)、`--no-dedupe`、`-q/--query`、`--json`。`--flag value` 与 `--flag=value` 两种形式都支持。
 
+入参边界与 MCP 工具层一致:`count` 夹到 1-50,查询词截到 400 字符,`search` 与 `test` 同样适用。
+
 退出码(定义于 `index.ts` 的 `EXIT`):`0` 成功,`1` 运行时失败(搜索失败 / 无可用通道),`2` 用法错误——脚本与 CI 可以据此分支。
 
 ## 文件一览
@@ -25,7 +27,7 @@
 |---|---|
 | `index.ts` | 分发:解析 argv、路由到各命令、把失败收敛为退出码。从不抛错。 |
 | `args.ts` | 纯 argv 解析器:裸单词先解析为命令,其余拼接为查询词;未知命令/选项总是返回可读错误,不做猜测。 |
-| `commands.ts` | 一次性命令实现(`cmdSearch`、`cmdStatus`、`cmdTest`)与共享的 `pickProviders` 过滤;把 CLI 参数叠加到配置上并调用编排层。 |
+| `commands.ts` | 一次性命令实现(`cmdSearch`、`cmdStatus`、`cmdTest`):把 CLI 参数叠加到配置上并调用编排层;`pickProviders` 只是共享命名规则的一层薄封装。 |
 | `repl.ts` | 交互式 readline 会话:裸文本即搜索,`/` 命令控制会话状态(`/strategy`、`/count`、`/providers`、`/json` 等)。输入行串行处理,并发搜索不会交错输出;单个失败只打印并继续。 |
 | `render.ts` | 纯「数据 → 文本」渲染:结果列表、状态表、探测表,以及 `redactedConfig`(只报告密钥是否已设置,绝不输出内容)。 |
 

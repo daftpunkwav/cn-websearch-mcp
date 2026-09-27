@@ -18,8 +18,8 @@ consumer would:
 
 `_helpers.ts` provides everything the journeys above reuse:
 
-- `cleanEnv()` — an env map with every provider and gateway variable removed,
-  so a subprocess can never reach a real upstream API.
+- `cleanEnv()` — an env map built from scratch that forwards only what node
+  needs to start, so a subprocess can never reach a real upstream API.
 - `freshTempDir()` / `runCliInEphemeralCwd()` — run the binary with cwd in a
   throwaway directory, so the project root's real `.env` cannot leak in via
   the in-process dotenv loader.

@@ -15,7 +15,7 @@
 
 `index.ts` 是唯一的注册表:`FACTORIES` 映射把每个 `ProviderName` 绑定到对应工厂,`buildProviders()` 按配置顺序实例化适配器。是否启用/是否有密钥的检查刻意留给调用方(`runtime.ts`)。
 
-新增一个通道需要:此处一个适配器文件 + `FACTORIES` 中一行 + `KNOWN_PROVIDERS` 中的一个名字(在 `src/config.ts`)。`<NAME>_*` 环境变量按名字自动推导,无需改动任何解析分支。
+新增一个通道需要:此处一个适配器文件 + `FACTORIES` 中一行 + `KNOWN_PROVIDERS` 中的一个名字**以及** `PROVIDER_DEFAULTS` 中对应的中立默认值(后两者都在 `src/config.ts`)。两个映射都是 `Record<ProviderName, …>` 类型,漏项会在编译期报错而不是首次运行时。`<NAME>_*` 环境变量按名字自动推导,无需改动任何解析分支。
 
 ## 槽位矩阵
 

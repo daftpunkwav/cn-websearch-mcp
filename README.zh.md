@@ -140,12 +140,14 @@ STEPFUN_PRIORITY=10
 | `strategy` | `WEBSEARCH_STRATEGY` | `fallback` | `fallback` = 首个成功即返回;`aggregate` = 多源合并 |
 | `order` | `WEBSEARCH_ORDER` | 字母序 | 显式优先级列表 |
 | `count` | `WEBSEARCH_COUNT` | `8` | 工具调用未传 `count` 时的默认结果数 |
-| `timeoutMs` | `WEBSEARCH_TIMEOUT_MS` | `30000` | 单次尝试预算;重试获得等额新预算,故单通道最坏约 2 倍 |
+| `timeoutMs` | `WEBSEARCH_TIMEOUT_MS` | `30000` | 单次尝试预算;重试获得等额新预算,故单通道最坏约 2 倍再加一次退避。上限 600000 ms |
 | `maxProviders` | `WEBSEARCH_MAX_PROVIDERS` | `4` | 单次调用最多使用几条通道(链长/并发上限) |
 | `dedupe` | `WEBSEARCH_DEDUPE` | `true` | 聚合时是否按 URL 去重 |
 | — | `WEBSEARCH_CONFIG` | — | 显式指定配置文件路径 |
 
 布尔值接受 `true/false`、`1/0`、`yes/no`、`on/off`。非法值只告警并回退,不会导致启动失败。
+
+任意一层的**空值**(`KIMI_API_KEY=`、`"baseUrl": ""`)都视为「未设置」,因此模板文件里的空占位不会遮蔽下一层的真实值(配置文件或内置默认值)。超过 600000 ms 的 `timeoutMs` 会被告警拒绝并回退——这样的时长已超出 32 位定时器范围,会被静默变成 1 ms。
 
 ### 单通道设置
 
@@ -160,9 +162,9 @@ STEPFUN_PRIORITY=10
 | `stepfun` | 独立搜索 REST 端点(`POST {base}/v1/search`) | `category`(未设置则不发送) |
 | `zhipu`   | 独立联网搜索 API(`POST {base}/api/paas/v4/web_search`) | `searchEngine`(默认 `search_std`)、`contentSize`(默认 `high`);`searchEngine` 也可用 `ZHIPU_SEARCH_ENGINE` 设置 |
 
-`kimi` 槽位的多轮循环最多 `maxRounds` 轮 tool-call;只有当最后一轮仍返回 tool call 时,才会追加一次不带工具的 chat 调用强制拿到答案。`maxTokens` 是每次 chat 调用的 token 上限。`mimo` 槽位发送一个服务端 `web_search` 工具,带 `maxKeyword` 与 `forceSearch` 开关,以及由配置的 `location` key 组装的近似 `user_location`(`country` 恒发送,未配置时默认 `China`;`region` 与 `city` 仅在显式配置时发送)。`stepfun` 与 `zhipu` 槽位都是直接的 REST 调用,`options` 与文档化请求字段一一对应。
+`kimi` 槽位的多轮循环最多 `maxRounds` 轮 tool-call;只有当最后一轮仍返回 tool call 时,才会追加一次不带工具的 chat 调用强制拿到答案。`maxTokens` 是每次 chat 调用的 token 上限。`mimo` 槽位发送一个服务端 `web_search` 工具,带 `maxKeyword` 与 `forceSearch` 开关,以及由配置的 `location` key 组装的近似 `user_location`(`country` 恒发送,未配置时默认 `China`;`region` 与 `city` 仅在显式配置时发送)。`stepfun` 与 `zhipu` 槽位都是直接的 REST 调用,`options` 与这两个 API 接受的请求字段一一对应。
 
-密钥永不落日志、永不回显:错误文本会先洗净疑似凭据的片段,状态输出只报告"是否已配置"。
+密钥永不落日志、永不回显:错误文本会先洗净疑似凭据的片段,状态输出只报告"是否已配置"。若某个已配置 key 的槽位其 `baseUrl` 不是 `https`,启动时会给出告警——否则该 key 会以明文传输。
 
 ## 工具
 
@@ -170,7 +172,7 @@ STEPFUN_PRIORITY=10
 
 入参:`{ "query": string, "count"?: integer, "strategy"?: "fallback"|"aggregate", "providers"?: string[] }`。
 
-`count` 默认取配置值,`strategy` 默认取配置策略;显式传入的 `providers` 必须是已启用且配了 key 的槽位——否则返回带明确原因的结构化错误,而不是静默忽略。
+`count` 默认取配置值,`strategy` 默认取配置策略;显式传入的 `providers` 必须是已启用且配了 key 的槽位——否则返回带明确原因的结构化错误,而不是静默忽略。`count` 被夹到 1-50、`query` 截到 400 字符,本接口与所有 CLI 命令一致。
 
 输出:归一化结果 + 审计轨迹。聚合模式下每条结果带 `source`,`_meta.providers` 列出全部应答方:
 
@@ -206,11 +208,13 @@ STEPFUN_PRIORITY=10
 
 - 只有**已启用且配了 key** 的通道参与。`fallback` 按优先级依次尝试;`aggregate` 并行查询。
 - 单次尝试:一个墙钟预算(`timeoutMs`);卡死的请求会被中止并记为 `timeout`。
-- 瞬时错误(网络错误、HTTP 5xx、429)重试 **1 次**,仍失败则切下一条通道;`timeout` 不重试——墙钟预算已耗尽,直接切换下一条通道。
+- 瞬时错误(网络错误、HTTP 5xx、429)重试 **1 次**(先退避 250 ms,429 退避 1 s),仍失败则切下一条通道;`timeout` 不重试——墙钟预算已耗尽,直接切换下一条通道。
 - 永久错误(HTTP 4xx 非 429)不重试,立即切换。
+- MCP 客户端取消请求时,搜索立即停止:在途尝试被中止、审计记录为 `cancelled`,不再继续走完剩余通道(取消不会被误报成「全部通道失败」)。
 - `aggregate` 下部分失败不算失败:成功者的结果照常返回,失败明细留在 `_meta.attempts`。
-- 每次尝试都记录在 `_meta.attempts`——成功、重试、超时或报错。
+- 每次尝试都记录在 `_meta.attempts`——成功、重试、超时、取消或报错。
 - 全部失败时,`web_search` 返回包含完整尝试列表的结构化错误。
+- 一整轮 fallback 的最坏耗时约为每通道 `2 × timeoutMs + 退避`,四个通道用默认预算时可达约 4 分钟;请按客户端的超时上限调整 `WEBSEARCH_TIMEOUT_MS` 或 `WEBSEARCH_MAX_PROVIDERS`。
 
 ## 通道矩阵
 
@@ -228,6 +232,7 @@ STEPFUN_PRIORITY=10
 ```bash
 npm install
 npm run build          # tsc → dist/
+npm run typecheck      # 对 src/、test/、scripts/ 做类型检查(不产出)
 npm test               # vitest,全部 HTTP mock(无需 key)
 npm run test:coverage  # 覆盖率门槛:src/ 上 lines/functions/branches/statements 均不低于 95%
 npm run smoke          # 对每个就绪通道发真实请求,输出延迟表
@@ -239,7 +244,7 @@ npm run cli -- repl    # 用 tsx 从源码运行 CLI
 - **注释与 file header 用英文。**
 - **运行时可见字符串保持英文**——tool 描述、CLI 输出、日志、错误消息——使客户端与脚本获得稳定、可 grep 的输出。
 - `src/server-info.ts` 中的 `SERVER_NAME` / `SERVER_VERSION` 是服务器身份的唯一来源;`test/server-info.test.ts` 在每次测试运行时断言其与 `package.json` 一致。
-- 分层单向依赖:最底层 `types` / `errors` / `config-file` / `normalize`,其上 `config` / `http`,再上 `orchestrator` / `probe`,再上 `providers`,最上层 `runtime` / `tools` / `cli`。
+- 分层单向依赖:最底层 `types` / `errors` / `config-file` / `normalize`,其上 `config` / `http` / `provider-selection`,再上 `orchestrator` / `probe`,再上 `providers`,最上层 `runtime` / `tools` / `cli`。
 
 ## 仓库结构
 

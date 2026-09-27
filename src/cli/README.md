@@ -25,6 +25,9 @@ Options: `-n/--count <1-50>`, `--strategy fallback|aggregate`,
 `--providers a,b` (restrict one call), `--no-dedupe`, `-q/--query`,
 `--json`. Both `--flag value` and `--flag=value` forms are accepted.
 
+Argument bounds match the MCP tool layer: `count` is clamped to 1-50 and a
+query is capped at 400 characters, on `search` and `test` alike.
+
 Exit codes (defined as `EXIT` in `index.ts`): `0` success, `1` runtime
 failure (search failed / no usable provider), `2` usage error — so scripts
 and CI can branch on them.
@@ -35,7 +38,7 @@ and CI can branch on them.
 |---|---|
 | `index.ts` | Dispatch: parse argv, route to the command, collapse failures into exit codes. Never throws. |
 | `args.ts` | Pure argv parser: bare words resolve the command first and join into the query afterwards; unknown commands/options always return a readable error instead of guessing. |
-| `commands.ts` | One-shot implementations (`cmdSearch`, `cmdStatus`, `cmdTest`) plus the shared `pickProviders` filter; overlays CLI arguments onto the config and calls the orchestration layer. |
+| `commands.ts` | One-shot implementations (`cmdSearch`, `cmdStatus`, `cmdTest`) that overlay CLI arguments onto the config and call the orchestration layer; `pickProviders` is a thin wrapper over the shared name rules. |
 | `repl.ts` | Interactive readline session: bare text searches, `/` commands control session state (`/strategy`, `/count`, `/providers`, `/json`, …). Lines are processed serially so concurrent searches never interleave output; a single failure prints and continues. |
 | `render.ts` | Data-to-text rendering only: result list, status table, probe table, and `redactedConfig` (echoes whether a key is set, never its contents). |
 

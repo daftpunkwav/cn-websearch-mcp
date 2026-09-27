@@ -26,8 +26,10 @@ An adapter is a factory `create<Name>Provider(cfg: ProviderConfig): SearchProvid
 the configured order. Enabled/key checks are deliberately left to the caller
 (`runtime.ts`).
 
-Adding a provider takes: one adapter file here + one line in `FACTORIES` +
-the name in `KNOWN_PROVIDERS` (in `src/config.ts`). The `<NAME>_*`
+Adding a provider takes: one adapter file here + one line in `FACTORIES` + the
+name in `KNOWN_PROVIDERS` **and** its neutral defaults in `PROVIDER_DEFAULTS`
+(both in `src/config.ts`). Both maps are typed `Record<ProviderName, …>`, so a
+missing entry fails the build rather than the first run. The `<NAME>_*`
 environment variables are derived from the name automatically, so no parsing
 branches change.
 

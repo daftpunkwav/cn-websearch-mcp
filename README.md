@@ -140,12 +140,14 @@ On the command line, `--providers` narrows a single call without changing the co
 | `strategy` | `WEBSEARCH_STRATEGY` | `fallback` | `fallback` = first success wins; `aggregate` = multi-source merge |
 | `order` | `WEBSEARCH_ORDER` | alphabetical | Explicit priority list |
 | `count` | `WEBSEARCH_COUNT` | `8` | Default result count when a tool call omits `count` |
-| `timeoutMs` | `WEBSEARCH_TIMEOUT_MS` | `30000` | Budget per attempt; a retry gets a fresh budget, so one channel's worst case is ~2× |
+| `timeoutMs` | `WEBSEARCH_TIMEOUT_MS` | `30000` | Budget per attempt; a retry gets a fresh budget, so one channel's worst case is ~2× plus the retry backoff. Capped at 600000 ms |
 | `maxProviders` | `WEBSEARCH_MAX_PROVIDERS` | `4` | Cap on channels per call (chain length / fan-out) |
 | `dedupe` | `WEBSEARCH_DEDUPE` | `true` | Merge duplicate URLs when aggregating |
 | — | `WEBSEARCH_CONFIG` | — | Explicit config file path |
 
 Booleans accept `true/false`, `1/0`, `yes/no`, `on/off`. Invalid values are ignored with a warning rather than failing.
+
+A **blank** value at any layer (`KIMI_API_KEY=`, `"baseUrl": ""`) counts as "not set", so the empty placeholders in a template file never mask a value configured in the layer below — the config file, or the built-in default. A `timeoutMs` beyond 600000 ms is rejected with a warning and falls back, because such a delay no longer fits a 32-bit timer and would silently become 1 ms.
 
 ### Per-channel settings
 
@@ -162,9 +164,9 @@ The four built-in channel slots and the `options` keys each one recognises:
 | `stepfun` | standalone search REST endpoint (`POST {base}/v1/search`)                | `category` (omitted unless set) |
 | `zhipu`   | standalone web-search API (`POST {base}/api/paas/v4/web_search`)         | `searchEngine` (default `search_std`), `contentSize` (default `high`); `searchEngine` is also readable from `ZHIPU_SEARCH_ENGINE` |
 
-The `kimi` slot's multi-round loop caps at `maxRounds` tool-call rounds; only when the last round still returns tool calls does it force one final chat call (without tools) for the answer. `maxTokens` is the token budget per chat call. The `mimo` slot sends a server-side `web_search` tool with `maxKeyword` and `forceSearch` knobs and an approximate `user_location` assembled from the configured `location` keys (`country` is always sent and defaults to `China`; `region` and `city` only when explicitly configured). The `stepfun` and `zhipu` slots are direct REST calls — their options map one-to-one to documented request fields.
+The `kimi` slot's multi-round loop caps at `maxRounds` tool-call rounds; only when the last round still returns tool calls does it force one final chat call (without tools) for the answer. `maxTokens` is the token budget per chat call. The `mimo` slot sends a server-side `web_search` tool with `maxKeyword` and `forceSearch` knobs and an approximate `user_location` assembled from the configured `location` keys (`country` is always sent and defaults to `China`; `region` and `city` only when explicitly configured). The `stepfun` and `zhipu` slots are direct REST calls — their options map one-to-one onto the request fields those APIs accept.
 
-Keys are never logged or echoed: error text is scrubbed of credential-looking strings, and status output only reports whether a key is set.
+Keys are never logged or echoed: error text is scrubbed of credential-looking strings, and status output only reports whether a key is set. A slot that has a key and a `baseUrl` which is not an `https` URL is reported with a warning at startup, because that key would otherwise travel in cleartext.
 
 ## Tools
 
@@ -172,7 +174,7 @@ Keys are never logged or echoed: error text is scrubbed of credential-looking st
 
 Input: `{ "query": string, "count"?: integer, "strategy"?: "fallback"|"aggregate", "providers"?: string[] }`.
 
-`count` defaults to your configured `count`, `strategy` to your configured strategy, and `providers` (when given) must name slots that are enabled and have a key — otherwise the call returns a structured error naming the problem rather than silently ignoring it.
+`count` defaults to your configured `count`, `strategy` to your configured strategy, and `providers` (when given) must name slots that are enabled and have a key — otherwise the call returns a structured error naming the problem rather than silently ignoring it. `count` is clamped to 1-50 and `query` is capped at 400 characters, on this surface and on every CLI command alike.
 
 Output: normalized results plus an audit trail. In aggregate mode each item carries `source`, and `_meta.providers` lists everyone who answered:
 
@@ -208,11 +210,13 @@ Read-only: effective strategy and settings, and per slot whether it is enabled, 
 
 - Only channels that are enabled **and** have a key participate. `fallback` walks them in priority order; `aggregate` queries them in parallel.
 - Per attempt: one wall-clock budget (`timeoutMs`); hung requests are aborted and recorded as `timeout`.
-- Transient failures (network errors, HTTP 5xx, 429) are retried **once**, then the next channel is tried. A budget `timeout` is not retried — its wall-clock budget is already spent, so the chain moves on to the next channel instead.
+- Transient failures (network errors, HTTP 5xx, 429) are retried **once** after a short backoff (250 ms, 1 s for a 429), then the next channel is tried. A budget `timeout` is not retried — its wall-clock budget is already spent, so the chain moves on to the next channel instead.
 - Permanent failures (HTTP 4xx other than 429) skip the retry and move on immediately.
+- If the MCP client cancels the request, the search stops immediately: the in-flight attempt is aborted, its audit record is `cancelled`, and the call ends there instead of walking the rest of the chain.
 - In `aggregate`, partial failure is not failure: successful channels' results are returned and the failures stay in `_meta.attempts`.
-- Every attempt is recorded in `_meta.attempts` — success, retry, timeout or error.
+- Every attempt is recorded in `_meta.attempts` — success, retry, timeout, cancellation or error.
 - If everyone fails, `web_search` returns a structured error containing the full attempt list.
+- Worst case for a full fallback walk is roughly `2 × timeoutMs + backoff` **per channel**, so a four-channel chain with the default budget can take up to ~4 minutes. Set `WEBSEARCH_TIMEOUT_MS` or `WEBSEARCH_MAX_PROVIDERS` to suit your client's deadline.
 
 ## Channel matrix
 
@@ -230,6 +234,7 @@ Two slots (`kimi`, `mimo`) return an LLM-synthesized answer plus citations rathe
 ```bash
 npm install
 npm run build          # tsc → dist/
+npm run typecheck      # tsc over src/, test/ and scripts/ (no emit)
 npm test               # vitest, all HTTP mocked (no keys needed)
 npm run test:coverage  # coverage gate: 95% minimum on src/ (lines/functions/branches/statements)
 npm run smoke          # real requests against every ready channel, prints a latency table
@@ -241,7 +246,7 @@ npm run cli -- repl    # run the CLI from source via tsx
 - **Comments and file headers are written in English.**
 - **Runtime-visible strings stay in English** — tool descriptions, CLI output, log lines and error messages — so clients and scripts get stable, greppable output.
 - `SERVER_NAME` / `SERVER_VERSION` in `src/server-info.ts` are the single source of truth for the server identity; `test/server-info.test.ts` asserts they match `package.json` on every test run.
-- Layering is one-directional: `types` / `errors` / `config-file` / `normalize` at the bottom, then `config` / `http`, then `orchestrator` / `probe`, then `providers`, then `runtime` / `tools` / `cli`.
+- Layering is one-directional: `types` / `errors` / `config-file` / `normalize` at the bottom, then `config` / `http` / `provider-selection`, then `orchestrator` / `probe`, then `providers`, then `runtime` / `tools` / `cli`.
 
 ## Repository layout
 
