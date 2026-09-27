@@ -71,7 +71,10 @@ export function readConfigFile(
   try {
     raw = readFile(path);
   } catch (err) {
-    warn(`config file not readable (${path}): ${err instanceof Error ? err.message : String(err)}`);
+    // Same reasoning as the JSON branch below: this file may hold API keys, so
+    // nothing from the read failure goes to stderr unscrubbed.
+    const detail = err instanceof Error ? err.message : String(err);
+    warn(`config file not readable (${path}): ${redactSecrets(detail)}`);
     return undefined;
   }
   // JSON.parse rejects a leading UTF-8 BOM (common in Windows-edited files); strip it first.

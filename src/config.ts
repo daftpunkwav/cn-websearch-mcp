@@ -6,6 +6,8 @@
  * - Provide neutral per-provider defaults (base URL, model) with nothing personal baked in
  * - Parse fallback order/priority, strategy, timeout, result count and other settings from the config file and environment variables
  * - Validate each layer's input leniently: invalid values warn and fall back, never throwing
+ * - Treat a blank value at any layer as "unset", so template placeholders never mask a lower layer
+ * - Own the search-argument bounds (COUNT_MIN/COUNT_MAX/QUERY_MAX) shared by the tool layer and the CLI
  *
  * Design notes:
  * - The default order is alphabetical — not a "recommended order"; custom priority is always explicit user configuration
@@ -34,8 +36,25 @@ export const DEFAULT_COUNT = 8;
 export const DEFAULT_MAX_PROVIDERS = KNOWN_PROVIDERS.length;
 export const DEFAULT_STRATEGY: SearchStrategy = "fallback";
 
+/**
+ * Upper bound for any timeout budget, in ms. Beyond roughly 24.8 days a
+ * `setTimeout` delay no longer fits a 32-bit signed integer and silently
+ * becomes 1ms, which would turn a typo'd timeout into "every request times
+ * out instantly". Ten minutes is far above any sane search budget, so this
+ * only ever rejects a mistaken value.
+ */
+const TIMEOUT_MAX_MS = 600_000;
+
+/**
+ * Search-argument bounds shared by every entry surface (MCP tool layer and
+ * CLI), so a `count` means the same range wherever it is supplied and the
+ * documented tool schema cannot drift from the CLI's own help text.
+ */
+export const COUNT_MIN = 1;
+export const COUNT_MAX = 50;
+export const QUERY_MAX = 400;
+
 const STRATEGIES: readonly SearchStrategy[] = ["fallback", "aggregate"];
-const COUNT_MAX = 50;
 const MAX_PROVIDERS_MIN = 1;
 
 /** Neutral per-provider defaults (no keys, no personalized parameters). */
@@ -61,7 +80,12 @@ export interface ProviderConfig {
   enabled: boolean;
   /** Priority: higher comes first; when all are 0 (the default), alphabetical by name. */
   priority: number;
-  /** Per-provider timeout budget (ms); falls back to the global timeoutMs when unset. */
+  /**
+   * Per-provider timeout budget (ms). Only present when it differs from the
+   * global budget: a configured 0 means "no per-provider budget" and an
+   * out-of-range value is dropped, so both end up as `undefined` here rather
+   * than as a value that would be misread as a 0 ms or absurd budget.
+   */
   timeoutMs?: number;
   /** Provider-specific optional parameters (validated and consumed by each adapter). */
   options?: Record<string, unknown>;
@@ -103,9 +127,19 @@ export function providerEnvKey(name: ProviderName, suffix: string): string {
   return `${name.toUpperCase()}_${suffix}`;
 }
 
-/** Lenient string getter; returns undefined for non-strings (distinguishing "unset" from "set to empty"). */
+/**
+ * Lenient string getter: returns the trimmed value, or undefined for a
+ * non-string, an empty string, or a whitespace-only string.
+ *
+ * Blank counts as "unset" on purpose. Template files ship empty placeholders
+ * (`KIMI_API_KEY=`), and the env layer sits above the config file, so treating
+ * a blank env value as a real override would silently mask a key configured in
+ * the file — the failure mode the `model` field already avoids.
+ */
 function asString(v: unknown): string | undefined {
-  return typeof v === "string" ? v : undefined;
+  if (typeof v !== "string") return undefined;
+  const trimmed = v.trim();
+  return trimmed === "" ? undefined : trimmed;
 }
 
 /** Lenient boolean getter: accepts booleans and on/off/yes/no/true/false/1/0 strings. */
@@ -126,7 +160,7 @@ function asNonNegativeInt(v: unknown): number | undefined {
   return n;
 }
 
-/** Lenient getter for obj.key as a string. */
+/** Lenient getter for obj.key as a trimmed, non-blank string; undefined when missing or blank. */
 function strField(obj: Record<string, unknown> | undefined, key: string): string | undefined {
   return obj ? asString(obj[key]) : undefined;
 }
@@ -199,15 +233,73 @@ export function parseStrategy(raw: unknown, warn: (m: string) => void, source: s
   return undefined;
 }
 
-/** Parse a positive integer; return the fallback when missing or invalid (with a warning). */
-function positiveInt(raw: unknown, fallback: number, source: string, warn: (m: string) => void): number {
+/** Parse a positive integer; return the fallback when missing, unparseable or out of range (with a warning). */
+function positiveInt(
+  raw: unknown,
+  fallback: number,
+  source: string,
+  warn: (m: string) => void,
+  max = Number.POSITIVE_INFINITY,
+): number {
   if (raw === undefined || raw === null || raw === "") return fallback;
   const n = typeof raw === "number" ? raw : Number(raw);
   if (!Number.isInteger(n) || n <= 0) {
     warn(`${source}="${String(raw)}" is not a positive integer, using ${fallback}`);
     return fallback;
   }
+  if (n > max) {
+    warn(`${source}="${String(raw)}" exceeds the maximum of ${max}, using ${fallback}`);
+    return fallback;
+  }
   return n;
+}
+
+/**
+ * Validate a per-provider timeout budget.
+ *
+ * - 0 is an explicit "no per-provider budget" (the orchestrator then uses the
+ *   global one), so it is normalized to `undefined`: reporting `timeout_ms: 0`
+ *   in a status payload would read as "a zero millisecond budget", which is
+ *   exactly what it does not mean.
+ * - A value beyond TIMEOUT_MAX_MS is dropped for the same reason.
+ *
+ * `source` names where the value actually came from, so a warning points the
+ * user at the variable or file field they really set.
+ */
+function perProviderTimeout(
+  value: number | undefined,
+  source: string,
+  warn: (m: string) => void,
+): number | undefined {
+  if (value === undefined || value === 0) return undefined;
+  if (value <= TIMEOUT_MAX_MS) return value;
+  warn(`${source}=${value} exceeds the maximum of ${TIMEOUT_MAX_MS}, using the global timeout`);
+  return undefined;
+}
+
+/** Whether a base URL is safe to send an Authorization header to. Non-https endpoints leak the key in cleartext. */
+function isHttpsUrl(url: string): boolean {
+  try {
+    return new URL(url).protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Merge one setting across the two layers and describe where it came from, so
+ * a warning quotes the source the user actually configured instead of always
+ * blaming the environment variable.
+ */
+function layer(
+  envValue: string | undefined,
+  fileValue: unknown,
+  envSource: string,
+  fileSource: string,
+): { raw: unknown; source: string } {
+  return envValue !== undefined
+    ? { raw: envValue, source: envSource }
+    : { raw: fileValue, source: fileSource };
 }
 
 /**
@@ -267,8 +359,14 @@ export function loadConfig(options: LoadConfigOptions = {}): GatewayConfig {
     const defaults = PROVIDER_DEFAULTS[name];
     const entry = providerEntry(file, name);
 
-    const rawBase = env[providerEnvKey(name, "BASE_URL")] ?? strField(entry, "baseUrl") ?? defaults.baseUrl;
+    // A blank value at either layer means "not set", so a template file's empty
+    // placeholder can never mask a real value from the layer below it.
+    const rawBase = asString(env[providerEnvKey(name, "BASE_URL")]) ?? strField(entry, "baseUrl") ?? defaults.baseUrl;
     const baseUrl = defaults.openAiCompatible ? ensureV1(rawBase) : trimSlash(rawBase);
+    const apiKey = asString(env[providerEnvKey(name, "API_KEY")]) ?? strField(entry, "apiKey") ?? "";
+    if (apiKey && !isHttpsUrl(baseUrl)) {
+      warn(`${name}: baseUrl is not an https URL, so a configured key would be sent in cleartext — use https, or keep http only for a proxy you trust`);
+    }
 
     // ZHIPU_SEARCH_ENGINE is a legacy knob kept for backward compatibility; the option normally comes from the config file.
     const providerOptions: Record<string, unknown> = { ...maybeObject(entry?.options) };
@@ -277,36 +375,37 @@ export function loadConfig(options: LoadConfigOptions = {}): GatewayConfig {
       if (envEngine) providerOptions.searchEngine = envEngine;
     }
 
+    const envTimeout = asNonNegativeInt(env[providerEnvKey(name, "TIMEOUT_MS")]);
+    const fileTimeout = optionalPositiveInt(entry, "timeoutMs");
+    const timeoutSource =
+      envTimeout !== undefined ? providerEnvKey(name, "TIMEOUT_MS") : `config providers.${name}.timeoutMs`;
+
     providers[name] = {
-      apiKey: env[providerEnvKey(name, "API_KEY")] ?? strField(entry, "apiKey") ?? "",
+      apiKey,
       baseUrl,
-      model: (env[providerEnvKey(name, "MODEL")] ?? "").trim() || strField(entry, "model") || defaults.model,
+      model: asString(env[providerEnvKey(name, "MODEL")]) ?? strField(entry, "model") ?? defaults.model,
       enabled: asBool(env[providerEnvKey(name, "ENABLED")]) ?? boolField(entry, "enabled") ?? true,
       priority: asNonNegativeInt(env[providerEnvKey(name, "PRIORITY")]) ?? intField(entry, "priority") ?? 0,
-      timeoutMs:
-        asNonNegativeInt(env[providerEnvKey(name, "TIMEOUT_MS")]) ?? optionalPositiveInt(entry, "timeoutMs"),
+      timeoutMs: perProviderTimeout(envTimeout ?? fileTimeout, timeoutSource, warn),
       options: Object.keys(providerOptions).length ? providerOptions : undefined,
     };
   }
 
-  const timeoutMs = positiveInt(
-    env.WEBSEARCH_TIMEOUT_MS ?? file?.timeoutMs,
-    DEFAULT_TIMEOUT_MS,
-    "WEBSEARCH_TIMEOUT_MS",
-    warn,
-  );
-  const count = Math.min(
-    COUNT_MAX,
-    positiveInt(env.WEBSEARCH_COUNT ?? file?.count, DEFAULT_COUNT, "WEBSEARCH_COUNT", warn),
+  // Read each layer separately so a warning names the variable or the file
+  // field the value actually came from, not whichever one happens to win.
+  const budget = layer(env.WEBSEARCH_TIMEOUT_MS, file?.timeoutMs, "WEBSEARCH_TIMEOUT_MS", "config timeoutMs");
+  const timeoutMs = positiveInt(budget.raw, DEFAULT_TIMEOUT_MS, budget.source, warn, TIMEOUT_MAX_MS);
+  const resultCount = layer(env.WEBSEARCH_COUNT, file?.count, "WEBSEARCH_COUNT", "config count");
+  const count = Math.min(COUNT_MAX, positiveInt(resultCount.raw, DEFAULT_COUNT, resultCount.source, warn));
+  const fanOut = layer(
+    env.WEBSEARCH_MAX_PROVIDERS,
+    file?.maxProviders,
+    "WEBSEARCH_MAX_PROVIDERS",
+    "config maxProviders",
   );
   const maxProviders = Math.max(
     MAX_PROVIDERS_MIN,
-    positiveInt(
-      env.WEBSEARCH_MAX_PROVIDERS ?? file?.maxProviders,
-      DEFAULT_MAX_PROVIDERS,
-      "WEBSEARCH_MAX_PROVIDERS",
-      warn,
-    ),
+    positiveInt(fanOut.raw, DEFAULT_MAX_PROVIDERS, fanOut.source, warn),
   );
 
   return {

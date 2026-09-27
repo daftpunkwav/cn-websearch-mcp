@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CONFIG_FILENAME, readConfigFile, resolveConfigPath } from "../src/config-file.js";
+import { CONFIG_FILENAME, readConfigFile, resolveConfigPath, type ReadFileFn } from "../src/config-file.js";
 
 describe("resolveConfigPath", () => {
   it("prefers the explicit WEBSEARCH_CONFIG path", () => {
@@ -99,5 +99,22 @@ describe("readConfigFile", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  it("redacts credential-looking text from both warning paths", () => {
+    // The file may hold API keys, so nothing from a read failure or a parse
+    // failure may reach stderr unscrubbed.
+    const readWarnings: string[] = [];
+    const failing: ReadFileFn = () => {
+      throw new Error("EACCES: permission denied while opening for key sk-EXAMPLEKEY01234567890");
+    };
+    expect(readConfigFile("/tmp/cn.json", (m) => readWarnings.push(m), failing)).toBeUndefined();
+    expect(readWarnings[0]).toContain("not readable");
+    expect(readWarnings[0]).not.toContain("EXAMPLEKEY01234567890");
+
+    const parseWarnings: string[] = [];
+    const withKey = () => '{"providers":{"kimi":{"apiKey":"sk-EXAMPLEKEY01234567890"}}} broken';
+    expect(readConfigFile("/tmp/cn.json", (m) => parseWarnings.push(m), withKey)).toBeUndefined();
+    expect(parseWarnings[0]).not.toContain("EXAMPLEKEY01234567890");
   });
 });

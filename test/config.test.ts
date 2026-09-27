@@ -92,6 +92,139 @@ describe("provider env vars are derived from the provider name", () => {
   });
 });
 
+describe("blank values never mask a lower layer", () => {
+  // Template files ship empty placeholders (`KIMI_API_KEY=`), and the env layer
+  // sits above the config file, so a blank value must count as "unset".
+  it("falls back to the config file when an env key or base URL is blank", () => {
+    const cfg = loadConfig({
+      env: env({ KIMI_API_KEY: "", STEPFUN_BASE_URL: "  " }),
+      warn: noWarn,
+      file: {
+        providers: {
+          kimi: { apiKey: "from-file", baseUrl: "https://kimi-file.example" },
+          stepfun: { baseUrl: "https://stepfun-file.example" },
+        },
+      },
+    });
+    expect(cfg.providers.kimi.apiKey).toBe("from-file");
+    expect(cfg.providers.kimi.baseUrl).toBe("https://kimi-file.example/v1");
+    expect(cfg.providers.stepfun.baseUrl).toBe("https://stepfun-file.example");
+  });
+
+  it("falls back to built-in defaults when both layers are blank", () => {
+    const defaults = loadConfig({ env: env(), warn: noWarn });
+    const cfg = loadConfig({
+      env: env({ STEPFUN_API_KEY: "", STEPFUN_BASE_URL: "" }),
+      warn: noWarn,
+      file: { providers: { stepfun: { apiKey: "", baseUrl: "" } } },
+    });
+    expect(cfg.providers.stepfun.apiKey).toBe("");
+    expect(cfg.providers.stepfun.baseUrl).toBe(defaults.providers.stepfun.baseUrl);
+  });
+
+  it("trims surrounding whitespace off keys and base URLs", () => {
+    const cfg = loadConfig({ env: env({ KIMI_API_KEY: "  sk-padded  " }), warn: noWarn });
+    expect(cfg.providers.kimi.apiKey).toBe("sk-padded");
+  });
+});
+
+describe("timeout budgets are bounded", () => {
+  // A delay beyond 2^31-1 silently becomes 1ms in setTimeout, which would turn
+  // a typo'd timeout into "every request times out instantly".
+  it("warns and falls back when the global timeout exceeds the maximum", () => {
+    const warnings: string[] = [];
+    const cfg = loadConfig({ env: env({ WEBSEARCH_TIMEOUT_MS: "3000000000" }), warn: (m) => warnings.push(m) });
+    expect(cfg.timeoutMs).toBe(DEFAULT_TIMEOUT_MS);
+    expect(warnings.some((w) => w.includes("WEBSEARCH_TIMEOUT_MS") && w.includes("exceeds the maximum"))).toBe(true);
+  });
+
+  it("keeps a large but valid timeout and rejects an absurd per-provider one", () => {
+    const warnings: string[] = [];
+    const ok = loadConfig({ env: env({ WEBSEARCH_TIMEOUT_MS: "600000" }), warn: (m) => warnings.push(m) });
+    expect(ok.timeoutMs).toBe(600_000);
+    expect(warnings).toEqual([]);
+
+    const bad = loadConfig({ env: env({ STEPFUN_TIMEOUT_MS: "3000000000" }), warn: (m) => warnings.push(m) });
+    expect(bad.providers.stepfun.timeoutMs).toBeUndefined();
+    expect(warnings.some((w) => w.includes("STEPFUN_TIMEOUT_MS") && w.includes("global timeout"))).toBe(true);
+  });
+
+  it("names the config file when the global timeout comes from there", () => {
+    const warnings: string[] = [];
+    const cfg = loadConfig({ env: env(), warn: (m) => warnings.push(m), file: { timeoutMs: 3_000_000_000 } });
+    expect(cfg.timeoutMs).toBe(DEFAULT_TIMEOUT_MS);
+    // Not the environment variable the user never set.
+    expect(warnings[0]).toContain("config timeoutMs");
+    expect(warnings[0]).not.toContain("WEBSEARCH_TIMEOUT_MS");
+  });
+
+  it("treats a per-provider 0 as 'no override' rather than a zero budget", () => {
+    const warnings: string[] = [];
+    const cfg = loadConfig({
+      env: env({ KIMI_TIMEOUT_MS: "0" }),
+      warn: (m) => warnings.push(m),
+      file: { providers: { kimi: { timeoutMs: 9_000 } } },
+    });
+    // 0 is an explicit reset that must beat the file, and it must not be
+    // reported as a 0 ms budget in a status payload.
+    expect(cfg.providers.kimi.timeoutMs).toBeUndefined();
+    expect(warnings).toEqual([]);
+  });
+
+  it("bounds a per-provider timeout coming from the config file too", () => {
+    const warnings: string[] = [];
+    const cfg = loadConfig({ env: env(), warn: (m) => warnings.push(m), file: { providers: { kimi: { timeoutMs: 9_999_999_999 } } } });
+    expect(cfg.providers.kimi.timeoutMs).toBeUndefined();
+    // The warning must name the file field, not an env var the user never set.
+    expect(warnings[0]).toContain("config providers.kimi.timeoutMs");
+  });
+
+  it("names the environment variable when that is where the value came from", () => {
+    const warnings: string[] = [];
+    loadConfig({ env: env({ STEPFUN_TIMEOUT_MS: "9999999999" }), warn: (m) => warnings.push(m) });
+    expect(warnings[0]).toContain("STEPFUN_TIMEOUT_MS");
+  });
+});
+
+describe("base URL transport security", () => {
+  it("stays silent for https endpoints, including the built-in defaults", () => {
+    const warnings: string[] = [];
+    loadConfig({ env: env(), warn: (m) => warnings.push(m) });
+    expect(warnings).toEqual([]);
+  });
+
+  it("warns when a provider would send its key over a non-https endpoint", () => {
+    const warnings: string[] = [];
+    const cfg = loadConfig({
+      env: env({ STEPFUN_BASE_URL: "http://insecure.example", STEPFUN_API_KEY: "k" }),
+      warn: (m) => warnings.push(m),
+    });
+    expect(cfg.providers.stepfun.baseUrl).toBe("http://insecure.example");
+    expect(warnings.some((w) => w.includes("cleartext"))).toBe(true);
+  });
+
+  it("never echoes the configured URL in the warning", () => {
+    const warnings: string[] = [];
+    loadConfig({ env: env({ STEPFUN_BASE_URL: "http://user:hunter2pass@insecure.example", STEPFUN_API_KEY: "k" }), warn: (m) => warnings.push(m) });
+    expect(warnings.join(" ")).not.toContain("hunter2pass");
+  });
+
+  it("warns when a base URL has no scheme at all", () => {
+    const warnings: string[] = [];
+    // ensureV1 only appends /v1; a scheme-less host stays unparseable, and the
+    // request will fail later — so the warning is the only signal the user gets.
+    const cfg = loadConfig({ env: env({ STEPFUN_BASE_URL: "api.stepfun.example", STEPFUN_API_KEY: "k" }), warn: (m) => warnings.push(m) });
+    expect(cfg.providers.stepfun.baseUrl).toBe("api.stepfun.example");
+    expect(warnings.some((w) => w.includes("cleartext"))).toBe(true);
+  });
+
+  it("stays silent when the non-https slot has no key to leak", () => {
+    const warnings: string[] = [];
+    loadConfig({ env: env({ STEPFUN_BASE_URL: "http://insecure.example" }), warn: (m) => warnings.push(m) });
+    expect(warnings).toEqual([]);
+  });
+});
+
 describe("config file layer", () => {
   it("reads provider settings and options from the file", () => {
     const cfg = loadConfig({
@@ -142,9 +275,10 @@ describe("config file layer", () => {
       warn: noWarn,
       file: { providers: { kimi: { timeoutMs: 9_000 }, zhipu: { timeoutMs: 9_000 } } },
     });
-    // 0 is a valid explicit env override (the orchestrator then falls back to the
-    // global budget); the config file value must not win over it.
-    expect(cfg.providers.kimi.timeoutMs).toBe(0);
+    // 0 is a valid explicit env override meaning "no per-provider budget" (the
+    // orchestrator then uses the global one), so the config file value must not
+    // win over it; it is normalized to "unset" so nothing reports a 0 ms budget.
+    expect(cfg.providers.kimi.timeoutMs).toBeUndefined();
     expect(cfg.providers.zhipu.timeoutMs).toBe(5000);
   });
 
