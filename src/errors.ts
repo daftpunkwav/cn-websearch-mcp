@@ -35,8 +35,9 @@ export class HttpError extends Error {
 }
 
 /**
- * Thrown when an upstream response cannot be parsed. Treated as a permanent
- * error: retrying a structurally broken response is usually pointless.
+ * Thrown when an upstream response cannot be used: it is not valid JSON, or it
+ * is refused before parsing for being implausibly large. Treated as a permanent
+ * error — retrying would only fetch the same unusable response again.
  */
 export class ParseError extends Error {
   constructor(message: string) {

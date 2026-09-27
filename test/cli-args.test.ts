@@ -105,7 +105,7 @@ describe("parseArgs", () => {
 });
 
 describe("usage", () => {
-  it("documents every command and the default serve behaviour", () => {
+  it("lists every command and the default serve behaviour", () => {
     const text = usage();
     for (const token of ["search", "status", "test", "repl", "help", "version", "--strategy", "--providers"]) {
       expect(text).toContain(token);

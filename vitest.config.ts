@@ -11,8 +11,8 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       // Coverage is measured over shipped runtime code. src/types.ts is a
-      // type-only module and scripts/ is a live-network CLI, so both are
-      // excluded from the metric.
+      // type-only module; scripts/ (live-network CLI) and test/ never appear
+      // here because `include` is limited to src/**.
       include: ["src/**"],
       exclude: ["src/types.ts"],
       thresholds: { lines: 95, functions: 95, branches: 95, statements: 95 },

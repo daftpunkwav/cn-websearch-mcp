@@ -182,9 +182,9 @@ export function parseArgs(argv: string[]): ParseResult {
       }
       return { ok: false, message: `unknown command: ${token} (try \`search ${token}\` or --help)` };
     }
-    // `test` takes trailing bare words as provider names (documented usage
-    // `test [provider...]`, mirroring the repl's /test); other commands join
-    // them into the query text.
+    // `test` takes trailing bare words as provider names, matching the usage
+    // line `test [provider...]` and the repl's /test; other commands join them
+    // into the query text.
     if (args.command === "test") providerWords.push(token);
     else words.push(token);
   }

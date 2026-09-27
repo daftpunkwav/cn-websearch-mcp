@@ -27,9 +27,9 @@ import type {
   SearchStrategy,
 } from "./types.js";
 
-/** Pause before the single retry; long enough for a rate-limit window to move, short enough to stay invisible. */
+/** Pause before the single retry, so a repeat is not sent in the same instant as the failure. */
 const RETRY_BACKOFF_MS = 250;
-/** 429 means the upstream explicitly asked us to slow down, so wait longer than for an ordinary 5xx. */
+/** A 429 is the upstream asking for a pause, so it gets a longer one than an ordinary 5xx. */
 const RATE_LIMIT_BACKOFF_MS = 1_000;
 
 export class NoProviderConfiguredError extends Error {

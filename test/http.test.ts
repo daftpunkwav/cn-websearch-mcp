@@ -1,6 +1,6 @@
 /**
  * @file test/http
- * @description HTTP helper layer unit tests: timeout merging, external aborts, error classification and truncation.
+ * @description HTTP helper layer unit tests: timeout merging, external aborts, error classification, response body size limits and message truncation.
  */
 
 import { describe, expect, it } from "vitest";

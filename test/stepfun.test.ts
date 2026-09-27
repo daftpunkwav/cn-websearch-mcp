@@ -63,7 +63,7 @@ describe("stepfun provider", () => {
     ]);
   });
 
-  it("clamps n into the documented 1..20 range", async () => {
+  it("clamps n into the API's 1..20 range", async () => {
     let seen: any;
     const fetchImpl: FetchLike = async (_url, init) => {
       seen = JSON.parse(init!.body as string);

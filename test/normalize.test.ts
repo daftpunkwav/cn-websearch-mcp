@@ -1,7 +1,6 @@
 /**
  * @file test/normalize
- * @description Normalization helper unit tests: clamping, truncation, date/URL normalization,
- * shape assertions, and multi-source merging (canonicalUrl / mergeItems / mergeSourceItems).
+ * @description Normalization helper unit tests: clamping, truncation, date/URL normalization, control-character stripping, shape assertions, and multi-source merging (canonicalUrl / mergeItems / mergeSourceItems).
  */
 
 import { describe, expect, it } from "vitest";

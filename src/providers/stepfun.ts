@@ -5,7 +5,7 @@
  * Responsibilities:
  * - POST {base}/v1/search with body { query, n } (docs checked on 2026-09-15)
  * - Map results[] entries {url,title,time,snippet,content} to normalized items
- * - Clamp n to the documented 1..20 range; keep the protocol layer thin
+ * - Clamp n to the API's 1..20 range; keep the protocol layer thin
  * - Configurable options: category
  */
 

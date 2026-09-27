@@ -158,8 +158,8 @@ describe("CLI process end-to-end", () => {
       return;
     }
     // If it returned normally, it must have been the success path. stdout must
-    // be empty (no one-shot CLI output); stderr may carry the readiness banner,
-    // which is the documented behavior of the serve path.
+    // be empty (no one-shot CLI output); stderr carries the readiness banner
+    // the serve path writes once the transport is connected.
     expect(outcome.code).toBe(0);
     expect(outcome.stdout).toBe("");
     expect(outcome.stderr).toMatch(/cn-websearch-mcp.*ready/);

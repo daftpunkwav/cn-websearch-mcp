@@ -43,7 +43,7 @@ describe("neutral defaults", () => {
       expect(cfg.providers[name]).toMatchObject({ enabled: true, priority: 0, apiKey: "" });
       expect(cfg.providers[name].timeoutMs).toBeUndefined();
     }
-    // mimo's location options no longer ship any built-in city/province.
+    // mimo's defaults carry no location at all — not even a country or a city.
     expect(cfg.providers.mimo.options).toBeUndefined();
   });
 
@@ -442,7 +442,7 @@ describe("gateway-level env settings", () => {
     expect(loadConfig({ env: env({ WEBSEARCH_COUNT: "999" }), warn: noWarn }).count).toBe(50);
   });
 
-  it("accepts every documented boolean spelling", () => {
+  it("accepts every boolean spelling the config layer supports", () => {
     for (const raw of ["1", "true", "yes", "on", "TRUE"]) {
       expect(loadConfig({ env: env({ WEBSEARCH_DEDUPE: raw }), warn: noWarn }).dedupe).toBe(true);
     }

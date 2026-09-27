@@ -76,8 +76,8 @@ describe("loadDotEnv", () => {
       writeFileSync(join(dir, ".env"), "toString=from-file");
       const env: Record<string, string> = {};
       loadDotEnv(dir, env as NodeJS.ProcessEnv);
-      // The old implementation used `key in env` for existence and would mistakenly see the
-      // prototype-chain toString as already present, skipping it.
+      // `key in env` would report the prototype-chain toString as already
+      // present and skip the line, so the check must be own-property only.
       expect(env).toEqual({ toString: "from-file" });
     } finally {
       rmSync(dir, { recursive: true, force: true });

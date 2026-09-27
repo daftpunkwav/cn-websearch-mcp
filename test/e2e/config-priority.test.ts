@@ -6,7 +6,7 @@
  * - Drive the real binary from a synthetic CWD that holds a chosen .env file
  * - Confirm provider activation depends on the dotenv layer, not the parent env
  * - Confirm env variables supplied to the subprocess beat the .env file
- *   (the priority order documented in README)
+ *   (env < config file < environment, so env sits on top)
  * - Confirm runtime-evaluated booleans / numbers / arrays round-trip through
  *   env vars and land in `status --json` correctly
  *

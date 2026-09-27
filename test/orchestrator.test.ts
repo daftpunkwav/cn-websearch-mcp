@@ -1,6 +1,6 @@
 /**
  * @file test/orchestrator
- * @description Orchestration layer unit tests: retries, fallback, timeout circuit-breaking, multi-source aggregation and strategy dispatch.
+ * @description Orchestration layer unit tests: retries with backoff, caller cancellation, fallback, timeout circuit-breaking, multi-source aggregation and strategy dispatch.
  */
 
 import { describe, expect, it } from "vitest";

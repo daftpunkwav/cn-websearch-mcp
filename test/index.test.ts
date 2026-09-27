@@ -1,6 +1,6 @@
 /**
  * @file test/index
- * @description Entry point assembly unit tests: handler registration, auto-start detection and fatal-error exit.
+ * @description Entry point assembly unit tests: handler registration, request signal forwarding, auto-start detection and fatal-error exit.
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";

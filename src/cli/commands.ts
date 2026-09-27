@@ -91,7 +91,7 @@ export async function cmdSearch(deps: CliDeps, args: CliArgs): Promise<number> {
   const search = deps.search ?? runSearch;
   const strategy: SearchStrategy = args.strategy ?? config.strategy;
   // Same argument contract as the MCP tool layer: a count is clamped to the
-  // documented range and a query is capped, so both surfaces search alike.
+  // shared range and a query is capped, so both surfaces search alike.
   const count = args.count === undefined ? config.count : clampInt(args.count, config.count, COUNT_MIN, COUNT_MAX);
   const query = truncate(args.query.trim(), QUERY_MAX);
   try {

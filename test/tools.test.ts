@@ -1,7 +1,7 @@
 /**
  * @file test/tools
  * @description Tool layer unit tests: argument validation (strategy/provider subsets), defaults,
- * structured failures and dependency injection.
+ * caller cancellation, redacted error output and dependency injection.
  */
 
 import { describe, expect, it, vi } from "vitest";

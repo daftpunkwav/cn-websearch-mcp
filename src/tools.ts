@@ -11,10 +11,10 @@
 
 // MCP tool layer. Upward it depends only on the injected deps object; downward
 // it only knows the SearchProvider interface and the orchestration entry — no
-// concrete provider adapter implementation (provider_status only does a
-// read-only enumeration over the name list exported by the registry), keeping
-// the layers decoupled. Provider-name rules live in provider-selection.ts, which
-// the CLI shares, so both surfaces accept exactly the same names.
+// concrete provider adapter implementation (provider_status only enumerates the
+// KNOWN_PROVIDERS name list, which is data, not behaviour), keeping the layers
+// decoupled. Provider-name rules live in provider-selection.ts, which the CLI
+// shares, so both surfaces accept exactly the same names.
 
 import { COUNT_MAX, COUNT_MIN, KNOWN_PROVIDERS, QUERY_MAX, type GatewayConfig } from "./config.js";
 import { AllProvidersFailedError, CallCancelledError, runSearch, type DispatchOptions } from "./orchestrator.js";

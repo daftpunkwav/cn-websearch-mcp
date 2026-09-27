@@ -47,8 +47,8 @@ const TIMEOUT_MAX_MS = 600_000;
 
 /**
  * Search-argument bounds shared by every entry surface (MCP tool layer and
- * CLI), so a `count` means the same range wherever it is supplied and the
- * documented tool schema cannot drift from the CLI's own help text.
+ * CLI), so a `count` means the same range wherever it is supplied and the tool
+ * schema cannot drift from the CLI's own help text.
  */
 export const COUNT_MIN = 1;
 export const COUNT_MAX = 50;

@@ -117,7 +117,7 @@ describe("cmdSearch", () => {
         return okResult("stepfun");
       },
     });
-    // --count is documented as 1-50 and a query is capped, on this surface too.
+    // Same bounds as the tool layer: count clamps to 1-50, query caps at 400.
     await cmdSearch(deps, searchArgs({ count: 999, query: "  " + "q".repeat(500) + "  " }));
     expect(seen?.count).toBe(50);
     expect(seen?.query).toHaveLength(400);
