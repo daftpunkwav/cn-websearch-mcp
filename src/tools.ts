@@ -13,18 +13,18 @@
 // it only knows the SearchProvider interface and the orchestration entry — no
 // concrete provider adapter implementation (provider_status only does a
 // read-only enumeration over the name list exported by the registry), keeping
-// the layers decoupled.
+// the layers decoupled. Provider-name rules live in provider-selection.ts, which
+// the CLI shares, so both surfaces accept exactly the same names.
 
-import { KNOWN_PROVIDERS, type GatewayConfig } from "./config.js";
-import { AllProvidersFailedError, runSearch, type DispatchOptions } from "./orchestrator.js";
+import { COUNT_MAX, COUNT_MIN, KNOWN_PROVIDERS, QUERY_MAX, type GatewayConfig } from "./config.js";
+import { AllProvidersFailedError, CallCancelledError, runSearch, type DispatchOptions } from "./orchestrator.js";
+import { selectProviders } from "./provider-selection.js";
+import { summarizeError } from "./errors.js";
 import { clampInt, truncate } from "./normalize.js";
 import { SERVER_NAME } from "./server-info.js";
 import type { AttemptRecord, NormalizedSearchResult, SearchProvider, SearchRequest, SearchStrategy } from "./types.js";
 
 const STRATEGIES: readonly SearchStrategy[] = ["fallback", "aggregate"];
-const COUNT_MIN = 1;
-const COUNT_MAX = 50;
-const QUERY_MAX = 400;
 
 export interface ToolOutput {
   content: Array<{ type: "text"; text: string }>;
@@ -107,40 +107,6 @@ export function buildToolDefinitions(defaultCount: number, defaultStrategy: Sear
   ] as const;
 }
 
-/** Provider selection result: adapters on success, or an error ready to return to the caller on failure. */
-type ProviderSelection = { ok: true; providers: SearchProvider[] } | { ok: false; error: string };
-
-/**
- * Filter usable adapters by a requested name subset. Fails explicitly instead
- * of silently ignoring: the caller named specific providers, so an unmet
- * request must be reported back.
- */
-function selectProviders(requested: unknown, chain: SearchProvider[]): ProviderSelection {
-  if (requested === undefined) return { ok: true, providers: chain };
-  if (!Array.isArray(requested) || requested.some((x) => typeof x !== "string")) {
-    return { ok: false, error: "invalid arguments: 'providers' must be an array of provider names" };
-  }
-  const names = [...new Set(requested.map((x) => x.trim().toLowerCase()).filter((x) => x !== ""))];
-  if (!names.length) return { ok: false, error: "invalid arguments: 'providers' must not be empty" };
-
-  const unknown = names.filter((n) => !(KNOWN_PROVIDERS as readonly string[]).includes(n));
-  if (unknown.length) {
-    return {
-      ok: false,
-      error: `unknown provider(s): ${unknown.join(", ")} (known: ${KNOWN_PROVIDERS.join(", ")})`,
-    };
-  }
-  const byName = new Map(chain.map((p) => [p.name, p]));
-  const unavailable = names.filter((n) => !byName.has(n));
-  if (unavailable.length) {
-    return {
-      ok: false,
-      error: `provider(s) unavailable: ${unavailable.join(", ")} (disabled or missing API key)`,
-    };
-  }
-  return { ok: true, providers: names.map((n) => byName.get(n)!) };
-}
-
 /** Validate the strategy argument: falls back to the configured default when not provided. */
 function selectStrategy(requested: unknown, fallback: SearchStrategy): SearchStrategy | "invalid" {
   if (requested === undefined) return fallback;
@@ -178,8 +144,18 @@ export function createGatewayTools(deps: GatewayToolsDeps) {
     };
   }
 
-  /** Dispatch one tools/call request; structured error for unknown tools. */
-  async function call(name: string, args: Record<string, unknown>): Promise<ToolOutput> {
+  /**
+   * Dispatch one tools/call request; structured error for unknown tools.
+   *
+   * `signal` is the MCP client's own cancellation signal: aborting it stops the
+   * upstream search instead of running the whole fallback chain against a peer
+   * that already gave up.
+   */
+  async function call(
+    name: string,
+    args: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<ToolOutput> {
     if (name === "provider_status") {
       return textContent(providerStatus());
     }
@@ -204,28 +180,29 @@ export function createGatewayTools(deps: GatewayToolsDeps) {
       }
 
       try {
-        const out = await searchFn({ query: truncate(query, QUERY_MAX), count }, {
-          providers: selection.providers,
-          timeoutMs: config.timeoutMs,
-          maxProviders: config.maxProviders,
-          dedupe: config.dedupe,
-          strategy,
-        });
+        const out = await searchFn(
+          { query: truncate(query, QUERY_MAX), count },
+          {
+            providers: selection.providers,
+            timeoutMs: config.timeoutMs,
+            maxProviders: config.maxProviders,
+            dedupe: config.dedupe,
+            strategy,
+            signal,
+          },
+        );
         return textContent(out);
       } catch (err) {
-        // All providers failing is an expected business failure: return the audit trail to the caller as-is.
-        if (err instanceof AllProvidersFailedError) {
+        // A business failure (every provider failed) and a cancellation (the
+        // caller went away) both arrive as an audit trail, so return it as-is
+        // instead of flattening it into an unexpected error.
+        if (err instanceof AllProvidersFailedError || err instanceof CallCancelledError) {
           return textContent({ error: err.message, attempts: err.attempts }, true);
         }
-        // Any other exception is unexpected: log the full error to stderr, return only a safe summary.
+        // Any other exception is unexpected: log the full error to stderr, return only a redacted summary,
+        // so no code path can echo credential-looking text back to a client.
         console.error(`[${SERVER_NAME}] unexpected error:`, err);
-        return textContent(
-          {
-            error: err instanceof Error ? err.message : String(err),
-            attempts: [] as AttemptRecord[],
-          },
-          true,
-        );
+        return textContent({ error: summarizeError(err), attempts: [] as AttemptRecord[] }, true);
       }
     }
 

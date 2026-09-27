@@ -30,10 +30,16 @@ export const server = new Server({ name: SERVER_NAME, version: SERVER_VERSION },
 
 server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: tools.list() }));
 
-server.setRequestHandler(CallToolRequestSchema, async (request) =>
+server.setRequestHandler(CallToolRequestSchema, async (request, extra) =>
   // ToolOutput is a structural subset of CallToolResult; the SDK handler's
   // type is a wide union of result shapes, so this narrowing cast is safe.
-  tools.call(request.params.name, (request.params.arguments ?? {}) as Record<string, unknown>) as Promise<CallToolResult>,
+  // extra.signal fires when the client cancels the request or the connection
+  // drops; it is forwarded so the search stops instead of running on.
+  tools.call(
+    request.params.name,
+    (request.params.arguments ?? {}) as Record<string, unknown>,
+    extra.signal,
+  ) as Promise<CallToolResult>,
 );
 
 /** MCP stdio server: connecting the transport completes startup (driven by the MCP client afterwards). */

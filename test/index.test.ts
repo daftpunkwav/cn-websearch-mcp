@@ -65,11 +65,33 @@ describe("server entry point", () => {
     const mod = await importEntryPoint();
     const callHandler = mocks.setRequestHandler.mock.calls[1]![1] as (
       req: { params: { name: string; arguments?: Record<string, unknown> } },
+      extra: { signal: AbortSignal },
     ) => Promise<{ content: Array<{ text: string }>; isError?: boolean }>;
-    const res = await callHandler({ params: { name: "provider_status" } });
+    // The SDK always passes a RequestHandlerExtra carrying the request's signal;
+    // the handler must read it without assuming anything else is present.
+    const res = await callHandler(
+      { params: { name: "provider_status" } },
+      { signal: new AbortController().signal },
+    );
     expect(res.isError).toBeUndefined();
     expect(JSON.parse(res.content[0]!.text)).toHaveProperty("providers");
     void mod;
+  });
+
+  it("tools/call handler survives an already-cancelled request", async () => {
+    await importEntryPoint();
+    const callHandler = mocks.setRequestHandler.mock.calls[1]![1] as (
+      req: { params: { name: string; arguments?: Record<string, unknown> } },
+      extra: { signal: AbortSignal },
+    ) => Promise<{ content: Array<{ text: string }>; isError?: boolean }>;
+    const controller = new AbortController();
+    controller.abort();
+    // No provider is configured in this environment, so the call fails either
+    // way; what matters is that it fails as a structured tool error rather than
+    // throwing out of the handler.
+    const res = await callHandler({ params: { name: "web_search", arguments: { query: "q" } } }, { signal: controller.signal });
+    expect(res.isError).toBe(true);
+    expect(JSON.parse(res.content[0]!.text).error).toBeTruthy();
   });
 
   it("does not auto-start when argv[1] is undefined", async () => {
@@ -78,7 +100,8 @@ describe("server entry point", () => {
     try {
       await importEntryPoint();
     } finally {
-      process.argv[1] = original;
+      if (original === undefined) delete process.argv[1];
+      else process.argv[1] = original;
     }
     expect(mocks.connect).not.toHaveBeenCalled();
   });

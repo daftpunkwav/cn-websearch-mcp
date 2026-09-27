@@ -84,6 +84,15 @@ describe("web_search argument validation", () => {
     expect(parse(out).error).toContain("'strategy' must be one of fallback, aggregate");
   });
 
+  it("rejects a non-string strategy as well as an unknown one", async () => {
+    const tools = createGatewayTools(deps([alive()]));
+    for (const strategy of [42, null, ["fallback"], { name: "fallback" }]) {
+      const out = await tools.call("web_search", { query: "q", strategy });
+      expect(out.isError).toBe(true);
+      expect(parse(out).error).toContain("'strategy' must be one of fallback, aggregate");
+    }
+  });
+
   it("rejects a malformed providers argument", async () => {
     const tools = createGatewayTools(deps([alive()]));
     for (const providers of ["stepfun", [1, 2], []]) {
@@ -155,6 +164,64 @@ describe("web_search dispatch", () => {
     await tools.call("web_search", { query: "q", strategy: "aggregate", providers: ["kimi"] });
     expect(seen.strategy).toBe("aggregate");
     expect(seen.providers.map((p: SearchProvider) => p.name)).toEqual(["kimi"]);
+  });
+
+  it("forwards the caller's cancellation signal into the search options", async () => {
+    let seen: unknown;
+    const controller = new AbortController();
+    const tools = createGatewayTools({
+      ...deps([alive()]),
+      searchFn: async (_req, opts) => {
+        seen = opts.signal;
+        return { results: [], _meta: { provider: "stepfun", total_latency_ms: 0, attempts: [] } };
+      },
+    });
+    await tools.call("web_search", { query: "q" }, controller.signal);
+    expect(seen).toBe(controller.signal);
+  });
+
+  it("passes no signal when the caller supplies none", async () => {
+    let seen: unknown = "unset";
+    const tools = createGatewayTools({
+      ...deps([alive()]),
+      searchFn: async (_req, opts) => {
+        seen = opts.signal;
+        return { results: [], _meta: { provider: "stepfun", total_latency_ms: 0, attempts: [] } };
+      },
+    });
+    await tools.call("web_search", { query: "q" });
+    expect(seen).toBeUndefined();
+  });
+
+  it("returns the audit trail for a cancellation instead of logging it as unexpected", async () => {
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const controller = new AbortController();
+    controller.abort();
+    const out = await createGatewayTools(deps([alive()])).call("web_search", { query: "q" }, controller.signal);
+    expect(out.isError).toBe(true);
+    const body = parse(out);
+    expect(body.error).toContain("cancelled");
+    // The trail survives, so a caller can see what was in flight when it gave up.
+    expect(body.attempts).toEqual([{ provider: "stepfun", status: "cancelled", latency_ms: 0 }]);
+    // A normal lifecycle event is not an unexpected error.
+    expect(errSpy).not.toHaveBeenCalled();
+    errSpy.mockRestore();
+  });
+
+  it("redacts credential-looking text in unexpected errors", async () => {
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const tools = createGatewayTools({
+      ...deps([alive()]),
+      searchFn: async () => {
+        throw new Error("upstream rejected key sk-EXAMPLEKEY01234567890");
+      },
+    });
+    const out = await tools.call("web_search", { query: "q" });
+    expect(out.isError).toBe(true);
+    // Same invariant as the audit trail: nothing key-shaped reaches a client.
+    expect(out.content[0]!.text).not.toContain("EXAMPLEKEY01234567890");
+    expect(out.content[0]!.text).toContain("sk-***");
+    errSpy.mockRestore();
   });
 
   it("returns the orchestrator payload unchanged on success", async () => {
