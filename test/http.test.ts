@@ -5,7 +5,7 @@
 
 import { describe, expect, it } from "vitest";
 import { postJson } from "../src/http.js";
-import { HttpError, NetworkError, TimeoutError } from "../src/errors.js";
+import { HttpError, NetworkError, ParseError, TimeoutError } from "../src/errors.js";
 import type { FetchLike } from "../src/types.js";
 
 const okFetch: FetchLike = async () =>
@@ -140,10 +140,63 @@ describe("postJson", () => {
     expect(err.message).toContain("ak-***");
   });
 
+  it("propagates an Error abort reason from the body read unchanged", async () => {
+    // The orchestrator's own TimeoutError must survive the body read; wrapping
+    // it again would lose the identity the audit trail classifies on.
+    const ac = new AbortController();
+    const reason = new TimeoutError("budget spent");
+    const broken = { status: 200, text: () => Promise.reject(new Error("stream broken")) } as unknown as Response;
+    const f: FetchLike = async () => {
+      ac.abort(reason);
+      return broken;
+    };
+    const err = await postJson("https://x.example", {}, {}, { timeoutMs: 5_000, signal: ac.signal, fetchImpl: f }).catch(
+      (e) => e,
+    );
+    expect(err).toBe(reason);
+  });
+
+  it("parses a body that starts with a UTF-8 BOM", async () => {
+    const f: FetchLike = async () =>
+      new Response("\uFEFF" + JSON.stringify({ choices: [] }), { status: 200, headers: { "Content-Type": "application/json" } });
+    const res = await postJson("https://x.example", {}, {}, { ...base, fetchImpl: f });
+    expect(res.json).toEqual({ choices: [] });
+  });
+
   it("returns json null for non-JSON success bodies", async () => {
     const f: FetchLike = async () => new Response("<html>ok</html>", { status: 200 });
     const res = await postJson("https://x.example", {}, {}, { ...base, fetchImpl: f });
     expect(res.status).toBe(200);
     expect(res.json).toBeNull();
+  });
+
+  it("refuses a body whose Content-Length exceeds the cap", async () => {
+    const huge = new Response("{}", { status: 200, headers: { "Content-Length": String(64 * 1024 * 1024) } });
+    const f: FetchLike = async () => huge;
+    const err = await postJson("https://x.example", {}, {}, { ...base, fetchImpl: f }).catch((e) => e);
+    // A permanent failure: retrying an oversized body would just re-download it.
+    expect(err).toBeInstanceOf(ParseError);
+    expect((err as ParseError).message).toContain("too large");
+  });
+
+  it("refuses a streamed body that grows past the cap", async () => {
+    const chunk = new TextEncoder().encode("y".repeat(1024));
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (let i = 0; i < 9000; i++) controller.enqueue(chunk);
+        controller.close();
+      },
+    });
+    const f: FetchLike = async () => new Response(stream, { status: 200 });
+    const err = await postJson("https://x.example", {}, {}, { ...base, fetchImpl: f }).catch((e) => e);
+    expect(err).toBeInstanceOf(ParseError);
+    expect((err as ParseError).message).toContain("too large");
+  });
+
+  it("still reads a large-but-legal body through the streaming path", async () => {
+    const payload = JSON.stringify({ choices: [], pad: "z".repeat(300_000) });
+    const f: FetchLike = async () => new Response(payload, { status: 200 });
+    const res = await postJson("https://x.example", {}, {}, { ...base, fetchImpl: f });
+    expect(res.text).toHaveLength(payload.length);
   });
 });

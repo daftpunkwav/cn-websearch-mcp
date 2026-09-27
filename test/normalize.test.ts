@@ -15,6 +15,8 @@ import {
   mergeItems,
   mergeSourceItems,
   normalizeDate,
+  str,
+  stripControlChars,
   toItem,
   truncate,
 } from "../src/normalize.js";
@@ -52,6 +54,28 @@ describe("truncate / normalizeDate", () => {
     expect(normalizeDate(1e21)).toBeUndefined(); // finite but outside the Date range → toISOString throws
     expect(normalizeDate(NaN)).toBeUndefined(); // fails the finiteness check
     expect(normalizeDate({ obj: true })).toBeUndefined(); // neither a string nor a number
+  });
+});
+
+describe("untrusted upstream text is stripped of control characters", () => {
+  it("removes ANSI escapes and other C0/C1 controls but keeps newlines", () => {
+    // A title carrying ESC sequences could repaint or forge CLI output lines.
+    expect(stripControlChars("\u001b[31mRED\u001b[0m")).toBe("[31mRED[0m");
+    expect(stripControlChars("a\u0000b\u0007c\u007fd\u009fe")).toBe("abcde");
+    expect(stripControlChars("line1\nline2")).toBe("line1\nline2");
+    expect(stripControlChars("plain text")).toBe("plain text");
+  });
+
+  it("strips at the single chokepoint so every adapter is covered", () => {
+    expect(str("\u001b[2Jtitle")).toBe("[2Jtitle");
+    expect(str(42)).toBe("");
+    expect(normalizeDate(" 2026-01-02 \u001b[0m")).toBe("2026-01-02 [0m");
+  });
+
+  it("leaves a result item free of escape sequences", () => {
+    const item = toItem({ title: "\u001b[31mEvil\u001b[0m", url: "https://a.example", snippet: "x\u001b]0;title\u0007y" });
+    expect(item?.title).toBe("[31mEvil[0m");
+    expect(item?.snippet).toBe("x]0;titley");
   });
 });
 

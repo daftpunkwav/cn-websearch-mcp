@@ -5,6 +5,7 @@
  * Responsibilities:
  * - Coerce raw provider fields into normalized result items
  * - Numeric clamping, string truncation, date and URL normalization
+ * - Strip control characters from untrusted upstream text (single chokepoint in `str`)
  * - URL canonicalization and multi-source result merging (used by the aggregate strategy)
  * - Assert on payload shapes, throwing a readable ParseError with context on failure
  */
@@ -39,7 +40,7 @@ export function truncate(s: string, max: number): string {
 
 /** Non-empty string dates pass through; numbers are treated as unix seconds and converted to ISO 8601. */
 export function normalizeDate(d: unknown): string | undefined {
-  if (typeof d === "string" && d.trim() !== "") return d.trim();
+  if (typeof d === "string" && d.trim() !== "") return stripControlChars(d).trim() || undefined;
   if (typeof d === "number" && Number.isFinite(d)) {
     try {
       return new Date(d * 1000).toISOString();
@@ -68,9 +69,24 @@ export function asArray(v: unknown, what: string): unknown[] {
   throw new ParseError(`${what}: expected array`);
 }
 
-/** Safe string getter: returns an empty string for anything that is not a string. */
+/**
+ * Control characters that must never reach a caller: C0 except the newline
+ * that multi-line LLM answers legitimately contain, plus DEL and the C1 block.
+ * Upstream fields (title, url, snippet, content) are untrusted text that the
+ * CLI prints straight to a terminal, where an escape sequence could repaint or
+ * forge output lines. Stripping happens once, in `str` / `normalizeDate`, so
+ * every adapter is covered without repeating the concern.
+ */
+const CONTROL_CHARS = /[\u0000-\u0009\u000B-\u001F\u007F-\u009F]/g;
+
+/** Remove control characters from untrusted upstream text. */
+export function stripControlChars(s: string): string {
+  return s.replace(CONTROL_CHARS, "");
+}
+
+/** Safe string getter: returns an empty string for anything that is not a string, control characters stripped. */
 export function str(v: unknown): string {
-  return typeof v === "string" ? v : "";
+  return typeof v === "string" ? stripControlChars(v) : "";
 }
 
 /**
