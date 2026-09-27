@@ -11,23 +11,40 @@
 // One-shot commands. Exit code convention: 0 success; 1 runtime failure (search failed / no usable
 // provider); 2 usage error (returned by the entry point when parsing fails).
 
-import type { GatewayConfig } from "../config.js";
-import { AllProvidersFailedError, NoProviderConfiguredError, runSearch } from "../orchestrator.js";
-import { probeAll, type ProbeRow } from "../probe.js";
+import { COUNT_MAX, COUNT_MIN, QUERY_MAX, type GatewayConfig } from "../config.js";
+import {
+  AllProvidersFailedError,
+  CallCancelledError,
+  NoProviderConfiguredError,
+  runSearch,
+  type DispatchOptions,
+} from "../orchestrator.js";
+import { probeAll, type ProbeOptions, type ProbeRow } from "../probe.js";
+import { selectProviders } from "../provider-selection.js";
 import { summarizeError } from "../errors.js";
+import { clampInt, truncate } from "../normalize.js";
 import { formatProbeTable, formatSearchResult, formatStatus, redactedConfig } from "./render.js";
 import type { CliArgs } from "./args.js";
-import type { SearchProvider, SearchStrategy } from "../types.js";
+import type { NormalizedSearchResult, SearchProvider, SearchRequest, SearchStrategy } from "../types.js";
 import type { GatewayRuntime } from "../runtime.js";
-import { KNOWN_PROVIDERS } from "../config.js";
+
+/** Search implementation used by cmdSearch; injectable so tests never need the network. */
+export type CliSearchFn = (req: SearchRequest, opts: DispatchOptions) => Promise<NormalizedSearchResult>;
+
+/** Probe implementation used by cmdTest; injectable so tests never need the network. */
+export type CliProbeFn = (
+  providers: SearchProvider[],
+  req: SearchRequest,
+  opts: ProbeOptions,
+) => Promise<ProbeRow[]>;
 
 /** CLI dependencies: runtime + output streams + injectable search/probe implementations (for tests). */
 export interface CliDeps {
   runtime: GatewayRuntime;
   output: NodeJS.WritableStream;
   error: NodeJS.WritableStream;
-  search?: typeof runSearch;
-  probe?: typeof probeAll;
+  search?: CliSearchFn;
+  probe?: CliProbeFn;
 }
 
 /** Default probe query for the `test` command: generic and non-personalized. */
@@ -37,27 +54,17 @@ function write(stream: NodeJS.WritableStream, text: string): void {
   stream.write(text.endsWith("\n") ? text : text + "\n");
 }
 
-/** Filters out usable adapters by name; returns an error message or the selected list. */
+/**
+ * Restrict the call to the named providers, using the same name rules as the MCP
+ * tool layer. An absent or empty list means "no filter": the CLI already rejects
+ * an empty --providers at parse time, so this only covers a direct caller.
+ */
 export function pickProviders(
   names: string[] | undefined,
   chain: SearchProvider[],
 ): { ok: true; providers: SearchProvider[] } | { ok: false; error: string } {
-  if (!names || !names.length) return { ok: true, providers: chain };
-  // Normalize like the MCP tool layer: provider names are case-insensitive;
-  // flag and positional names are deduplicated preserving first occurrence.
-  const normalized = [
-    ...new Set(names.map((n) => n.trim().toLowerCase()).filter((n) => n !== "")),
-  ];
-  const unknown = normalized.filter((n) => !(KNOWN_PROVIDERS as readonly string[]).includes(n));
-  if (unknown.length) {
-    return { ok: false, error: `unknown provider(s): ${unknown.join(", ")} (known: ${KNOWN_PROVIDERS.join(", ")})` };
-  }
-  const byName = new Map(chain.map((p) => [p.name, p]));
-  const unavailable = normalized.filter((n) => !byName.has(n));
-  if (unavailable.length) {
-    return { ok: false, error: `provider(s) unavailable: ${unavailable.join(", ")} (disabled or missing API key)` };
-  }
-  return { ok: true, providers: normalized.map((n) => byName.get(n)!) };
+  if (!names?.length) return { ok: true, providers: chain };
+  return selectProviders(names, chain);
 }
 
 /**
@@ -83,9 +90,13 @@ export async function cmdSearch(deps: CliDeps, args: CliArgs): Promise<number> {
 
   const search = deps.search ?? runSearch;
   const strategy: SearchStrategy = args.strategy ?? config.strategy;
+  // Same argument contract as the MCP tool layer: a count is clamped to the
+  // documented range and a query is capped, so both surfaces search alike.
+  const count = args.count === undefined ? config.count : clampInt(args.count, config.count, COUNT_MIN, COUNT_MAX);
+  const query = truncate(args.query.trim(), QUERY_MAX);
   try {
     const out = await search(
-      { query: args.query, count: args.count ?? config.count },
+      { query, count },
       {
         providers: picked.providers,
         timeoutMs: config.timeoutMs,
@@ -97,7 +108,9 @@ export async function cmdSearch(deps: CliDeps, args: CliArgs): Promise<number> {
     write(output, args.json ? JSON.stringify(out, null, 2) : formatSearchResult(out));
     return 0;
   } catch (err) {
-    if (err instanceof AllProvidersFailedError) {
+    // Both structured failures carry an audit trail; print it the same way
+    // instead of special-casing each one.
+    if (err instanceof AllProvidersFailedError || err instanceof CallCancelledError) {
       write(error, `error: ${err.message}`);
       for (const a of err.attempts) {
         write(error, `  - ${a.provider}: ${a.status} (${a.latency_ms}ms)${a.error ? ` ${a.error}` : ""}`);
@@ -140,9 +153,16 @@ export async function cmdTest(deps: CliDeps, args: CliArgs): Promise<number> {
   }
 
   const probe = deps.probe ?? probeAll;
+  // Same argument bounds as `search` and the MCP tool layer, so a probe is sent
+  // the same shape of request whichever surface asks for it.
   const rows: ProbeRow[] = await probe(
     picked.providers,
-    { query: args.query || DEFAULT_PROBE_QUERY, count: args.count ?? runtime.config.count },
+    {
+      query: truncate(args.query || DEFAULT_PROBE_QUERY, QUERY_MAX),
+      count: args.count === undefined
+        ? runtime.config.count
+        : clampInt(args.count, runtime.config.count, COUNT_MIN, COUNT_MAX),
+    },
     { timeoutMs: runtime.config.timeoutMs },
   );
   write(output, args.json ? JSON.stringify(rows, null, 2) : formatProbeTable(rows));

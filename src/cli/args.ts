@@ -74,6 +74,8 @@ export function usage(): string {
     "  cn-websearch-mcp search --strategy aggregate --count 12 \"rust async runtime\"",
     "  cn-websearch-mcp test stepfun zhipu",
     "  WEBSEARCH_STRATEGY=aggregate cn-websearch-mcp search hello",
+    "",
+    "A query longer than 400 characters is truncated; --count is clamped to 1-50.",
   ].join("\n");
 }
 
@@ -119,6 +121,15 @@ export function parseArgs(argv: string[]): ParseResult {
       i++;
       return next;
     };
+    // Numeric options additionally accept a negative literal, so "-n -5" is
+    // reported as an invalid value instead of a missing one.
+    const takeNumberValue = (): string | undefined => {
+      if (inlineValue !== undefined) return inlineValue;
+      const next = argv[i + 1];
+      if (next === undefined || (next.startsWith("-") && !/^-\d/.test(next))) return undefined;
+      i++;
+      return next;
+    };
 
     if (flag === "--json") {
       args.json = true;
@@ -129,7 +140,7 @@ export function parseArgs(argv: string[]): ParseResult {
       continue;
     }
     if (flag === "-n" || flag === "--count") {
-      const value = takeValue();
+      const value = takeNumberValue();
       const n = value === undefined ? undefined : parsePositiveInt(value);
       if (n === undefined) return { ok: false, message: `invalid --count value: ${value ?? "(missing)"}` };
       args.count = n;

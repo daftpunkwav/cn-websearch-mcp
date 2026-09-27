@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import { PassThrough } from "node:stream";
 import { runRepl } from "../src/cli/repl.js";
 import { createRuntime } from "../src/runtime.js";
-import type { CliDeps } from "../src/cli/commands.js";
+import { DEFAULT_PROBE_QUERY, type CliDeps } from "../src/cli/commands.js";
 import type { NormalizedSearchResult, SearchProvider } from "../src/types.js";
 
 const okResult = (provider: string): NormalizedSearchResult => ({
@@ -31,7 +31,6 @@ async function session(
   });
   const deps: CliDeps = {
     runtime,
-    input,
     output,
     error: output,
     search: over.search ?? (async () => okResult("stepfun")),
@@ -145,14 +144,20 @@ describe("runRepl", () => {
 
   it("probes providers via /test, optionally for one provider", async () => {
     const probed: string[][] = [];
-    const { text } = await session(["/test", "/test kimi", "/quit"], {
-      probe: async (providers) => {
+    const queries: string[] = [];
+    const { text } = await session(["/test", "/test kimi", "/test stepfun kimi", "/quit"], {
+      probe: async (providers, req) => {
         probed.push(providers.map((p) => p.name));
+        queries.push(req.query);
         return providers.map((p) => ({ provider: p.name, ok: true, latency_ms: 1, results: 1, sample: "T", error: "" }));
       },
     });
     expect(probed[0]).toEqual(["kimi", "stepfun"]);
     expect(probed[1]).toEqual(["kimi"]);
+    expect(probed[2]).toEqual(["stepfun", "kimi"]);
+    // Positional words are provider names only: a health check must never search
+    // for the slot name it was asked to probe.
+    expect(queries).toEqual([DEFAULT_PROBE_QUERY, DEFAULT_PROBE_QUERY, DEFAULT_PROBE_QUERY]);
     expect(text).toContain("provider   status");
   });
 

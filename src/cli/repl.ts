@@ -12,7 +12,8 @@
 // in memory and is never written back to the config file — the CLI is a consumer, not a configuration tool.
 
 import { createInterface } from "node:readline";
-import { KNOWN_PROVIDERS } from "../config.js";
+import { summarizeError } from "../errors.js";
+import { parseProviderNames } from "../provider-selection.js";
 import type { SearchStrategy } from "../types.js";
 import { redactedConfig } from "./render.js";
 import { cmdSearch, cmdStatus, cmdTest, DEFAULT_PROBE_QUERY, type CliDeps } from "./commands.js";
@@ -64,7 +65,11 @@ export async function runRepl(deps: CliDeps, io: { input: NodeJS.ReadableStream 
   };
   const chainNames = deps.runtime.chain.map((p) => p.name);
 
-  const rl = createInterface({ input: io.input as NodeJS.ReadableStream & { isTTY?: boolean }, output: deps.output as NodeJS.WritableStream });
+  const rl = createInterface({
+    input: io.input as NodeJS.ReadableStream & { isTTY?: boolean },
+    output: deps.output as NodeJS.WritableStream,
+    prompt: PROMPT,
+  });
   const write = (text: string): void => {
     deps.output.write(text.endsWith("\n") ? text : text + "\n");
   };
@@ -183,15 +188,14 @@ export async function runRepl(deps: CliDeps, io: { input: NodeJS.ReadableStream 
           write("providers: (all available)");
           return false;
         }
-        // Provider names are case-insensitive, matching the one-shot commands.
-        const list = argText.split(",").map((s) => s.trim().toLowerCase()).filter((s) => s !== "");
-        const unknown = list.filter((n) => !(KNOWN_PROVIDERS as readonly string[]).includes(n));
-        if (unknown.length) {
-          write(`error: unknown provider(s): ${unknown.join(", ")} (known: ${KNOWN_PROVIDERS.join(", ")})`);
+        // Same name rules as the one-shot commands and the MCP tool layer.
+        const parsed = parseProviderNames(argText);
+        if (!parsed.ok) {
+          write(`error: ${parsed.error}`);
           return false;
         }
-        session.providers = list;
-        write(`providers: ${list.join(", ")}`);
+        session.providers = parsed.names;
+        write(`providers: ${parsed.names.join(", ")}`);
         return false;
       }
 
@@ -200,9 +204,11 @@ export async function runRepl(deps: CliDeps, io: { input: NodeJS.ReadableStream 
         return false;
 
       case "test":
+        // Positional words are provider names; the probe query stays the neutral
+        // default, so a health check never searches for a slot name.
         await cmdTest(deps, {
           command: "test",
-          query: argText || DEFAULT_PROBE_QUERY,
+          query: DEFAULT_PROBE_QUERY,
           providers: argText ? argText.split(/\s+/).filter((s) => s !== "") : session.providers,
           json: session.json,
         });
@@ -249,7 +255,8 @@ export async function runRepl(deps: CliDeps, io: { input: NodeJS.ReadableStream 
         }
       } catch (err) {
         // An unexpected failure in a single command must not end the session.
-        write(`error: ${err instanceof Error ? err.message : String(err)}`);
+        // summarizeError keeps credential-looking text out of the terminal.
+        write(`error: ${summarizeError(err)}`);
       }
       rl.prompt();
     });

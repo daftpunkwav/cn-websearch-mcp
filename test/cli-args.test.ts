@@ -87,6 +87,8 @@ describe("parseArgs", () => {
     expect(fail(["search", "q", "--count"])).toContain("invalid --count value: (missing)");
     expect(fail(["search", "q", "--count", "abc"])).toContain("invalid --count value: abc");
     expect(fail(["search", "q", "--count", "0"])).toContain("invalid --count value: 0");
+    // A negative literal is a value the user typed, not a missing value.
+    expect(fail(["search", "q", "-n", "-5"])).toContain("invalid --count value: -5");
     expect(fail(["search", "q", "--strategy", "turbo"])).toContain("invalid --strategy value: turbo");
     expect(fail(["search", "q", "--strategy"])).toContain("invalid --strategy value: (missing)");
     expect(fail(["search", "q", "--providers"])).toBe("missing value for --providers");

@@ -8,11 +8,11 @@ import { PassThrough } from "node:stream";
 import { cmdSearch, cmdStatus, cmdTest, pickProviders } from "../src/cli/commands.js";
 import { createRuntime } from "../src/runtime.js";
 import { loadConfig } from "../src/config.js";
-import { AllProvidersFailedError, NoProviderConfiguredError } from "../src/orchestrator.js";
+import { AllProvidersFailedError, CallCancelledError, NoProviderConfiguredError } from "../src/orchestrator.js";
 import { HttpError } from "../src/errors.js";
 import type { CliArgs } from "../src/cli/args.js";
 import type { CliDeps } from "../src/cli/commands.js";
-import type { NormalizedSearchResult, SearchProvider } from "../src/types.js";
+import type { NormalizedSearchResult, SearchProvider, SearchRequest } from "../src/types.js";
 
 const searchArgs = (over: Partial<CliArgs> = {}): CliArgs => ({
   command: "search",
@@ -107,6 +107,48 @@ describe("cmdSearch", () => {
     await cmdSearch(deps, searchArgs({ strategy: "aggregate", dedupe: false, providers: ["kimi"], count: 3 }));
     expect(seen).toMatchObject({ strategy: "aggregate", dedupe: false });
     expect(seen.providers.map((p: SearchProvider) => p.name)).toEqual(["kimi"]);
+  });
+
+  it("applies the same argument bounds as the MCP tool layer", async () => {
+    let seen: SearchRequest | undefined;
+    const { deps } = makeDeps({
+      search: async (req) => {
+        seen = req;
+        return okResult("stepfun");
+      },
+    });
+    // --count is documented as 1-50 and a query is capped, on this surface too.
+    await cmdSearch(deps, searchArgs({ count: 999, query: "  " + "q".repeat(500) + "  " }));
+    expect(seen?.count).toBe(50);
+    expect(seen?.query).toHaveLength(400);
+    await cmdSearch(deps, searchArgs({ count: 0 }));
+    expect(seen?.count).toBe(1);
+    await cmdSearch(deps, searchArgs());
+    expect(seen?.count).toBe(8);
+  });
+
+  it("returns 1 and lists every attempt when a cancellation interrupts the search", async () => {
+    const { deps, err } = makeDeps({
+      search: async () => {
+        throw new CallCancelledError([{ provider: "kimi", status: "cancelled", latency_ms: 0 }]);
+      },
+    });
+    expect(await cmdSearch(deps, searchArgs())).toBe(1);
+    expect(err.join("")).toContain("search cancelled by the caller");
+    expect(err.join("")).toContain("- kimi: cancelled (0ms)");
+  });
+
+  it("applies the same argument bounds to `test` as to `search`", async () => {
+    const seen: SearchRequest[] = [];
+    const { deps } = makeDeps({
+      probe: async (providers, req) => {
+        seen.push(req);
+        return providers.map((p) => ({ provider: p.name, ok: true, latency_ms: 1, results: 0, sample: "", error: "" }));
+      },
+    });
+    await cmdTest(deps, { command: "test", query: "q".repeat(500), count: 999, json: false });
+    expect(seen[0]?.query).toHaveLength(400);
+    expect(seen[0]?.count).toBe(50);
   });
 
   it("falls back to the configured strategy when none is given", async () => {
