@@ -11,3 +11,8 @@ upstreams, these scripts exist precisely for that.
 
 `mcp-probe.mjs` spawns `dist/index.js`, so run `npm run build` first;
 `smoke.ts` runs from source through tsx and needs no build.
+
+The live half of `smoke.ts` is not automatable, but its wiring is:
+`test/probe.test.ts` drives the same `createRuntime` → `chain` → `probeAll`
+path with synthetic keys and an injected fetch, so a probe that stopped
+reaching its channels fails in CI instead of against a live upstream.

@@ -5,7 +5,8 @@
 
 import { describe, expect, it } from "vitest";
 import { probeAll, probeProvider } from "../src/probe.js";
-import type { NormalizedSearchResult, SearchContext, SearchProvider, SearchRequest } from "../src/types.js";
+import { createRuntime } from "../src/runtime.js";
+import type { FetchLike, NormalizedSearchResult, SearchContext, SearchProvider, SearchRequest } from "../src/types.js";
 
 const req: SearchRequest = { query: "q", count: 3 };
 
@@ -111,5 +112,131 @@ describe("probeAll", () => {
 
   it("returns an empty list for an empty provider list", async () => {
     expect(await probeAll([], req, { timeoutMs: 100 })).toEqual([]);
+  });
+});
+
+/**
+ * The `npm run smoke` path, without the network.
+ *
+ * scripts/smoke.ts assembles a runtime and hands the ready chain to probeAll; it
+ * is the only place that code path is exercised, it needs real keys, and it is
+ * therefore not in CI at all — a wiring mistake there (a provider that never
+ * reaches probeAll, a probe that throws instead of reporting a row, a broken
+ * adapter) would only be discovered against live upstreams. probe.ts already
+ * takes an injected fetch, so the same call can be driven offline: this drives
+ * the real adapters built by the real runtime with synthetic keys.
+ *
+ * createRuntime is given `env` directly and never loads .env, so the project's
+ * real credentials cannot reach this test; the keys below are invented.
+ */
+describe("probeAll over the real adapters", () => {
+  const SYNTHETIC_ENV: NodeJS.ProcessEnv = {
+    KIMI_API_KEY: "SYNTHETIC-KIMI-KEY-000000000000",
+    MIMO_API_KEY: "SYNTHETIC-MIMO-KEY-000000000000",
+    STEPFUN_API_KEY: "SYNTHETIC-STEPFUN-KEY-000000000",
+    ZHIPU_API_KEY: "SYNTHETIC-ZHIPU-KEY-0000000000",
+  };
+
+  /**
+   * One frozen success body per channel host, dispatching on the host so an
+   * unrouted URL is a loud routing bug rather than a silent empty answer.
+   * `status` lets a test fail exactly one slot.
+   */
+  function routingFetch(status: (url: string) => number = () => 200): FetchLike {
+    let kimiChats = 0;
+    return async (url) => {
+      const code = status(url);
+      if (code >= 400) return new Response('{"error":{"message":"synthetic failure"}}', { status: code });
+
+      if (url.includes("api.moonshot.cn")) {
+        if (url.includes("/formulas/")) {
+          return new Response(JSON.stringify({ context: { encrypted_output: "E", references: ["https://k.example/1"] } }));
+        }
+        // Kimi asks for a tool first and gets the answer on the next chat turn.
+        kimiChats += 1;
+        const message =
+          kimiChats === 1
+            ? { role: "assistant", content: "", tool_calls: [{ id: "c1", type: "function", function: { name: "web_search", arguments: "{}" } }] }
+            : { role: "assistant", content: "kimi answer" };
+        return new Response(JSON.stringify({ choices: [{ message }] }));
+      }
+      if (url.includes("xiaomimimo")) {
+        return new Response(
+          JSON.stringify({
+            choices: [{ message: { content: "mimo answer", annotations: [{ type: "url_citation", title: "mimo hit", url: "https://m.example/1" }] } }],
+          }),
+        );
+      }
+      if (url.includes("api.stepfun.com")) {
+        return new Response(JSON.stringify({ results: [{ title: "stepfun hit", url: "https://s.example/1" }] }));
+      }
+      if (url.includes("open.bigmodel.cn")) {
+        return new Response(
+          JSON.stringify({ search_result: [{ title: "zhipu hit", link: "https://z.example/1", content: "c" }] }),
+        );
+      }
+      throw new Error(`no fixture for ${url}`);
+    };
+  }
+
+  it("reports one healthy row per ready channel from the assembled runtime", async () => {
+    const runtime = createRuntime({ env: SYNTHETIC_ENV, warn: () => {}, fileExists: () => false });
+    expect(runtime.chain.map((p) => p.name)).toEqual(["kimi", "mimo", "stepfun", "zhipu"]);
+
+    const rows = await probeAll(
+      runtime.chain,
+      { query: "synthetic probe", count: 3 },
+      { timeoutMs: 1_000, fetchImpl: routingFetch() },
+    );
+
+    expect(rows.map((r) => r.provider)).toEqual(["kimi", "mimo", "stepfun", "zhipu"]);
+    expect(rows.map((r) => [r.provider, r.ok, r.error])).toEqual([
+      ["kimi", true, ""],
+      ["mimo", true, ""],
+      ["stepfun", true, ""],
+      ["zhipu", true, ""],
+    ]);
+    // Each adapter's own result shape has to survive the probe and be counted.
+    expect(rows.map((r) => r.results)).toEqual([1, 1, 1, 1]);
+    expect(rows.find((r) => r.provider === "kimi")!.sample).toBe("k.example");
+    expect(rows.find((r) => r.provider === "mimo")!.sample).toBe("mimo hit");
+  });
+
+  it("turns an upstream outage into a failing row, never a thrown error", async () => {
+    // The whole point of a probe is to find the broken channel: an HTTP 5xx on
+    // one slot must come back as ok=false carrying the diagnosis, while the
+    // others stay green, or the table cannot say which slot is down.
+    const runtime = createRuntime({ env: SYNTHETIC_ENV, warn: () => {}, fileExists: () => false });
+    const rows = await probeAll(runtime.chain, { query: "synthetic probe", count: 3 }, {
+      timeoutMs: 1_000,
+      fetchImpl: routingFetch((url) => (url.includes("api.stepfun.com") ? 503 : 200)),
+    });
+
+    const stepfun = rows.find((r) => r.provider === "stepfun")!;
+    expect(stepfun.ok).toBe(false);
+    expect(stepfun.results).toBe(0);
+    expect(stepfun.error).toContain("HTTP 503");
+    expect(rows.filter((r) => r.ok)).toHaveLength(3);
+  });
+
+  it("reports a protocol break as a failed row instead of an empty success", async () => {
+    // A renamed upstream container degrades to ParseError inside the adapter;
+    // the probe must surface that as unhealthy rather than as "ok, 0 results",
+    // which is the one reading an operator would act on wrongly.
+    const runtime = createRuntime({ env: SYNTHETIC_ENV, warn: () => {}, fileExists: () => false });
+    const inner = routingFetch();
+    const rows = await probeAll(runtime.chain, { query: "synthetic probe", count: 3 }, {
+      timeoutMs: 1_000,
+      fetchImpl: async (url, init) =>
+        url.includes("api.stepfun.com")
+          ? new Response(JSON.stringify({ hits: [] }))
+          : inner(url, init),
+    });
+
+    const stepfun = rows.find((r) => r.provider === "stepfun")!;
+    expect(stepfun.ok).toBe(false);
+    expect(stepfun.error).toContain("ParseError");
+    expect(stepfun.results).toBe(0);
+    expect(rows.filter((r) => r.ok)).toHaveLength(3);
   });
 });

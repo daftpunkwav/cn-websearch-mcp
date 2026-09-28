@@ -5,6 +5,7 @@
 ## 结构
 
 - `*.test.ts`(`test/` 根层级):单元与集成测试,每个被测模块一个文件,文件名镜像 `src/`:`src/config.ts` → `test/config.test.ts`,`src/orchestrator.ts` → `test/orchestrator.test.ts`,依此类推(`registry.test.ts` 覆盖 `src/providers/index.ts`)。这些测试直接 import `../src/...` 并注入替身(env 映射、`warn` 间谍、`fetchImpl` stub)——无网络、无磁盘。
+- `upstream-contract.test.ts`:四个通道适配器的固化 fixture。它跨 `src/providers/*.ts` 而非镜像单个文件,因为它锁定的是每个第三方 API 各自拥有的线上契约——适配器构造的请求,以及它对一整份文档化响应体的映射。能否检出上游变更,见文件头说明。
 - [e2e/](e2e/):端到端测试,把构建产物 `dist/index.js` 作为真实子进程启动,并使用 MCP stdio 帧协议或 CLI 协议进行交互。见 [e2e/README.zh.md](e2e/README.zh.md)。
 
 ## 覆盖率门槛

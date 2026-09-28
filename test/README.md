@@ -15,6 +15,11 @@ keys are needed and no real upstream is contacted.
   `test/index.test.ts`, which covers `src/index.ts`). These import `../src/...`
   directly and inject fakes (env maps, `warn` spies, `fetchImpl` stubs) — no
   network, no disk.
+- `upstream-contract.test.ts`: frozen fixtures for the four channel adapters.
+  It spans `src/providers/*.ts` rather than mirroring one file, because what it
+  pins is the wire contract each third-party API owns — the request an adapter
+  builds and the mapping it performs on a full documented response body. See
+  the file header for what these fixtures can and cannot detect.
 - [e2e/](e2e/): end-to-end tests that spawn the built `dist/index.js` as a
   real subprocess and speak MCP stdio framing or the CLI protocol. See
   [e2e/README.md](e2e/README.md).

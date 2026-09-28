@@ -8,3 +8,7 @@
 | `mcp-probe.mjs` | 手工 MCP stdio 调试辅助:启动 `dist/index.js`、发送 `initialize` 请求帧,并报告子进程是否读到 stdin。用于诊断传输/启动问题,不属于任何自动化门禁。 |
 
 `mcp-probe.mjs` 启动的是 `dist/index.js`,需先 `npm run build`;`smoke.ts` 经 tsx 直接从源码运行,无需构建。
+
+`smoke.ts` 的真实网络部分无法自动化,但它的装配路径可以:`test/probe.test.ts`
+用合成假 key 和注入的 fetch 驱动同一条 `createRuntime` → `chain` → `probeAll`
+链路,因此探测链路一旦断掉会在 CI 暴露,而不是等到打真实上游时才发现。

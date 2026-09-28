@@ -26,6 +26,51 @@ checks (`npm run smoke`) need real API keys and are not part of the test suite.
 - Comments and file headers are written in English, in the `@file` /
   `@description` / `Responsibilities` style used across `src/`.
 
+## Upgrading `@modelcontextprotocol/sdk`
+
+The SDK is the only runtime dependency, and every touch point sits in the entry
+layer — nothing else in `src/` imports it:
+
+| Touch point | What it uses |
+|---|---|
+| `src/index.ts:16-18` | `Server`, `StdioServerTransport`, `CallToolRequestSchema`, `ListToolsRequestSchema`, `CallToolResult` |
+| `src/index.ts:38-48` | the `extra` argument of a `setRequestHandler` callback — `extra.signal` carries MCP client cancellation |
+| `test/e2e/mcp-stdio.test.ts:21-22` | `Client` and `StdioClientTransport`, driving a real initialize → tools/list → tools/call round trip |
+| `test/index.test.ts:7` | the two request schemas, for handler-level assertions |
+
+Those three deep import specifiers (`server/index.js`, `server/stdio.js`,
+`types.js`) are the SDK's own documented entry points, not internal files, so a
+major bump breaks them only if the SDK changes its published layout.
+
+There is deliberately **no transport port abstraction**: there is exactly one
+transport, no second scenario, and a wrapper over three constructor calls would
+cost a layer without buying a seam.
+
+To upgrade:
+
+1. `npm install @modelcontextprotocol/sdk@<version>` and read the release notes
+   for anything under `server/`, `types.js` or `Client`.
+2. `npm run typecheck` — the deep imports are type-checked, so a moved or
+   renamed export fails here first, before anything runs.
+3. `npm run build && npm run test:coverage` — `test/e2e/mcp-stdio.test.ts` speaks
+   the real protocol against the built binary, so a wire-level or handler-signature
+   change surfaces as a failing e2e test rather than at a client's request.
+4. Confirm `extra.signal` still fires on cancellation; the orchestrator's
+   "cancelled" verdict depends on it and no unit test can substitute for the
+   live handshake.
+
+A major bump is a separate decision: it changes the dependency contract of a
+published package, so get it confirmed before landing.
+
+## Runtime support
+
+`engines.node` is `>=18` and the CI matrix is Node 18/20/22. The shipped code
+was exercised against **18.20.8, 20.19.5, 22.21.1 and 24.15.0**; the global
+`fetch`, its `Response.body` stream, `AbortController.abort(reason)` and
+`signal.reason` all behave identically on each. Early 18.x releases are covered
+by the matrix rather than by measurement — see the `combinedSignal` comment in
+`src/http.ts` for the one API that is genuinely unavailable there.
+
 ## Commits
 
 Conventional Commits, one commit does one thing:
