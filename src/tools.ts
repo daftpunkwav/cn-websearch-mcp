@@ -16,15 +16,20 @@
 // decoupled. Provider-name rules live in provider-selection.ts, which the CLI
 // shares, so both surfaces accept exactly the same names.
 
-import { COUNT_MAX, COUNT_MIN, KNOWN_PROVIDERS, QUERY_MAX, type GatewayConfig } from "./config.js";
-import { AllProvidersFailedError, CallCancelledError, NoProviderConfiguredError, runSearch, type DispatchOptions } from "./orchestrator.js";
+import { COUNT_MAX, COUNT_MIN, effectiveCount, KNOWN_PROVIDERS, QUERY_MAX, type GatewayConfig } from "./config.js";
+import { isStructuredFailure, runSearch, type DispatchOptions } from "./orchestrator.js";
 import { selectProviders } from "./provider-selection.js";
 import { summarizeError } from "./errors.js";
-import { clampInt, truncate } from "./normalize.js";
+import { truncate } from "./normalize.js";
 import { SERVER_NAME } from "./server-info.js";
-import type { AttemptRecord, NormalizedSearchResult, SearchProvider, SearchRequest, SearchStrategy } from "./types.js";
-
-const STRATEGIES: readonly SearchStrategy[] = ["fallback", "aggregate"];
+import {
+  SEARCH_STRATEGIES,
+  type AttemptRecord,
+  type NormalizedSearchResult,
+  type SearchProvider,
+  type SearchRequest,
+  type SearchStrategy,
+} from "./types.js";
 
 export interface ToolOutput {
   content: Array<{ type: "text"; text: string }>;
@@ -81,7 +86,7 @@ export function buildToolDefinitions(defaultCount: number, defaultStrategy: Sear
           },
           strategy: {
             type: "string",
-            enum: STRATEGIES,
+            enum: SEARCH_STRATEGIES,
             default: defaultStrategy,
             description:
               "'fallback' = first provider that answers wins; 'aggregate' = query several providers and merge. " +
@@ -112,7 +117,7 @@ export function buildToolDefinitions(defaultCount: number, defaultStrategy: Sear
 function selectStrategy(requested: unknown, fallback: SearchStrategy): SearchStrategy | "invalid" {
   if (requested === undefined) return fallback;
   const value = typeof requested === "string" ? (requested.trim().toLowerCase() as SearchStrategy) : "invalid";
-  return (STRATEGIES as readonly string[]).includes(value) ? value : "invalid";
+  return (SEARCH_STRATEGIES as readonly string[]).includes(value) ? value : "invalid";
 }
 
 export function createGatewayTools(deps: GatewayToolsDeps) {
@@ -166,12 +171,11 @@ export function createGatewayTools(deps: GatewayToolsDeps) {
       if (!query) {
         return textContent({ error: "invalid arguments: 'query' must be a non-empty string" }, true);
       }
-      const count =
-        args.count === undefined ? config.count : clampInt(args.count, config.count, COUNT_MIN, COUNT_MAX);
+      const count = effectiveCount(args.count, config.count);
       const strategy = selectStrategy(args.strategy, config.strategy);
       if (strategy === "invalid") {
         return textContent(
-          { error: `invalid arguments: 'strategy' must be one of ${STRATEGIES.join(", ")}` },
+          { error: `invalid arguments: 'strategy' must be one of ${SEARCH_STRATEGIES.join(", ")}` },
           true,
         );
       }
@@ -194,16 +198,14 @@ export function createGatewayTools(deps: GatewayToolsDeps) {
         );
         return textContent(out);
       } catch (err) {
-        // The three expected outcomes of a call — nobody was configured, every
-        // provider failed, the caller went away — are answers, not crashes: each
-        // one carries its audit trail and reaches the client as a structured
-        // error instead of a log line. An empty chain in particular is the
-        // ordinary state of a fresh install, not an unexpected failure.
-        if (
-          err instanceof AllProvidersFailedError ||
-          err instanceof CallCancelledError ||
-          err instanceof NoProviderConfiguredError
-        ) {
+        // The expected outcomes of a call — nobody was configured, every provider
+        // failed, the caller went away — are answers, not crashes: each one
+        // carries its audit trail and reaches the client as a structured error
+        // instead of a log line. An empty chain in particular is the ordinary
+        // state of a fresh install, not an unexpected failure. isStructuredFailure
+        // is the one place that knows the full list, so a fourth outcome has to be
+        // added there rather than in every renderer.
+        if (isStructuredFailure(err)) {
           return textContent({ error: err.message, attempts: err.attempts }, true);
         }
         // Any other exception is unexpected: log the full error to stderr, return only a redacted summary,

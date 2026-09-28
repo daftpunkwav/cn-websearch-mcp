@@ -10,7 +10,7 @@
 
 // CLI argument layer. Pure functions: input is the argv array, output is a structured command or an error message.
 
-import type { SearchStrategy } from "../types.js";
+import { SEARCH_STRATEGIES, type SearchStrategy } from "../types.js";
 
 /** Supported command names (including aliases). */
 const COMMAND_ALIASES: Record<string, CliCommandName> = {
@@ -42,8 +42,6 @@ export interface CliArgs {
 }
 
 export type ParseResult = { ok: true; args: CliArgs } | { ok: false; message: string };
-
-const STRATEGIES: readonly SearchStrategy[] = ["fallback", "aggregate"];
 
 export function usage(): string {
   return [
@@ -157,8 +155,9 @@ export function parseArgs(argv: string[]): ParseResult {
     }
     if (flag === "--strategy") {
       const value = (takeValue() ?? "").toLowerCase() as SearchStrategy;
-      if (!(STRATEGIES as readonly string[]).includes(value)) {
-        return { ok: false, message: `invalid --strategy value: ${value || "(missing)"} (expected fallback|aggregate)` };
+      if (!(SEARCH_STRATEGIES as readonly string[]).includes(value)) {
+        const expected = SEARCH_STRATEGIES.join("|");
+        return { ok: false, message: `invalid --strategy value: ${value || "(missing)"} (expected ${expected})` };
       }
       args.strategy = value;
       continue;

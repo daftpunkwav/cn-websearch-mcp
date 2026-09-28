@@ -11,18 +11,12 @@
 // One-shot commands. Exit code convention: 0 success; 1 runtime failure (search failed / no usable
 // provider); 2 usage error (returned by the entry point when parsing fails).
 
-import { COUNT_MAX, COUNT_MIN, QUERY_MAX, type GatewayConfig } from "../config.js";
-import {
-  AllProvidersFailedError,
-  CallCancelledError,
-  NoProviderConfiguredError,
-  runSearch,
-  type DispatchOptions,
-} from "../orchestrator.js";
+import { effectiveCount, QUERY_MAX, type GatewayConfig } from "../config.js";
+import { isStructuredFailure, runSearch, type DispatchOptions } from "../orchestrator.js";
 import { probeAll, type ProbeOptions, type ProbeRow } from "../probe.js";
-import { selectProviders } from "../provider-selection.js";
+import { selectProviders, type ProviderSelection } from "../provider-selection.js";
 import { summarizeError } from "../errors.js";
-import { clampInt, truncate } from "../normalize.js";
+import { truncate } from "../normalize.js";
 import { formatProbeTable, formatSearchResult, formatStatus, redactedConfig } from "./render.js";
 import type { CliArgs } from "./args.js";
 import type { NormalizedSearchResult, SearchProvider, SearchRequest, SearchStrategy } from "../types.js";
@@ -50,19 +44,26 @@ export interface CliDeps {
 /** Default probe query for the `test` command: generic and non-personalized. */
 export const DEFAULT_PROBE_QUERY = "今日新闻";
 
-function write(stream: NodeJS.WritableStream, text: string): void {
+/**
+ * Write one line, terminating it exactly once.
+ *
+ * Shared by every CLI module that prints (commands, the dispatcher and the
+ * REPL) so a message is never double-spaced or left unterminated by one of
+ * them; it lives here because this is the module the other two already import.
+ */
+export function writeLine(stream: NodeJS.WritableStream, text: string): void {
   stream.write(text.endsWith("\n") ? text : text + "\n");
 }
+
+/** The hint printed by both commands that need a usable provider before they can run. */
+const NO_READY_PROVIDER = "error: no provider is ready — set an API key via env or a config file, then retry";
 
 /**
  * Restrict the call to the named providers, using the same name rules as the MCP
  * tool layer. An absent or empty list means "no filter": the CLI already rejects
  * an empty --providers at parse time, so this only covers a direct caller.
  */
-export function pickProviders(
-  names: string[] | undefined,
-  chain: SearchProvider[],
-): { ok: true; providers: SearchProvider[] } | { ok: false; error: string } {
+export function pickProviders(names: string[] | undefined, chain: SearchProvider[]): ProviderSelection {
   if (!names?.length) return { ok: true, providers: chain };
   return selectProviders(names, chain);
 }
@@ -75,16 +76,16 @@ export async function cmdSearch(deps: CliDeps, args: CliArgs): Promise<number> {
   const { runtime, output, error } = deps;
   const config: GatewayConfig = runtime.config;
   if (!args.query.trim()) {
-    write(error, "error: missing query (usage: cn-websearch-mcp search <query>)");
+    writeLine(error, "error: missing query (usage: cn-websearch-mcp search <query>)");
     return 2;
   }
   if (!runtime.chain.length) {
-    write(error, "error: no provider is ready — set an API key via env or a config file, then retry");
+    writeLine(error, NO_READY_PROVIDER);
     return 1;
   }
   const picked = pickProviders(args.providers, runtime.chain);
   if (!picked.ok) {
-    write(error, `error: ${picked.error}`);
+    writeLine(error, `error: ${picked.error}`);
     return 2;
   }
 
@@ -92,7 +93,7 @@ export async function cmdSearch(deps: CliDeps, args: CliArgs): Promise<number> {
   const strategy: SearchStrategy = args.strategy ?? config.strategy;
   // Same argument contract as the MCP tool layer: a count is clamped to the
   // shared range and a query is capped, so both surfaces search alike.
-  const count = args.count === undefined ? config.count : clampInt(args.count, config.count, COUNT_MIN, COUNT_MAX);
+  const count = effectiveCount(args.count, config.count);
   const query = truncate(args.query.trim(), QUERY_MAX);
   try {
     const out = await search(
@@ -105,23 +106,20 @@ export async function cmdSearch(deps: CliDeps, args: CliArgs): Promise<number> {
         strategy,
       },
     );
-    write(output, args.json ? JSON.stringify(out, null, 2) : formatSearchResult(out));
+    writeLine(output, args.json ? JSON.stringify(out, null, 2) : formatSearchResult(out));
     return 0;
   } catch (err) {
-    // Both structured failures carry an audit trail; print it the same way
-    // instead of special-casing each one.
-    if (err instanceof AllProvidersFailedError || err instanceof CallCancelledError) {
-      write(error, `error: ${err.message}`);
+    // Every structured failure carries an audit trail; print it the same way
+    // instead of special-casing each one. (A call that never reached a provider
+    // carries an empty trail, so it prints the message alone.)
+    if (isStructuredFailure(err)) {
+      writeLine(error, `error: ${err.message}`);
       for (const a of err.attempts) {
-        write(error, `  - ${a.provider}: ${a.status} (${a.latency_ms}ms)${a.error ? ` ${a.error}` : ""}`);
+        writeLine(error, `  - ${a.provider}: ${a.status} (${a.latency_ms}ms)${a.error ? ` ${a.error}` : ""}`);
       }
       return 1;
     }
-    if (err instanceof NoProviderConfiguredError) {
-      write(error, `error: ${err.message}`);
-      return 1;
-    }
-    write(error, `error: unexpected failure: ${summarizeError(err)}`);
+    writeLine(error, `error: unexpected failure: ${summarizeError(err)}`);
     return 1;
   }
 }
@@ -132,7 +130,7 @@ export async function cmdStatus(deps: CliDeps, args: CliArgs): Promise<number> {
   const payload = args.json
     ? JSON.stringify(redactedConfig(runtime.config), null, 2)
     : formatStatus(runtime.config, runtime.chain.map((p) => p.name));
-  write(output, payload);
+  writeLine(output, payload);
   return 0;
 }
 
@@ -143,12 +141,12 @@ export async function cmdStatus(deps: CliDeps, args: CliArgs): Promise<number> {
 export async function cmdTest(deps: CliDeps, args: CliArgs): Promise<number> {
   const { runtime, output, error } = deps;
   if (!runtime.chain.length) {
-    write(error, "error: no provider is ready — set an API key via env or a config file, then retry");
+    writeLine(error, NO_READY_PROVIDER);
     return 1;
   }
   const picked = pickProviders(args.providers, runtime.chain);
   if (!picked.ok) {
-    write(error, `error: ${picked.error}`);
+    writeLine(error, `error: ${picked.error}`);
     return 2;
   }
 
@@ -159,12 +157,10 @@ export async function cmdTest(deps: CliDeps, args: CliArgs): Promise<number> {
     picked.providers,
     {
       query: truncate(args.query.trim() || DEFAULT_PROBE_QUERY, QUERY_MAX),
-      count: args.count === undefined
-        ? runtime.config.count
-        : clampInt(args.count, runtime.config.count, COUNT_MIN, COUNT_MAX),
+      count: effectiveCount(args.count, runtime.config.count),
     },
     { timeoutMs: runtime.config.timeoutMs },
   );
-  write(output, args.json ? JSON.stringify(rows, null, 2) : formatProbeTable(rows));
+  writeLine(output, args.json ? JSON.stringify(rows, null, 2) : formatProbeTable(rows));
   return rows.every((r) => r.ok) ? 0 : 1;
 }

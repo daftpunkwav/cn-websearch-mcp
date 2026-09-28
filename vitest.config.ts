@@ -10,11 +10,11 @@ export default defineConfig({
     testTimeout: 30_000,
     coverage: {
       provider: "v8",
-      // Coverage is measured over shipped runtime code. src/types.ts is a
-      // type-only module; scripts/ (live-network CLI) and test/ never appear
-      // here because `include` is limited to src/**.
+      // Coverage is measured over shipped runtime code. src/types.ts holds only
+      // contracts and the strategy vocabulary, so it stays at 100% on its own;
+      // scripts/ (live-network CLI) and test/ never appear here because
+      // `include` is limited to src/**.
       include: ["src/**"],
-      exclude: ["src/types.ts"],
       thresholds: { lines: 95, functions: 95, branches: 95, statements: 95 },
     },
   },

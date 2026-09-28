@@ -13,7 +13,7 @@
 
 import { SERVER_NAME, SERVER_VERSION } from "../server-info.js";
 import { parseArgs, usage } from "./args.js";
-import { cmdSearch, cmdStatus, cmdTest, type CliDeps } from "./commands.js";
+import { cmdSearch, cmdStatus, cmdTest, writeLine, type CliDeps } from "./commands.js";
 import { runRepl } from "./repl.js";
 
 /** Exit codes: 0 success, 1 runtime failure, 2 usage error. */
@@ -25,10 +25,6 @@ export interface CliRunDeps extends CliDeps {
   input: NodeJS.ReadableStream;
 }
 
-function write(stream: NodeJS.WritableStream, text: string): void {
-  stream.write(text.endsWith("\n") ? text : text + "\n");
-}
-
 /**
  * Run one CLI invocation and return the exit code. This is the only CLI entry point:
  * index.ts merely injects the real dependencies and converts the exit code into a process exit.
@@ -36,19 +32,19 @@ function write(stream: NodeJS.WritableStream, text: string): void {
 export async function runCli(argv: string[], deps: CliRunDeps): Promise<number> {
   const parsed = parseArgs(argv);
   if (!parsed.ok) {
-    write(deps.error, `error: ${parsed.message}`);
-    write(deps.error, usage());
+    writeLine(deps.error, `error: ${parsed.message}`);
+    writeLine(deps.error, usage());
     return EXIT.usage;
   }
   const args = parsed.args;
 
   switch (args.command) {
     case "help":
-      write(deps.output, usage());
+      writeLine(deps.output, usage());
       return EXIT.ok;
 
     case "version":
-      write(deps.output, `${SERVER_NAME} ${SERVER_VERSION}`);
+      writeLine(deps.output, `${SERVER_NAME} ${SERVER_VERSION}`);
       return EXIT.ok;
 
     case "status":
@@ -69,7 +65,7 @@ export async function runCli(argv: string[], deps: CliRunDeps): Promise<number> 
         await deps.serve();
         return EXIT.ok;
       } catch (err) {
-        write(deps.error, `[${SERVER_NAME}] fatal: ${err instanceof Error ? err.message : String(err)}`);
+        writeLine(deps.error, `[${SERVER_NAME}] fatal: ${err instanceof Error ? err.message : String(err)}`);
         return EXIT.failure;
       }
   }

@@ -8,6 +8,7 @@
  * - Honor caller cancellation (MCP client disconnect) by aborting the search instead of walking the rest of the chain
  * - Retry transient failures once after a short backoff; assemble _meta (provider, latency, attempt audit) or a structured failure
  * - Under aggregate, query several providers in parallel, merge/dedupe by URL and tag sources
+ * - Own the structured-failure taxonomy (no provider / all failed / cancelled) and the one predicate that recognises them
  */
 
 // Orchestration layer: timeout circuit-breaking, at most one transient retry
@@ -75,6 +76,34 @@ export class AllProvidersFailedError extends Error {
     this.name = "AllProvidersFailedError";
     this.attempts = attempts;
   }
+}
+
+/**
+ * What every structured outcome of a search call looks like from the outside:
+ * a message plus the audit trail of what was tried.
+ *
+ * Rendering one of these is a business outcome, not a crash report, so both
+ * front ends (the MCP tool layer and the CLI) format it the same way. They ask
+ * isStructuredFailure rather than naming the classes themselves: the three
+ * definitions live here, next to the code that throws them.
+ */
+export interface StructuredFailure extends Error {
+  readonly attempts: readonly AttemptRecord[];
+}
+
+/**
+ * Whether a thrown value is one of the structured outcomes above.
+ *
+ * This is the only place that enumerates them, so adding a fourth (a new
+ * business failure, say) changes this predicate alone and every renderer picks
+ * it up — instead of two `instanceof` chains that each have to remember.
+ */
+export function isStructuredFailure(err: unknown): err is StructuredFailure {
+  return (
+    err instanceof AllProvidersFailedError ||
+    err instanceof CallCancelledError ||
+    err instanceof NoProviderConfiguredError
+  );
 }
 
 /** How long to wait before retrying a transient failure. */

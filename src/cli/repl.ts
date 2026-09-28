@@ -12,16 +12,15 @@
 // in memory and is never written back to the config file — the CLI is a consumer, not a configuration tool.
 
 import { createInterface } from "node:readline";
-import { COUNT_MAX, COUNT_MIN } from "../config.js";
+import { effectiveCount } from "../config.js";
 import { summarizeError } from "../errors.js";
 import { parseProviderNames } from "../provider-selection.js";
-import type { SearchStrategy } from "../types.js";
+import { SEARCH_STRATEGIES, type SearchStrategy } from "../types.js";
 import { redactedConfig } from "./render.js";
-import { cmdSearch, cmdStatus, cmdTest, DEFAULT_PROBE_QUERY, type CliDeps } from "./commands.js";
+import { cmdSearch, cmdStatus, cmdTest, writeLine, DEFAULT_PROBE_QUERY, type CliDeps } from "./commands.js";
 import type { CliArgs } from "./args.js";
 
 const PROMPT = "cn-websearch> ";
-const STRATEGIES: readonly SearchStrategy[] = ["fallback", "aggregate"];
 
 /** Mutable in-session state. */
 export interface ReplSession {
@@ -71,9 +70,7 @@ export async function runRepl(deps: CliDeps, io: { input: NodeJS.ReadableStream 
     output: deps.output as NodeJS.WritableStream,
     prompt: PROMPT,
   });
-  const write = (text: string): void => {
-    deps.output.write(text.endsWith("\n") ? text : text + "\n");
-  };
+  const write = (text: string): void => writeLine(deps.output, text);
   write(`cn-websearch-mcp interactive session — ${chainNames.length} provider(s) ready: ${chainNames.join(", ") || "(none)"}`);
   write("Type a query to search, or /help for commands.");
 
@@ -155,8 +152,8 @@ export async function runRepl(deps: CliDeps, io: { input: NodeJS.ReadableStream 
           return false;
         }
         const value = argText.toLowerCase() as SearchStrategy;
-        if (!(STRATEGIES as readonly string[]).includes(value)) {
-          write(`error: unknown strategy "${argText}" (expected ${STRATEGIES.join("|")})`);
+        if (!(SEARCH_STRATEGIES as readonly string[]).includes(value)) {
+          write(`error: unknown strategy "${argText}" (expected ${SEARCH_STRATEGIES.join("|")})`);
           return false;
         }
         session.strategy = value;
@@ -176,7 +173,8 @@ export async function runRepl(deps: CliDeps, io: { input: NodeJS.ReadableStream 
         }
         // Store and echo the effective count: the search layer clamps to the same
         // range, so an out-of-range value must not be reported as if it took effect.
-        const effective = Math.min(COUNT_MAX, Math.max(COUNT_MIN, n));
+        // `n` is already a positive integer, so effectiveCount's fallback is unreachable.
+        const effective = effectiveCount(n, session.count);
         session.count = effective;
         write(`count: ${effective}`);
         return false;
