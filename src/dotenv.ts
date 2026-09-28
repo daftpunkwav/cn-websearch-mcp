@@ -11,29 +11,26 @@
  */
 
 // Minimal .env loader (no runtime dependencies). Existing process.env entries win.
+// The list of names it may export is owned by config.ts (gatewayEnvKeys), which
+// is also the module that decides what "a gateway setting" means.
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { KNOWN_PROVIDERS } from "./config.js";
-import { SERVER_NAME } from "./server-info.js";
+import { defaultWarn, gatewayEnvKeys } from "./config.js";
 
 /**
- * Gateway-wide variables, mirroring the WEBSEARCH_* names config.ts reads plus
- * the legacy ZHIPU_SEARCH_ENGINE knob.
+ * The exact set of names this gateway reads, owned by config.ts.
+ *
+ * A .env file is data from the working directory, and the working directory is
+ * not necessarily trusted: any repository can ship one. Writing every name it
+ * contains into process.env would let such a file set NODE_OPTIONS or
+ * LD_PRELOAD, which the runtime acts on before this program's first request —
+ * turning "start the MCP server in this folder" into running someone else's
+ * code. Only configuration the gateway resolves may cross that boundary, so the
+ * whitelist is not restated here: adding a setting in config.ts is enough, and a
+ * name listed twice could only drift.
  */
-const GATEWAY_KEYS: ReadonlySet<string> = new Set([
-  "WEBSEARCH_CONFIG",
-  "WEBSEARCH_COUNT",
-  "WEBSEARCH_DEDUPE",
-  "WEBSEARCH_MAX_PROVIDERS",
-  "WEBSEARCH_ORDER",
-  "WEBSEARCH_STRATEGY",
-  "WEBSEARCH_TIMEOUT_MS",
-  "ZHIPU_SEARCH_ENGINE",
-]);
-
-/** Per-slot suffixes, mirroring the suffixes providerEnvKey() builds in config.ts. */
-const SLOT_SUFFIXES: readonly string[] = ["API_KEY", "BASE_URL", "ENABLED", "MODEL", "PRIORITY", "TIMEOUT_MS"];
+const GATEWAY_KEYS = gatewayEnvKeys();
 
 /**
  * Names that look like a gateway setting without being one. Only these earn a
@@ -41,24 +38,6 @@ const SLOT_SUFFIXES: readonly string[] = ["API_KEY", "BASE_URL", "ENABLED", "MOD
  * know it was ignored, one who put an unrelated name in their .env does not.
  */
 const GATEWAY_LIKE = /(?:^WEBSEARCH_|_(?:API_KEY|BASE_URL|MODEL|ENABLED|PRIORITY|TIMEOUT_MS|SEARCH_ENGINE)$)/;
-
-/**
- * Whether `key` names a setting this program actually reads.
- *
- * A .env file is data from the working directory, and the working directory is
- * not necessarily trusted: any repository can ship one. Writing every name it
- * contains into process.env would let such a file set NODE_OPTIONS or
- * LD_PRELOAD, which the runtime acts on before this program's first request —
- * turning "start the MCP server in this folder" into running someone else's
- * code. Only configuration the gateway resolves may cross that boundary.
- */
-export function isGatewayEnvKey(key: string): boolean {
-  if (GATEWAY_KEYS.has(key)) return true;
-  const cut = key.indexOf("_");
-  const slot = cut > 0 ? key.slice(0, cut).toLowerCase() : "";
-  const suffix = cut > 0 ? key.slice(cut + 1) : key;
-  return (KNOWN_PROVIDERS as readonly string[]).includes(slot) && SLOT_SUFFIXES.includes(suffix);
-}
 
 /**
  * Load KEY=VALUE pairs from the .env file in the given directory (cwd by
@@ -69,7 +48,7 @@ export function isGatewayEnvKey(key: string): boolean {
  * prototype-chain property names (e.g. "toString") are not mistaken for
  * existing entries.
  *
- * Names the gateway does not read are skipped: see isGatewayEnvKey for why an
+ * Names the gateway does not read are skipped: see GATEWAY_KEYS for why an
  * arbitrary .env must not become process.env. A skipped name that looks like a
  * gateway setting is reported through `warn`, so a typo is visible instead of
  * silently doing nothing.
@@ -77,7 +56,7 @@ export function isGatewayEnvKey(key: string): boolean {
 export function loadDotEnv(
   dir: string = process.cwd(),
   into: NodeJS.ProcessEnv = process.env,
-  warn: (message: string) => void = (m) => console.error(`[${SERVER_NAME}] ${m}`),
+  warn: (message: string) => void = defaultWarn,
 ): void {
   let raw: string;
   try {
@@ -98,7 +77,7 @@ export function loadDotEnv(
     if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
       value = value.slice(1, -1);
     }
-    if (!isGatewayEnvKey(key)) {
+    if (!GATEWAY_KEYS.has(key)) {
       if (GATEWAY_LIKE.test(key)) warn(`ignoring unknown setting "${key}" in .env`);
       continue;
     }

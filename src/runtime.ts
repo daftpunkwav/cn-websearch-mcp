@@ -11,7 +11,7 @@
 // Runtime assembly layer. Dependency direction: runtime → {config, config-file, providers}.
 // Config file reading is injected as a function, so tests can cover every branch without touching the disk.
 
-import { loadConfig, type GatewayConfig, type ProviderConfig } from "./config.js";
+import { defaultWarn, loadConfig, type GatewayConfig, type ProviderConfig } from "./config.js";
 import { readConfigFile, resolveConfigPath, type ConfigFileShape, type FileExistsFn, type ReadFileFn } from "./config-file.js";
 import { buildProviders } from "./providers/index.js";
 import type { SearchProvider } from "./types.js";
@@ -44,7 +44,7 @@ export interface RuntimeOptions {
  */
 export function createRuntime(options: RuntimeOptions = {}): GatewayRuntime {
   const env = options.env ?? process.env;
-  const warn = options.warn ?? ((m: string) => console.error(`[cn-websearch-mcp] ${m}`));
+  const warn = options.warn ?? defaultWarn;
 
   const path =
     options.configPath ?? resolveConfigPath(env, options.cwd ?? process.cwd(), options.fileExists);

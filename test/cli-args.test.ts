@@ -99,6 +99,19 @@ describe("parseArgs", () => {
     expect(fail(["search", "q", "--providers=,"])).toContain("invalid --providers value");
   });
 
+  it("rejects an inline value on a switch rather than discarding it", () => {
+    // --json and --no-dedupe are valueless switches. Accepting --json=false and
+    // then enabling JSON silently contradicts what the user typed, which is the
+    // one thing this parser promises never to do ("instead of guessing intent").
+    for (const token of ["--json=false", "--json=true", "--no-dedupe=false", "--no-dedupe=1"]) {
+      const bare = token.slice(0, token.indexOf("="));
+      expect(fail(["search", "q", token]), token).toBe(`${bare} does not take a value (write ${bare})`);
+    }
+    // The documented valueless forms keep working.
+    expect(ok(["search", "q", "--json"]).json).toBe(true);
+    expect(ok(["search", "q", "--no-dedupe"]).dedupe).toBe(false);
+  });
+
   it("does not treat a following flag as an option value", () => {
     expect(fail(["search", "--count", "--json"])).toContain("invalid --count value: (missing)");
   });

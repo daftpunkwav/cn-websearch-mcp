@@ -131,12 +131,15 @@ export function parseArgs(argv: string[]): ParseResult {
       return next;
     };
 
-    if (flag === "--json") {
-      args.json = true;
-      continue;
-    }
-    if (flag === "--no-dedupe") {
-      args.dedupe = false;
+    if (flag === "--json" || flag === "--no-dedupe") {
+      // These are switches, not options: they carry no value in either syntax.
+      // An inline value here used to be matched on the flag and dropped, so
+      // --json=false turned JSON on and --no-dedupe=false turned dedupe off —
+      // the parser quietly doing the opposite of what was written. Rejecting it
+      // honours the rule this function states: never guess intent.
+      if (inlineValue !== undefined) return { ok: false, message: `${flag} does not take a value (write ${flag})` };
+      if (flag === "--json") args.json = true;
+      else args.dedupe = false;
       continue;
     }
     if (flag === "-n" || flag === "--count") {

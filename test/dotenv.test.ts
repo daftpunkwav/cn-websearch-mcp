@@ -7,7 +7,8 @@ import { describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { isGatewayEnvKey, loadDotEnv } from "../src/dotenv.js";
+import { loadDotEnv } from "../src/dotenv.js";
+import { gatewayEnvKeys } from "../src/config.js";
 
 function makeDir(): string {
   return mkdtempSync(join(tmpdir(), "cwsmcp-env-"));
@@ -131,30 +132,50 @@ describe("loadDotEnv", () => {
   });
 });
 
-describe("isGatewayEnvKey", () => {
-  it("accepts the gateway variables and every slot variable the config layer reads", () => {
-    for (const key of [
-      "WEBSEARCH_ORDER",
-      "WEBSEARCH_STRATEGY",
-      "WEBSEARCH_TIMEOUT_MS",
-      "WEBSEARCH_COUNT",
-      "WEBSEARCH_MAX_PROVIDERS",
-      "WEBSEARCH_DEDUPE",
-      "WEBSEARCH_CONFIG",
-      "ZHIPU_SEARCH_ENGINE",
-      "KIMI_API_KEY",
-      "MIMO_BASE_URL",
-      "STEPFUN_MODEL",
-      "ZHIPU_ENABLED",
-      "KIMI_PRIORITY",
-      "MIMO_TIMEOUT_MS",
-    ]) {
-      expect(isGatewayEnvKey(key)).toBe(true);
-    }
+describe("the .env whitelist is the config layer's own list", () => {
+  it("accepts every gateway variable and every slot variable the config layer reads", () => {
+    const { env } = load(
+      [
+        "WEBSEARCH_ORDER=zhipu,kimi",
+        "WEBSEARCH_STRATEGY=aggregate",
+        "WEBSEARCH_TIMEOUT_MS=999",
+        "WEBSEARCH_COUNT=3",
+        "WEBSEARCH_MAX_PROVIDERS=2",
+        "WEBSEARCH_DEDUPE=false",
+        "WEBSEARCH_CONFIG=./cfg.json",
+        "ZHIPU_SEARCH_ENGINE=search_pro",
+        "KIMI_API_KEY=1",
+        "MIMO_BASE_URL=https://mimo.example",
+        "STEPFUN_MODEL=step-model",
+        "ZHIPU_ENABLED=false",
+        "KIMI_PRIORITY=3",
+        "MIMO_TIMEOUT_MS=1234",
+      ].join("\n"),
+    );
+    expect(env).toEqual({
+      WEBSEARCH_ORDER: "zhipu,kimi",
+      WEBSEARCH_STRATEGY: "aggregate",
+      WEBSEARCH_TIMEOUT_MS: "999",
+      WEBSEARCH_COUNT: "3",
+      WEBSEARCH_MAX_PROVIDERS: "2",
+      WEBSEARCH_DEDUPE: "false",
+      WEBSEARCH_CONFIG: "./cfg.json",
+      ZHIPU_SEARCH_ENGINE: "search_pro",
+      KIMI_API_KEY: "1",
+      MIMO_BASE_URL: "https://mimo.example",
+      STEPFUN_MODEL: "step-model",
+      ZHIPU_ENABLED: "false",
+      KIMI_PRIORITY: "3",
+      MIMO_TIMEOUT_MS: "1234",
+    });
+    // Every one of those names is on the list config.ts owns, so adding a
+    // setting there is enough to make it settable from .env — the whitelist is
+    // not restated in this module and therefore cannot drift away from it.
+    for (const key of Object.keys(env)) expect(gatewayEnvKeys().has(key), key).toBe(true);
   });
 
-  it("rejects runtime-hijacking names, unknown slots and malformed names", () => {
-    for (const key of [
+  it("refuses runtime-hijacking names, unknown slots and malformed names", () => {
+    const rejected = [
       "NODE_OPTIONS",
       "LD_PRELOAD",
       "NODE_ENV",
@@ -168,9 +189,9 @@ describe("isGatewayEnvKey", () => {
       // lower-cased variant is a name the config layer never reads, so
       // exporting it would only mislead.
       "mimo_base_url",
-      "",
-    ]) {
-      expect(isGatewayEnvKey(key)).toBe(false);
-    }
+      "KIMI_API_KEY_EXTRA",
+    ];
+    const { env } = load(rejected.map((k) => `${k}=v`).join("\n"));
+    expect(env).toEqual({});
   });
 });

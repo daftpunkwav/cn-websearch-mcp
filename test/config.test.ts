@@ -11,6 +11,7 @@ import {
   DEFAULT_STRATEGY,
   DEFAULT_TIMEOUT_MS,
   KNOWN_PROVIDERS,
+  gatewayEnvKeys,
   loadConfig,
   parseProviderList,
   parseStrategy,
@@ -320,6 +321,30 @@ describe("config file layer", () => {
     expect(cfg.providers.kimi.options).toBeUndefined();
   });
 
+  it("never coerces a non-numeric file value into a budget", () => {
+    // Number(true) is 1, so a stray boolean used to become a 1 ms budget: every
+    // search then timed out instantly with no explanation. Only numbers and
+    // numeric strings are numbers here; anything else warns and falls back.
+    const warnings: string[] = [];
+    const cfg = loadConfig({
+      env: env(),
+      warn: (m) => warnings.push(m),
+      file: {
+        timeoutMs: true,
+        count: true,
+        maxProviders: true,
+        providers: { kimi: { timeoutMs: true }, stepfun: { timeoutMs: [] } },
+      },
+    });
+    expect(cfg.timeoutMs).toBe(DEFAULT_TIMEOUT_MS);
+    expect(cfg.count).toBe(DEFAULT_COUNT);
+    expect(cfg.maxProviders).toBe(DEFAULT_MAX_PROVIDERS);
+    expect(cfg.providers.kimi.timeoutMs).toBeUndefined();
+    expect(cfg.providers.stepfun.timeoutMs).toBeUndefined();
+    expect(warnings.filter((w) => /config timeoutMs|config count|config maxProviders/.test(w))).toHaveLength(3);
+    expect(warnings.some((w) => w.includes("providers.kimi.timeoutMs"))).toBe(true);
+  });
+
   it("supports strategy, count, maxProviders and dedupe from the file", () => {
     const cfg = loadConfig({
       env: env(),
@@ -459,5 +484,63 @@ describe("gateway-level env settings", () => {
     expect(loadConfig({ env: env({ WEBSEARCH_TIMEOUT_MS: "abc" }) }).timeoutMs).toBe(DEFAULT_TIMEOUT_MS);
     expect(errSpy).toHaveBeenCalledOnce();
     errSpy.mockRestore();
+  });
+});
+
+describe("the gateway environment contract", () => {
+  it("lists every variable this layer reads, and the .env loader follows that list", () => {
+    // The list the .env whitelist is built from must not drift away from what is
+    // actually read: a name added to loadConfig but not here would be silently
+    // dropped from every .env file, and a name listed here but never read would
+    // let an unrelated variable into process.env.
+    expect([...gatewayEnvKeys()].sort()).toEqual(
+      [
+        "WEBSEARCH_CONFIG",
+        "WEBSEARCH_COUNT",
+        "WEBSEARCH_DEDUPE",
+        "WEBSEARCH_MAX_PROVIDERS",
+        "WEBSEARCH_ORDER",
+        "WEBSEARCH_STRATEGY",
+        "WEBSEARCH_TIMEOUT_MS",
+        "ZHIPU_SEARCH_ENGINE",
+        ...KNOWN_PROVIDERS.flatMap((n) => ["API_KEY", "BASE_URL", "ENABLED", "MODEL", "PRIORITY", "TIMEOUT_MS"].map((s) => `${n.toUpperCase()}_${s}`)),
+      ].sort(),
+    );
+  });
+
+  it("reads each listed variable for real (WEBSEARCH_CONFIG belongs to the file layer)", () => {
+    // Proves the list is not just documentation: every name in it must actually
+    // change the resolved config when set. A value is derived from the name's
+    // role, so adding a key without a probe here fails loudly instead of
+    // silently skipping the check.
+    const gatewayValues: Record<string, string> = {
+      WEBSEARCH_COUNT: "3",
+      WEBSEARCH_DEDUPE: "false",
+      WEBSEARCH_MAX_PROVIDERS: "2",
+      WEBSEARCH_ORDER: "zhipu",
+      WEBSEARCH_STRATEGY: "aggregate",
+      WEBSEARCH_TIMEOUT_MS: "1234",
+      ZHIPU_SEARCH_ENGINE: "search_pro",
+    };
+    const slotValues: Record<string, string> = {
+      API_KEY: "probe-key",
+      BASE_URL: "https://probe.example",
+      ENABLED: "false",
+      MODEL: "probe-model",
+      PRIORITY: "7",
+      TIMEOUT_MS: "4321",
+    };
+    const valueFor = (name: string): string => {
+      const slot = Object.entries(slotValues).find(([s]) => name.endsWith(`_${s}`));
+      const value = gatewayValues[name] ?? slot?.[1];
+      if (value === undefined) throw new Error(`${name} is listed but has no probe value; add one`);
+      return value;
+    };
+    const base = JSON.stringify(loadConfig({ env: env(), warn: noWarn }));
+    for (const name of gatewayEnvKeys()) {
+      if (name === "WEBSEARCH_CONFIG") continue; // resolved by config-file.ts, covered there
+      const withVar = JSON.stringify(loadConfig({ env: env({ [name]: valueFor(name) }), warn: noWarn }));
+      expect(withVar, `${name} is listed but not read`).not.toBe(base);
+    }
   });
 });

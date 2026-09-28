@@ -13,7 +13,7 @@
 // abort support, plus error classification. Credentials never reach logs or
 // error messages.
 
-import { HttpError, NetworkError, ParseError, redactSecrets, TimeoutError } from "./errors.js";
+import { ERROR_MESSAGE_MAX, HttpError, NetworkError, ParseError, redactSecrets, TimeoutError } from "./errors.js";
 import type { FetchLike } from "./types.js";
 
 /**
@@ -24,13 +24,6 @@ import type { FetchLike } from "./types.js";
  * only repeat the download.
  */
 const MAX_BODY_BYTES = 8 * 1024 * 1024;
-
-/**
- * How much of an error body reaches an HttpError message. Applied after
- * redaction, so a credential is never cut in half on its way into the audit
- * trail. Matches the limit summarizeError applies to the same text downstream.
- */
-const ERROR_MESSAGE_MAX = 300;
 
 export interface HttpOptions {
   timeoutMs: number;
@@ -73,7 +66,7 @@ function combinedSignal(timeoutMs: number, external?: AbortSignal): { signal: Ab
  * - A body that finishes reading after the signal aborted → the abort reason, never a late success
  * - Other fetch/body-read failures → NetworkError
  * - A body larger than the internal cap → ParseError (permanent: retrying it would just re-download)
- * - HTTP >= 400 → HttpError (message truncated to the first 300 chars, guarding against giant bodies)
+ * - HTTP >= 400 → HttpError (message truncated to ERROR_MESSAGE_MAX chars, guarding against giant bodies)
  * - 2xx with a non-JSON body → json is null; the upper layer's asObject normalizes it to ParseError
  */
 export async function postJson(
@@ -123,11 +116,17 @@ export async function postJson(
 }
 
 /**
- * Read the response body as text, refusing to buffer more than MAX_BODY_BYTES.
+ * Read the response body as text, refusing to hand back more than
+ * MAX_BODY_BYTES.
  *
- * Streaming (chunk-counting) is used whenever the response exposes a real
- * `body` stream; a Response-shaped object without one (test doubles) falls back
- * to `text()` and is then bounded only by the Content-Length pre-check.
+ * Two paths, one guarantee for the caller: a body over the cap always fails with
+ * a ParseError naming the limit, so no consumer can receive an oversized body.
+ * What differs is only *when* it is caught — a real stream is counted chunk by
+ * chunk and cut off mid-flight, while a Response-shaped object without a body
+ * stream (test doubles) can only be measured after `text()` has already buffered
+ * it. The second path is therefore best-effort against memory pressure: it fails
+ * closed on the size, but it cannot fail early. Node's own fetch always exposes a
+ * body stream, so the strong path is the one production traffic takes.
  */
 async function readBody(res: Response, signal: AbortSignal, cancel: () => void): Promise<string> {
   try {

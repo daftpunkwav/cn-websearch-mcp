@@ -21,6 +21,7 @@
 
 import type { ConfigFileShape } from "./config-file.js";
 import { maybeObject } from "./normalize.js";
+import { SERVER_NAME } from "./server-info.js";
 import type { SearchStrategy } from "./types.js";
 
 /**
@@ -122,8 +123,62 @@ function ensureV1(baseUrl: string): string {
   return b.endsWith("/v1") ? b : b + "/v1";
 }
 
+/**
+ * Per-slot environment variable suffixes this layer reads, e.g. KIMI_API_KEY.
+ *
+ * This tuple is the single source of both halves of the environment contract:
+ * providerEnvKey() only accepts a name from it (so a typo is a compile error),
+ * and gatewayEnvKeys() enumerates every slot variable for the .env loader. Adding
+ * a slot setting therefore cannot drift out of the .env whitelist.
+ */
+export const PROVIDER_ENV_SUFFIXES = [
+  "API_KEY",
+  "BASE_URL",
+  "ENABLED",
+  "MODEL",
+  "PRIORITY",
+  "TIMEOUT_MS",
+] as const;
+export type ProviderEnvSuffix = (typeof PROVIDER_ENV_SUFFIXES)[number];
+
+/**
+ * Gateway-wide environment variable names read outside the per-slot scheme,
+ * including the legacy ZHIPU_SEARCH_ENGINE knob.
+ *
+ * Kept next to the code that consumes them so a new WEBSEARCH_* setting has one
+ * obvious home; config.test.ts asserts every name here actually changes the
+ * resolved config, so a name added to this list but never read is caught.
+ */
+export const GATEWAY_ENV_KEYS = [
+  "WEBSEARCH_CONFIG",
+  "WEBSEARCH_COUNT",
+  "WEBSEARCH_DEDUPE",
+  "WEBSEARCH_MAX_PROVIDERS",
+  "WEBSEARCH_ORDER",
+  "WEBSEARCH_STRATEGY",
+  "WEBSEARCH_TIMEOUT_MS",
+  "ZHIPU_SEARCH_ENGINE",
+] as const;
+
+/**
+ * Every environment variable name this gateway reads.
+ *
+ * The .env loader exports a .env file into process.env, and the working
+ * directory is not necessarily trusted, so it must only ever let these names
+ * across. It consumes this set rather than keeping its own copy: a setting added
+ * to loadConfig without being added here would otherwise be silently dropped
+ * from every .env file.
+ */
+export function gatewayEnvKeys(): ReadonlySet<string> {
+  const keys = new Set<string>(GATEWAY_ENV_KEYS);
+  for (const name of KNOWN_PROVIDERS) {
+    for (const suffix of PROVIDER_ENV_SUFFIXES) keys.add(providerEnvKey(name, suffix));
+  }
+  return keys;
+}
+
 /** Derive a provider's environment variable name, e.g. kimi + "API_KEY" -> KIMI_API_KEY. */
-export function providerEnvKey(name: ProviderName, suffix: string): string {
+export function providerEnvKey(name: ProviderName, suffix: ProviderEnvSuffix): string {
   return `${name.toUpperCase()}_${suffix}`;
 }
 
@@ -175,12 +230,24 @@ function intField(obj: Record<string, unknown> | undefined, key: string): number
   return obj ? asNonNegativeInt(obj[key]) : undefined;
 }
 
-/** Read obj.key as a positive integer; undefined when missing or invalid (for optional overrides). */
-function optionalPositiveInt(obj: Record<string, unknown> | undefined, key: string): number | undefined {
+/**
+ * Read obj.key as a positive integer; undefined when missing or invalid (for optional overrides).
+ *
+ * Only a number or a non-blank numeric string counts. `Number(true)` is 1, so a
+ * stray boolean in a config file would otherwise become a 1 ms budget silently.
+ */
+function optionalPositiveInt(
+  obj: Record<string, unknown> | undefined,
+  key: string,
+  warn: (m: string) => void,
+  source: string,
+): number | undefined {
   const raw = obj?.[key];
   if (raw === undefined || raw === null || raw === "") return undefined;
-  const n = typeof raw === "number" ? raw : Number(raw);
-  return Number.isInteger(n) && n > 0 ? n : undefined;
+  const n = typeof raw === "number" ? raw : typeof raw === "string" && raw.trim() !== "" ? Number(raw) : Number.NaN;
+  if (Number.isInteger(n) && n > 0) return n;
+  warn(`${source}="${String(raw)}" is not a positive integer, ignoring it`);
+  return undefined;
 }
 
 /** Read the providers.<name> sub-object from the config file; undefined on type mismatch. */
@@ -233,7 +300,13 @@ export function parseStrategy(raw: unknown, warn: (m: string) => void, source: s
   return undefined;
 }
 
-/** Parse a positive integer; return the fallback when missing, unparseable or out of range (with a warning). */
+/**
+ * Parse a positive integer; return the fallback when missing, unparseable or out of range (with a warning).
+ *
+ * Only a number or a non-blank numeric string counts. `Number(true)` is 1, so a
+ * stray boolean in a config file would otherwise become a 1 ms budget with no
+ * warning at all — every search would then time out instantly.
+ */
 function positiveInt(
   raw: unknown,
   fallback: number,
@@ -242,7 +315,7 @@ function positiveInt(
   max = Number.POSITIVE_INFINITY,
 ): number {
   if (raw === undefined || raw === null || raw === "") return fallback;
-  const n = typeof raw === "number" ? raw : Number(raw);
+  const n = typeof raw === "number" ? raw : typeof raw === "string" && raw.trim() !== "" ? Number(raw) : Number.NaN;
   if (!Number.isInteger(n) || n <= 0) {
     warn(`${source}="${String(raw)}" is not a positive integer, using ${fallback}`);
     return fallback;
@@ -341,7 +414,14 @@ export interface LoadConfigOptions {
   configFile?: string;
 }
 
-const defaultWarn = (m: string): void => console.error(`[cn-websearch-mcp] ${m}`);
+/**
+ * The one place a diagnostic is written when the caller supplied no `warn`
+ * callback. Exported so every layer that can warn (config file reading, config
+ * resolution, .env loading) formats the same line to the same stderr stream;
+ * otherwise the same class of problem is reported under three different
+ * prefixes, and the entry points have to know which default they landed on.
+ */
+export const defaultWarn = (m: string): void => console.error(`[${SERVER_NAME}] ${m}`);
 
 /**
  * Merge the three config layers into the final GatewayConfig.
@@ -381,10 +461,11 @@ export function loadConfig(options: LoadConfigOptions = {}): GatewayConfig {
       if (envEngine) providerOptions.searchEngine = envEngine;
     }
 
+    const fileTimeoutSource = `config providers.${name}.timeoutMs`;
     const envTimeout = asNonNegativeInt(env[providerEnvKey(name, "TIMEOUT_MS")]);
-    const fileTimeout = optionalPositiveInt(entry, "timeoutMs");
+    const fileTimeout = optionalPositiveInt(entry, "timeoutMs", warn, fileTimeoutSource);
     const timeoutSource =
-      envTimeout !== undefined ? providerEnvKey(name, "TIMEOUT_MS") : `config providers.${name}.timeoutMs`;
+      envTimeout !== undefined ? providerEnvKey(name, "TIMEOUT_MS") : fileTimeoutSource;
 
     providers[name] = {
       apiKey,

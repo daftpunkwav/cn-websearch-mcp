@@ -41,10 +41,15 @@ You can expect an acknowledgement within a few days.
   only what node needs to start, so no credential reaches a subprocess.
 - Outbound traffic goes only to the configured channel `baseUrl` endpoints,
   with a per-attempt timeout and a hard cap on how much of a response body is
-  buffered. The scheme is whatever the configuration says: a non-`https`
-  `baseUrl` is **not blocked**, but it is reported with a startup warning
-  because the `Authorization` header — and therefore the key — would travel in
-  cleartext. Keep the default `https` endpoints, or point a slot at a
+  buffered: the cap is counted chunk by chunk while the body streams and the
+  connection is dropped the moment it is passed. Node's own `fetch` always
+  exposes that stream. The one fallback — a Response-shaped object with no body
+  stream at all, which in practice means a test double — can only be measured
+  after `text()` has buffered it, so it still refuses to hand back an oversized
+  body but cannot fail early. The scheme is whatever the configuration says: a
+  non-`https` `baseUrl` is **not blocked**, but it is reported with a startup
+  warning because the `Authorization` header — and therefore the key — would
+  travel in cleartext. Keep the default `https` endpoints, or point a slot at a
   loopback proxy.
 - Upstream text (titles, snippets, URLs, error bodies carried into the audit
   trail) is stripped of control characters before it reaches a caller, so a

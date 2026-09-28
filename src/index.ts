@@ -17,12 +17,17 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema, type CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { loadDotEnv } from "./dotenv.js";
+import { defaultWarn } from "./config.js";
 import { createRuntime } from "./runtime.js";
 import { createGatewayTools } from "./tools.js";
 import { runCli, type CliRunDeps } from "./cli/index.js";
 import { SERVER_NAME, SERVER_VERSION } from "./server-info.js";
 
-loadDotEnv();
+// The .env warning channel is passed explicitly rather than left to the loader's
+// default, so every diagnostic this program emits — a skipped .env name, a bad
+// config value, a corrupt config file — leaves through one named outlet instead
+// of whichever default each layer happened to carry.
+loadDotEnv(process.cwd(), process.env, defaultWarn);
 const runtime = createRuntime();
 const tools = createGatewayTools({ config: runtime.config, chain: runtime.chain });
 
