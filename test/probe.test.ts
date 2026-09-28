@@ -79,6 +79,20 @@ describe("probeProvider", () => {
     expect(row.ok).toBe(false);
     expect(row.error).toBe("TimeoutError: request timed out");
   });
+
+  it("never reports ok for an answer that arrives after its own deadline", async () => {
+    // A channel that ignores the signal must not be reported healthy: the row
+    // says the call worked and `test` exits 0, hiding a channel that is already
+    // blowing the budget every single time.
+    const late = provider("e", async () => {
+      await new Promise<void>((res) => setTimeout(res, 80));
+      return { results: [{ title: "late", url: "https://e.example", snippet: "" }], _meta: { provider: "e", total_latency_ms: 0, attempts: [] } };
+    });
+    const row = await probeProvider(late, req, { timeoutMs: 20 });
+    expect(row.ok).toBe(false);
+    expect(row.results).toBe(0);
+    expect(row.error).toBe("TimeoutError: request timed out");
+  });
 });
 
 describe("probeAll", () => {

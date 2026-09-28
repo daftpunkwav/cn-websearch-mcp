@@ -17,7 +17,7 @@
 // shares, so both surfaces accept exactly the same names.
 
 import { COUNT_MAX, COUNT_MIN, KNOWN_PROVIDERS, QUERY_MAX, type GatewayConfig } from "./config.js";
-import { AllProvidersFailedError, CallCancelledError, runSearch, type DispatchOptions } from "./orchestrator.js";
+import { AllProvidersFailedError, CallCancelledError, NoProviderConfiguredError, runSearch, type DispatchOptions } from "./orchestrator.js";
 import { selectProviders } from "./provider-selection.js";
 import { summarizeError } from "./errors.js";
 import { clampInt, truncate } from "./normalize.js";
@@ -64,7 +64,8 @@ export function buildToolDefinitions(defaultCount: number, defaultStrategy: Sear
         "Search the web through any of the configured built-in search channels. " +
         "Two strategies: 'fallback' tries slots in your configured priority order and returns the first success; " +
         "'aggregate' queries several slots in parallel and merges the results (deduplicated by URL, each item tagged " +
-        "with its source slot). Per-attempt timeout, one retry on transient failures. Returns normalized results " +
+        "with its source slot). Per-attempt timeout, with one retry after a transient failure (network error, " +
+        "HTTP 5xx, 429); an attempt that times out is never retried. Returns normalized results " +
         "{ title, url, snippet, content?, published_date?, source? } plus _meta with the answering slot(s), " +
         "total latency, and a per-attempt audit trail.",
       inputSchema: {
@@ -76,7 +77,7 @@ export function buildToolDefinitions(defaultCount: number, defaultStrategy: Sear
             minimum: COUNT_MIN,
             maximum: COUNT_MAX,
             default: defaultCount,
-            description: "Desired number of results (clamped per provider limits)",
+            description: `Desired number of results; a value outside ${COUNT_MIN}-${COUNT_MAX} is clamped to that range rather than rejected, and a value that is not a number falls back to the configured default`,
           },
           strategy: {
             type: "string",
@@ -193,10 +194,16 @@ export function createGatewayTools(deps: GatewayToolsDeps) {
         );
         return textContent(out);
       } catch (err) {
-        // A business failure (every provider failed) and a cancellation (the
-        // caller went away) both arrive as an audit trail, so return it as-is
-        // instead of flattening it into an unexpected error.
-        if (err instanceof AllProvidersFailedError || err instanceof CallCancelledError) {
+        // The three expected outcomes of a call — nobody was configured, every
+        // provider failed, the caller went away — are answers, not crashes: each
+        // one carries its audit trail and reaches the client as a structured
+        // error instead of a log line. An empty chain in particular is the
+        // ordinary state of a fresh install, not an unexpected failure.
+        if (
+          err instanceof AllProvidersFailedError ||
+          err instanceof CallCancelledError ||
+          err instanceof NoProviderConfiguredError
+        ) {
           return textContent({ error: err.message, attempts: err.attempts }, true);
         }
         // Any other exception is unexpected: log the full error to stderr, return only a redacted summary,

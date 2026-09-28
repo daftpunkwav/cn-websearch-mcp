@@ -33,6 +33,11 @@ export interface ProbeRow {
  * Probe one provider. Any failure (network, timeout, protocol, parsing) is
  * converted into a row with ok=false and never thrown — the whole point of a
  * probe is to find the broken provider.
+ *
+ * An answer that only arrives after this probe's own deadline is a failure, not
+ * a success: a channel that reliably blows its budget must not be reported
+ * healthy, because `test` exits 0 on it and the caller then trusts a channel
+ * that cannot answer in time.
  */
 export async function probeProvider(
   p: SearchProvider,
@@ -48,6 +53,7 @@ export async function probeProvider(
       signal: ac.signal,
       fetchImpl: opts.fetchImpl ?? fetch,
     });
+    if (ac.signal.aborted) throw ac.signal.reason instanceof Error ? ac.signal.reason : new TimeoutError();
     return {
       provider: p.name,
       ok: true,

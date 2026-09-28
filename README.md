@@ -216,7 +216,7 @@ Read-only: effective strategy and settings, and per slot whether it is enabled, 
 
 - Only channels that are enabled **and** have a key participate. `fallback` walks them in priority order; `aggregate` queries them in parallel.
 - Per attempt: one wall-clock budget (`timeoutMs`); hung requests are aborted and recorded as `timeout`.
-- Transient failures (network errors, HTTP 5xx, 429) are retried **once** after a short backoff (250 ms, 1 s for a 429), then the next channel is tried. A budget `timeout` is not retried — its wall-clock budget is already spent, so the chain moves on to the next channel instead.
+- Transient failures (network errors, HTTP 5xx, 429) are retried **once** after a short backoff (250 ms, 1 s for a 429), then the next channel is tried. A `timeout` is never retried, whoever raised it — the orchestrator's budget timer or the channel itself: the wall-clock budget is spent either way, and retrying it would only hand the same exhausted budget back to the same channel.
 - Permanent failures (HTTP 4xx other than 429) skip the retry and move on immediately.
 - If the MCP client cancels the request, the search stops immediately: the in-flight attempt is aborted, its audit record is `cancelled`, and the call ends there instead of walking the rest of the chain.
 - In `aggregate`, partial failure is not failure: successful channels' results are returned and the failures stay in `_meta.attempts`.

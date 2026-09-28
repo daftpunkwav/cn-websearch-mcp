@@ -29,9 +29,16 @@ describe("error classes", () => {
 });
 
 describe("isTransient", () => {
-  it("treats timeout and network errors as retryable", () => {
-    expect(isTransient(new TimeoutError())).toBe(true);
+  it("treats network errors as retryable", () => {
     expect(isTransient(new NetworkError("fetch failed"))).toBe(true);
+  });
+
+  it("does not treat a timeout as retryable, whoever raised it", () => {
+    // A timeout means the wall-clock budget is gone. Retrying it would hand the
+    // same spent budget to the same channel, so the documented worst case stays
+    // 2 x timeoutMs + backoff per channel instead of 3 x.
+    expect(isTransient(new TimeoutError())).toBe(false);
+    expect(isTransient(new TimeoutError("caller deadline"))).toBe(false);
   });
 
   it("treats 5xx and 429 as retryable, other 4xx as permanent", () => {

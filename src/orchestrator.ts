@@ -32,10 +32,18 @@ const RETRY_BACKOFF_MS = 250;
 /** A 429 is the upstream asking for a pause, so it gets a longer one than an ordinary 5xx. */
 const RATE_LIMIT_BACKOFF_MS = 1_000;
 
+/**
+ * Thrown when the call has no usable provider at all, so no attempt was ever
+ * made. It carries an empty audit trail like the other two structured failures,
+ * so a caller can render every business outcome with one shape instead of
+ * probing the error type first.
+ */
 export class NoProviderConfiguredError extends Error {
+  readonly attempts: readonly AttemptRecord[];
   constructor() {
     super("no provider is configured: set at least one provider API key (see .env.example or cn-websearch.config.json)");
     this.name = "NoProviderConfiguredError";
+    this.attempts = [];
   }
 }
 
@@ -110,7 +118,11 @@ export interface OrchestratorOptions {
 
 export interface DispatchOptions extends OrchestratorOptions {
   strategy: SearchStrategy;
-  /** Maximum number of providers used for this call (default: all). */
+  /**
+   * Maximum number of providers used for this call (default: all). Applied after
+   * an explicit provider selection, so it also caps one: asking for three slots
+   * with a fan-out of two searches two, not three.
+   */
   maxProviders?: number;
   /** Under aggregate, whether to dedupe by URL (default true). */
   dedupe?: boolean;
@@ -170,17 +182,19 @@ async function runProvider(
       return { records, result };
     } catch (err) {
       const latency_ms = Date.now() - t0;
-      // The timeout verdict comes from this layer's controller's abort reason:
-      // only an abort raised here with a TimeoutError counts as "timeout";
-      // timeout-like errors thrown by the adapter itself are still classified
-      // by isTransient. A cancellation is judged by the same single signal — the
+      // One rule for timeouts, whoever noticed them: this layer's budget timer
+      // aborting (the adapter's in-flight call then rejects with that reason) and
+      // an adapter raising TimeoutError itself describe the same dead request.
+      // Both are "timeout" and neither is retried, so the verdict never depends
+      // on the race between the two, and the audit trail reads the same either
+      // way. A cancellation is judged by the same single signal — the
       // controller's own abort reason — so an adapter that throws an unrelated
       // error is still reported as what it is.
       const cancelled = ac.signal.reason instanceof CallCancelledError;
       const timedOut = !cancelled && ac.signal.aborted && ac.signal.reason instanceof TimeoutError;
       const status: AttemptStatus = cancelled
         ? "cancelled"
-        : timedOut
+        : timedOut || err instanceof TimeoutError
           ? "timeout"
           : isTransient(err)
             ? "transient_error"
@@ -191,7 +205,8 @@ async function runProvider(
         latency_ms,
         ...(cancelled ? {} : { error: summarizeError(err) }),
       });
-      // Transient failures retry once after a backoff; cancellation and every other failure abandon immediately.
+      // Transient failures retry once after a backoff; cancellation, a spent
+      // timeout and every other failure abandon immediately.
       if (status !== "transient_error" || tryIndex === 1) return { records };
       backoffMs = backoffFor(err);
     } finally {

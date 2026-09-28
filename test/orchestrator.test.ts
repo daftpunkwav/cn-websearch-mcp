@@ -19,6 +19,9 @@ import type { NormalizedSearchResult, SearchContext, SearchProvider, SearchReque
 const req: SearchRequest = { query: "q", count: 8 };
 const opts = { timeoutMs: 1_000 };
 
+/** Far above the 250ms retry backoff: passing it proves no retry was attempted. */
+const RETRY_BUDGET_MS = 200;
+
 function makeProvider(
   name: string,
   behavior: (req: SearchRequest, ctx: SearchContext, call: number) => Promise<NormalizedSearchResult>,
@@ -48,6 +51,14 @@ describe("errors", () => {
 
   it("NoProviderConfiguredError has an actionable message", () => {
     expect(new NoProviderConfiguredError().message).toContain("no provider is configured");
+  });
+
+  it("every structured failure carries an audit trail, even an empty one", () => {
+    // One shape for all three, so the tool layer renders them without probing
+    // the error type and never has to invent an empty list at the call site.
+    expect(new NoProviderConfiguredError().attempts).toEqual([]);
+    expect(new AllProvidersFailedError([]).attempts).toEqual([]);
+    expect(new CallCancelledError([]).attempts).toEqual([]);
   });
 });
 
@@ -120,11 +131,27 @@ describe("searchWithFallback", () => {
     });
     const err = await searchWithFallback(req, { ...opts, providers: [a.provider, b.provider] }).catch((e) => e);
     expect(err).toBeInstanceOf(AllProvidersFailedError);
+    // A timeout is reported as "timeout" and never retried, no matter whether the
+    // budget timer or the adapter raised it: the same hung request must get the
+    // same verdict, and it must not spend a second budget.
     expect((err as AllProvidersFailedError).attempts.map((x) => `${x.provider}:${x.status}`)).toEqual([
       "a:permanent_error",
-      "b:transient_error",
-      "b:transient_error",
+      "b:timeout",
     ]);
+    expect(b.calls()).toBe(1);
+  });
+
+  it("does not retry a timeout raised by the adapter itself", async () => {
+    const a = makeProvider("a", async () => {
+      throw new TimeoutError("upstream deadline");
+    });
+    const b = makeProvider("b", async () => okResult("b"));
+    const t0 = Date.now();
+    const out = await searchWithFallback(req, { ...opts, providers: [a.provider, b.provider] });
+    expect(a.calls()).toBe(1);
+    expect(out._meta.provider).toBe("b");
+    expect(out._meta.attempts[0]).toMatchObject({ provider: "a", status: "timeout" });
+    expect(Date.now() - t0).toBeLessThan(RETRY_BUDGET_MS);
   });
 
   it("keeps empty results as a legitimate success", async () => {

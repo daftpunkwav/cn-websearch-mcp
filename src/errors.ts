@@ -46,9 +46,27 @@ export class ParseError extends Error {
   }
 }
 
-/** Whether the failure is worth one retry (network error / 5xx / 429 / timeout). */
+/**
+ * Hard cap on the characters of one untrusted error text that may reach a
+ * caller, applied both where an upstream body is folded into an HttpError
+ * message and where summarizeError compresses any error for the audit trail.
+ * One constant for both: if the two limits ever drifted, widening one would
+ * leave the other cutting a credential in half.
+ */
+export const ERROR_MESSAGE_MAX = 300;
+
+/**
+ * Whether the failure is worth one retry (network error / 5xx / 429).
+ *
+ * A timeout is deliberately NOT transient. Its wall-clock budget is spent, so a
+ * retry hands the same exhausted budget to the same channel and the documented
+ * worst case per channel would silently grow from 2 × timeoutMs + backoff to
+ * 3 ×. The verdict must also not depend on who noticed the timeout first: the
+ * orchestrator's own budget timer and an adapter raising TimeoutError describe
+ * the same dead request, so both are reported as "timeout" and neither retries.
+ */
 export function isTransient(err: unknown): boolean {
-  if (err instanceof TimeoutError || err instanceof NetworkError) return true;
+  if (err instanceof NetworkError) return true;
   if (err instanceof HttpError) return err.status >= 500 || err.status === 429;
   return false;
 }
@@ -106,15 +124,20 @@ function collapseWhitespace(text: string): string {
 /**
  * Produce a short, key-free error summary for AttemptRecord.error.
  * In order: strip control characters → redact credential-like fragments →
- * collapse whitespace → truncate to 300 chars. Each step must precede the next:
- * stripping first lets redaction match a credential split by a control character,
- * and redacting before truncating means a value cut in half by the length limit
- * is never emitted as a recognizable fragment.
+ * collapse whitespace → truncate to ERROR_MESSAGE_MAX chars. Each step must
+ * precede the next: stripping first lets redaction match a credential split by a
+ * control character, and redacting before truncating means a value cut in half
+ * by the length limit is never emitted as a recognizable fragment.
  */
 export function summarizeError(err: unknown): string {
   if (err instanceof Error) {
     const msg = collapseWhitespace(redactSecrets(stripControlChars(err.message)));
-    return `${err.name}: ${msg.length > 300 ? msg.slice(0, 300) + "..." : msg}`;
+    return `${err.name}: ${truncateForAudit(msg)}`;
   }
-  return collapseWhitespace(redactSecrets(stripControlChars(String(err)))).slice(0, 300);
+  return truncateForAudit(collapseWhitespace(redactSecrets(stripControlChars(String(err)))));
+}
+
+/** Cut already-sanitized text at the shared audit-trail limit, marking the cut. */
+function truncateForAudit(text: string): string {
+  return text.length > ERROR_MESSAGE_MAX ? text.slice(0, ERROR_MESSAGE_MAX) + "..." : text;
 }

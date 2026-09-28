@@ -148,6 +148,39 @@ describe("web_search argument validation", () => {
     await tools.call("web_search", { query: "q", count: null });
     expect(seen).toEqual([8, 8, 8]);
   });
+
+  it("coerces an unusable count but rejects an unusable enumeration", async () => {
+    // Deliberate asymmetry, locked so it cannot drift silently:
+    //  - count is a quantity with a declared range and a documented default, so
+    //    any unusable value (null, "", {}, 999, true) degrades to that default.
+    //  - strategy and providers are enumerations: there is no sensible fallback,
+    //    and silently searching every channel when the caller named none would be
+    //    worse than failing. null is not in either published JSON Schema, so it is
+    //    a caller bug and is reported as one.
+    const seen: any[] = [];
+    const p = fakeProvider("stepfun", async (req) => {
+      seen.push(req);
+      return { results: [], _meta: { provider: "stepfun", total_latency_ms: 0, attempts: [] } };
+    });
+    const tools = createGatewayTools({ ...deps([p]), config: loadConfig({ env: {}, warn: () => {} }) });
+
+    for (const count of [null, {}, true, "abc", 0, 999]) {
+      const out = await tools.call("web_search", { query: "q", count });
+      expect(out.isError, `count=${JSON.stringify(count)}`).toBeUndefined();
+    }
+    expect(seen.map((r) => r.count)).toEqual([8, 8, 8, 8, 1, 50]);
+
+    for (const providers of [null, "stepfun", 42]) {
+      const out = await tools.call("web_search", { query: "q", providers });
+      expect(out.isError, `providers=${JSON.stringify(providers)}`).toBe(true);
+      expect(parse(out).error).toContain("'providers' must be an array");
+    }
+    for (const strategy of [null, 42, ["fallback"]]) {
+      const out = await tools.call("web_search", { query: "q", strategy });
+      expect(out.isError, `strategy=${JSON.stringify(strategy)}`).toBe(true);
+      expect(parse(out).error).toContain("'strategy' must be one of");
+    }
+  });
 });
 
 describe("web_search dispatch", () => {
@@ -262,12 +295,34 @@ describe("web_search dispatch", () => {
     expect(body.attempts.map((a: AttemptRecord) => a.provider)).toEqual(["a", "b"]);
   });
 
-  it("formats unexpected errors as isError without throwing", async () => {
+  it("reports an empty chain as a structured business failure, not an unexpected crash", async () => {
+    // NoProviderConfiguredError is the answer to "I called web_search before
+    // configuring a key", not a bug. It must reach the client with its actionable
+    // message and must not pollute stderr on every call.
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const out = await createGatewayTools(deps([])).call("web_search", { query: "q" });
     expect(out.isError).toBe(true);
     expect(parse(out).error).toContain("no provider is configured");
     expect(parse(out).attempts).toEqual([]);
+    expect(errSpy).not.toHaveBeenCalled();
+    errSpy.mockRestore();
+  });
+
+  it("logs and redacts a genuinely unexpected error", async () => {
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const tools = createGatewayTools(
+      deps([alive()], {
+        searchFn: async () => {
+          throw new TypeError("cannot read property of undefined");
+        },
+      }),
+    );
+    const out = await tools.call("web_search", { query: "q" });
+    expect(out.isError).toBe(true);
+    expect(parse(out)).toEqual({
+      error: "TypeError: cannot read property of undefined",
+      attempts: [],
+    });
     expect(errSpy).toHaveBeenCalledOnce();
     errSpy.mockRestore();
   });

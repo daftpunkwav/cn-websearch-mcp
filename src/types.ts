@@ -28,6 +28,13 @@ export interface SearchRequest {
 
 export interface NormalizedItem {
   title: string;
+  /**
+   * Always an `http:` or `https:` link, already canonicalized: a bare host gains
+   * an `https://` prefix, a protocol-relative reference gains a scheme, and
+   * anything else is kept verbatim. Non-http(s) references are never emitted —
+   * normalizeUrl returns null for them and the whole item is dropped, so a
+   * downstream implementation must never assign an arbitrary string here.
+   */
   url: string;
   snippet: string;
   /** Body excerpt when the provider returns full text. */
@@ -38,6 +45,15 @@ export interface NormalizedItem {
 }
 
 export type AttemptStatus = "ok" | "timeout" | "transient_error" | "permanent_error" | "cancelled";
+
+/**
+ * One row of the audit trail of a web_search call.
+ *
+ * `status` is the verdict of that single attempt, and a client can act on it:
+ * "ok" carries no error, "timeout" means the wall-clock budget was spent (never
+ * retried, whoever raised it), "transient_error" is the only retryable verdict,
+ * and "cancelled" means the caller went away rather than the channel failing.
+ */
 
 /** One row of the audit trail of a web_search call. */
 export interface AttemptRecord {
@@ -69,7 +85,8 @@ export interface SearchContext {
    * Wall-clock budget for a single search attempt, enforced by the orchestrator
    * through an abort signal. Note: a retry gets its own equal budget, and
    * adapters (e.g. kimi's multi-round HTTP calls) also use it as the
-   * per-HTTP-request timeout cap.
+   * per-HTTP-request timeout cap. A shorter per-request cap of an adapter's own
+   * would therefore still be a spent budget: a TimeoutError is never retried.
    */
   timeoutMs: number;
   /**
