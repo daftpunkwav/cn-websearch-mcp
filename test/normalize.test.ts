@@ -14,6 +14,7 @@ import {
   mergeItems,
   mergeSourceItems,
   normalizeDate,
+  normalizeUrl,
   str,
   stripControlChars,
   toItem,
@@ -35,6 +36,15 @@ describe("clampInt", () => {
     expect(clampInt("7", 8, 1, 10)).toBe(7);
     expect(clampInt(undefined, 8, 1, 10)).toBe(8);
     expect(clampInt("abc", 8, 1, 10)).toBe(8);
+  });
+
+  it("treats a blank string as not supplied, like every other empty value", () => {
+    // Number("") is 0: reading a blank as zero clamped it to min instead of
+    // falling back, so "" and null — both "no value given" — disagreed.
+    expect(clampInt("", 8, 1, 10)).toBe(8);
+    expect(clampInt("   ", 8, 1, 10)).toBe(8);
+    expect(clampInt(null, 8, 1, 10)).toBe(8);
+    expect(clampInt("0", 8, 1, 10)).toBe(1);
   });
 });
 
@@ -101,6 +111,26 @@ describe("toItem", () => {
       url: "ftp://files.example/f",
       snippet: "",
     });
+  });
+
+  it("does not mangle a scheme that carries no // separator", () => {
+    // These used to be glued onto "https://" and emitted as broken URLs with an
+    // empty hostname-derived title.
+    expect(toItem({ url: "mailto:a@b.example" })).toMatchObject({ url: "mailto:a@b.example" });
+    expect(toItem({ url: "javascript:alert(1)" })).toMatchObject({ url: "javascript:alert(1)" });
+  });
+
+  it("resolves protocol-relative and host:port references", () => {
+    expect(toItem({ url: "//cdn.example/a.js" })).toMatchObject({ url: "https://cdn.example/a.js" });
+    expect(toItem({ url: "localhost:8080/x" })).toMatchObject({ url: "https://localhost:8080/x" });
+  });
+});
+
+describe("normalizeUrl", () => {
+  it("keeps an absolute URL and prefixes only a bare host", () => {
+    expect(normalizeUrl("https://a.example/x?y=1")).toBe("https://a.example/x?y=1");
+    expect(normalizeUrl("http://a.example")).toBe("http://a.example");
+    expect(normalizeUrl("example.com/x")).toBe("https://example.com/x");
   });
 });
 

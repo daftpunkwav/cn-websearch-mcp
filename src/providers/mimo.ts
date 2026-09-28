@@ -19,7 +19,7 @@
 //
 // Location parameters always come from config; when unset, only the country level is given.
 
-import { hostnameOf, asObject, asArray, clampInt, maybeObject, str } from "../normalize.js";
+import { hostnameOf, asObject, asArray, clampInt, maybeObject, normalizeUrl, str } from "../normalize.js";
 import { postJson } from "../http.js";
 import type { NormalizedItem, NormalizedSearchResult, SearchContext, SearchProvider, SearchRequest } from "../types.js";
 import type { ProviderConfig } from "../config.js";
@@ -41,10 +41,13 @@ function itemsFromAnnotations(annotations: unknown[]): NormalizedItem[] {
   const byUrl = new Map<string, NormalizedItem>();
   const placeholderTitles = new Set<string>();
   for (const raw of annotations) {
-    const a = raw as Annotation;
+    // One malformed entry must not sink the whole citation list: a null element
+    // carries no fields at all, and a non-object one carries none we can read.
+    const a: Annotation | undefined = maybeObject(raw);
+    if (!a) continue;
     const url = str(a.url).trim();
     if (!url) continue;
-    const urlNorm = /^https?:\/\//i.test(url) ? url : `https://${url}`;
+    const urlNorm = normalizeUrl(url);
     const kind = str(a.type);
     const title = str(a.title).trim();
     const existing = byUrl.get(urlNorm);

@@ -12,6 +12,7 @@
 // in memory and is never written back to the config file — the CLI is a consumer, not a configuration tool.
 
 import { createInterface } from "node:readline";
+import { COUNT_MAX, COUNT_MIN } from "../config.js";
 import { summarizeError } from "../errors.js";
 import { parseProviderNames } from "../provider-selection.js";
 import type { SearchStrategy } from "../types.js";
@@ -173,8 +174,11 @@ export async function runRepl(deps: CliDeps, io: { input: NodeJS.ReadableStream 
           write(`error: invalid count "${argText}" (expected a positive integer)`);
           return false;
         }
-        session.count = n;
-        write(`count: ${n}`);
+        // Store and echo the effective count: the search layer clamps to the same
+        // range, so an out-of-range value must not be reported as if it took effect.
+        const effective = Math.min(COUNT_MAX, Math.max(COUNT_MIN, n));
+        session.count = effective;
+        write(`count: ${effective}`);
         return false;
       }
 

@@ -26,9 +26,15 @@ export function hostnameOf(url: string): string {
   }
 }
 
-/** Clamp to an integer in [min, max]; returns fallback when not parseable as a finite number. */
+/**
+ * Clamp to an integer in [min, max]; returns fallback when not parseable as a finite number.
+ *
+ * A blank or whitespace-only string counts as "not supplied" rather than as zero:
+ * `Number("")` is 0, which would silently clamp such a value to `min` instead of
+ * falling back, making "" and null — both meaning "no value given" — disagree.
+ */
 export function clampInt(v: unknown, fallback: number, min: number, max: number): number {
-  const n = typeof v === "number" ? v : typeof v === "string" ? Number(v) : NaN;
+  const n = typeof v === "number" ? v : typeof v === "string" && v.trim() !== "" ? Number(v) : NaN;
   if (!Number.isFinite(n)) return fallback;
   return Math.min(max, Math.max(min, Math.round(n)));
 }
@@ -90,11 +96,27 @@ export function str(v: unknown): string {
 }
 
 /**
+ * Scheme syntax of RFC 3986 (`scheme ":" ...`). The negative lookahead keeps a
+ * bare "host:port/path" on the path that gets the https:// prefix: the digits
+ * after the colon are a port there, not a scheme.
+ */
+const URL_SCHEME = /^[a-z][a-z0-9+.-]*:(?!\d)/i;
+
+/**
+ * Canonicalize one upstream reference's URL: a value that already carries a
+ * scheme is kept verbatim (so "ftp://x" is not mangled into "https://ftp://x",
+ * and "mailto:a@b.c" is not turned into a broken host), a protocol-relative
+ * "//host/path" gets the scheme only, and a bare host gets "https://" in front.
+ */
+export function normalizeUrl(url: string): string {
+  if (url.startsWith("//")) return `https:${url}`;
+  return URL_SCHEME.test(url) ? url : `https://${url}`;
+}
+
+/**
  * Normalize a raw search item into a NormalizedItem. `url` is required —
- * items without a URL are dropped outright, never fabricated. URLs already
- * carrying any scheme (http, https, ftp, ...) are kept as-is; only bare
- * host paths get the https:// prefix, so "ftp://x" is not mangled into
- * "https://ftp://x".
+ * items without a URL are dropped outright, never fabricated. URL forms are
+ * resolved by normalizeUrl, so "ftp://x" is kept and a bare host gets https://.
  */
 export function toItem(raw: {
   title?: unknown;
@@ -105,7 +127,7 @@ export function toItem(raw: {
 }): NormalizedItem | null {
   const url = str(raw.url).trim();
   if (!url) return null;
-  const urlNorm = /^[a-z][a-z0-9+.-]*:\/\//i.test(url) ? url : `https://${url}`;
+  const urlNorm = normalizeUrl(url);
   const item: NormalizedItem = {
     title: str(raw.title).trim() || hostnameOf(urlNorm),
     url: urlNorm,

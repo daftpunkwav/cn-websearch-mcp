@@ -133,6 +133,21 @@ describe("web_search argument validation", () => {
     await tools.call("web_search", { query: "q", count: "7" });
     expect(seen).toEqual([8, 50, 1, 7]);
   });
+
+  it("treats a blank count as not provided, like a null one", async () => {
+    // Number("") is 0, which used to clamp a blank to 1 while null fell back to
+    // the configured count: two spellings of "unset" produced different searches.
+    const seen: number[] = [];
+    const p = fakeProvider("stepfun", async (req) => {
+      seen.push(req.count);
+      return { results: [], _meta: { provider: "stepfun", total_latency_ms: 0, attempts: [] } };
+    });
+    const tools = createGatewayTools({ ...deps([p]), config: loadConfig({ env: {}, warn: () => {} }) });
+    await tools.call("web_search", { query: "q", count: "" });
+    await tools.call("web_search", { query: "q", count: "   " });
+    await tools.call("web_search", { query: "q", count: null });
+    expect(seen).toEqual([8, 8, 8]);
+  });
 });
 
 describe("web_search dispatch", () => {

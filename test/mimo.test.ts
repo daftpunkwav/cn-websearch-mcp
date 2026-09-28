@@ -100,6 +100,34 @@ describe("mimo provider", () => {
     expect(out._meta.answer).toBe("only text");
   });
 
+  it("skips null and non-object annotations instead of throwing on them", async () => {
+    // A null element has no fields at all; reading one off it used to raise a
+    // TypeError that lost the whole citation list along with the answer.
+    const fetchImpl: FetchLike = async () =>
+      jsonResponse({
+        choices: [{ message: { content: "答案", annotations: [
+          null,
+          "text",
+          { type: "url_citation", title: "ok", url: "https://a.example/1" },
+        ] } }],
+      });
+    const out = await createMimoProvider(cfg).search({ query: "q", count: 8 }, ctx(fetchImpl));
+    expect(out.results).toEqual([{ title: "ok", url: "https://a.example/1", snippet: "" }]);
+  });
+
+  it("normalizes citation URLs with the same rule as the shared helper", async () => {
+    const fetchImpl: FetchLike = async () =>
+      jsonResponse({
+        choices: [{ message: { content: "", annotations: [
+          { type: "url_citation", title: "f", url: "ftp://files.example/f" },
+          { type: "url_citation", title: "c", url: "//cdn.example/a.js" },
+        ] } }],
+      });
+    const out = await createMimoProvider(cfg).search({ query: "q", count: 8 }, ctx(fetchImpl));
+    // ftp:// used to be glued into "https://ftp://..." here, unlike every other adapter.
+    expect(out.results.map((r) => r.url)).toEqual(["ftp://files.example/f", "https://cdn.example/a.js"]);
+  });
+
   it("throws ParseError when choices is empty", async () => {
     const fetchImpl: FetchLike = async () => jsonResponse({ choices: [] });
     await expect(createMimoProvider(cfg).search({ query: "q", count: 8 }, ctx(fetchImpl))).rejects.toMatchObject({

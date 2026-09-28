@@ -273,6 +273,21 @@ describe("cmdTest", () => {
     expect(seen).toEqual(["custom", "今日新闻"]);
   });
 
+  it("falls back to the default probe query for a whitespace-only one", async () => {
+    // A blank query used to be sent upstream as-is: a real request that spends
+    // the caller's quota on a query that is only spaces.
+    const seen: string[] = [];
+    const { deps } = makeDeps({
+      probe: async (providers, req) => {
+        seen.push(req.query);
+        return providers.map((p) => ({ provider: p.name, ok: true, latency_ms: 1, results: 0, sample: "", error: "" }));
+      },
+    });
+    await cmdTest(deps, { command: "test", query: "   ", json: false });
+    await cmdTest(deps, { command: "test", query: "  padded  ", json: false });
+    expect(seen).toEqual(["今日新闻", "padded"]);
+  });
+
   it("returns 2 for an unusable provider list and 1 when nothing is ready", async () => {
     const { deps, err } = makeDeps();
     expect(await cmdTest(deps, { command: "test", query: "", providers: ["openai"], json: false })).toBe(2);

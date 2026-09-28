@@ -119,6 +119,21 @@ describe("runRepl", () => {
     expect(text).toContain('error: invalid count "0"');
   });
 
+  it("clamps an out-of-range count to the range searches actually use", async () => {
+    const counts: number[] = [];
+    const { text } = await session(["/count 999", "hello", "/quit"], {
+      search: async (req) => {
+        counts.push(req.count);
+        return okResult("kimi");
+      },
+    });
+    // Echoing 999 while the search silently used 50 left the session display and
+    // the effective behaviour disagreeing.
+    expect(text).toContain("count: 50");
+    expect(text).not.toContain("count: 999");
+    expect(counts).toEqual([50]);
+  });
+
   it("shows and updates count and providers", async () => {
     const counts: number[] = [];
     const { text } = await session(

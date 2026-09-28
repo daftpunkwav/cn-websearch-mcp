@@ -158,7 +158,7 @@ export async function cmdTest(deps: CliDeps, args: CliArgs): Promise<number> {
   const rows: ProbeRow[] = await probe(
     picked.providers,
     {
-      query: truncate(args.query || DEFAULT_PROBE_QUERY, QUERY_MAX),
+      query: truncate(args.query.trim() || DEFAULT_PROBE_QUERY, QUERY_MAX),
       count: args.count === undefined
         ? runtime.config.count
         : clampInt(args.count, runtime.config.count, COUNT_MIN, COUNT_MAX),
