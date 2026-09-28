@@ -63,6 +63,7 @@ function combinedSignal(timeoutMs: number, external?: AbortSignal): { signal: Ab
  * Send a JSON POST and read the response. Error semantics:
  * - Timeout (internal timer) → TimeoutError
  * - External abort → the abort reason propagates as-is; non-Error reasons fall back to TimeoutError
+ * - A body that finishes reading after the signal aborted → the abort reason, never a late success
  * - Other fetch/body-read failures → NetworkError
  * - A body larger than the internal cap → ParseError (permanent: retrying it would just re-download)
  * - HTTP >= 400 → HttpError (message truncated to the first 300 chars, guarding against giant bodies)
@@ -92,6 +93,12 @@ export async function postJson(
   }
   const text = await readBody(res, signal, cancel);
   cancel();
+  // A body that only landed after the budget expired is not a result: without
+  // this check an injected fetch that ignores the signal, or a response that
+  // finishes streaming exactly on the boundary, would be reported as a success.
+  if (signal.aborted) {
+    throw signal.reason instanceof Error ? signal.reason : new TimeoutError();
+  }
   let json: unknown = null;
   try {
     json = JSON.parse(text);

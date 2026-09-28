@@ -150,12 +150,22 @@ async function runProvider(
     callerSignal?.addEventListener("abort", onCallerAbort, { once: true });
     const timer = setTimeout(() => ac.abort(new TimeoutError()), budget);
     const t0 = Date.now();
+    let backoffMs: number | undefined;
     try {
       const result = await p.search(req, {
         timeoutMs: budget,
         signal: ac.signal,
         fetchImpl: opts.fetchImpl ?? fetch,
       });
+      // The caller may have walked away while the request was in flight and the
+      // provider still answered (a fetch that ignores the signal, or a response
+      // landing on the budget boundary). Re-check before the success branch:
+      // reporting "ok" here would hand a result to a peer that already gave up,
+      // and the two strategies would disagree about the same cancellation.
+      if (callerSignal?.aborted) {
+        records.push({ provider: p.name, status: "cancelled", latency_ms: Date.now() - t0 });
+        return { records };
+      }
       records.push({ provider: p.name, status: "ok", latency_ms: Date.now() - t0 });
       return { records, result };
     } catch (err) {
@@ -183,11 +193,15 @@ async function runProvider(
       });
       // Transient failures retry once after a backoff; cancellation and every other failure abandon immediately.
       if (status !== "transient_error" || tryIndex === 1) return { records };
-      await delay(backoffFor(err), callerSignal);
+      backoffMs = backoffFor(err);
     } finally {
+      // Cleanup ends with the attempt that started it, so a retry's backoff never
+      // keeps this attempt's budget timer and abort listener alive.
       clearTimeout(timer);
       callerSignal?.removeEventListener("abort", onCallerAbort);
     }
+    // Outside the try: the wait belongs to the next attempt, not to this one.
+    if (backoffMs !== undefined) await delay(backoffMs, callerSignal);
   }
 }
 

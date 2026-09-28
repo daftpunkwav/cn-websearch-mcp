@@ -199,4 +199,29 @@ describe("postJson", () => {
     const res = await postJson("https://x.example", {}, {}, { ...base, fetchImpl: f });
     expect(res.text).toHaveLength(payload.length);
   });
+
+  it("refuses a body that lands after the caller cancelled", async () => {
+    // A fetch that resolves anyway despite the abort used to be reported as a
+    // normal success, handing a result to a peer that had already gone away.
+    const controller = new AbortController();
+    const f: FetchLike = async () => {
+      controller.abort(new Error("caller left"));
+      return new Response(JSON.stringify({ hello: "world" }), { status: 200 });
+    };
+    const err = await postJson("https://x.example", {}, {}, {
+      ...base,
+      signal: controller.signal,
+      fetchImpl: f,
+    }).catch((e) => e);
+    expect((err as Error).message).toBe("caller left");
+  });
+
+  it("refuses a body that lands after the per-request timeout", async () => {
+    const f: FetchLike = async () => {
+      await new Promise((r) => setTimeout(r, 40));
+      return new Response("{}", { status: 200 });
+    };
+    const err = await postJson("https://x.example", {}, {}, { ...base, timeoutMs: 10, fetchImpl: f }).catch((e) => e);
+    expect(err).toBeInstanceOf(TimeoutError);
+  });
 });

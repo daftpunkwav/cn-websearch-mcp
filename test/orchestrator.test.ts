@@ -4,6 +4,7 @@
  */
 
 import { describe, expect, it } from "vitest";
+import { getEventListeners } from "node:events";
 import {
   AllProvidersFailedError,
   CallCancelledError,
@@ -303,6 +304,64 @@ describe("caller cancellation", () => {
     const a = makeProvider("a", async () => okResult("a"));
     const out = await searchWithFallback(req, { ...opts, providers: [a.provider] });
     expect(out._meta.provider).toBe("a");
+  });
+
+  it("does not hand a late answer to a caller that already cancelled", async () => {
+    // A provider that answers anyway (a fetch that ignores the signal, or a
+    // response landing on the budget boundary) must not turn a cancellation
+    // into a success: fallback used to return the result, aggregate did not.
+    const controller = new AbortController();
+    const late = makeProvider(
+      "a",
+      (_r, ctx) =>
+        new Promise<NormalizedSearchResult>((resolve) => {
+          ctx.signal.addEventListener("abort", () => {
+            setTimeout(() => resolve(okResult("a")), 5);
+          });
+          controller.abort();
+        }),
+    );
+    const err = await searchWithFallback(req, { ...opts, providers: [late.provider], signal: controller.signal }).catch(
+      (e) => e,
+    );
+    expect(err).toBeInstanceOf(CallCancelledError);
+    expect((err as CallCancelledError).attempts.map((x) => x.status)).toEqual(["cancelled"]);
+  });
+
+  it("reports a late answer the same way under aggregate", async () => {
+    const controller = new AbortController();
+    const late = makeProvider(
+      "a",
+      (_r, ctx) =>
+        new Promise<NormalizedSearchResult>((resolve) => {
+          ctx.signal.addEventListener("abort", () => {
+            setTimeout(() => resolve(okResult("a")), 5);
+          });
+          controller.abort();
+        }),
+    );
+    const err = await searchAggregate(req, { ...opts, providers: [late.provider], signal: controller.signal }).catch(
+      (e) => e,
+    );
+    expect(err).toBeInstanceOf(CallCancelledError);
+    expect((err as CallCancelledError).attempts.map((x) => x.status)).toEqual(["cancelled"]);
+  });
+
+  it("releases each attempt's abort listener before the retry backoff", async () => {
+    // A 429 pays a 1s backoff. Halfway through it the finished attempt must
+    // already be detached from the caller's signal; only the backoff wait's own
+    // listener may still be attached.
+    const controller = new AbortController();
+    const a = makeProvider("a", async (_r, _c, call) => {
+      if (call === 1) throw new HttpError(429, "HTTP 429: slow down");
+      return okResult("a");
+    });
+    const pending = searchWithFallback(req, { ...opts, providers: [a.provider], signal: controller.signal });
+    await new Promise((r) => setTimeout(r, 300));
+    const attached = getEventListeners(controller.signal, "abort").length;
+    const out = await pending;
+    expect(attached).toBe(1);
+    expect(out._meta.attempts.map((x) => x.status)).toEqual(["transient_error", "ok"]);
   });
 });
 
