@@ -149,6 +149,12 @@ STEPFUN_PRIORITY=10
 
 任意一层的**空值**(`KIMI_API_KEY=`、`"baseUrl": ""`)都视为「未设置」,因此模板文件里的空占位不会遮蔽下一层的真实值(配置文件或内置默认值)。超过 600000 ms 的 `timeoutMs` 会被告警拒绝并回退——这样的时长已超出 32 位定时器范围,会被静默变成 1 ms。
 
+工作目录下的 `.env` 只读取这些配置项:`WEBSEARCH_*` 全局变量、旧的 `ZHIPU_SEARCH_ENGINE`,以及每个通道槽位的 `<NAME>_API_KEY` / `_BASE_URL` / `_MODEL` / `_ENABLED` / `_PRIORITY` / `_TIMEOUT_MS`。其余变量名不会进入 `process.env`——工作目录未必可信,而 `NODE_OPTIONS` 这类变量在第一次搜索请求之前就会被 Node 运行时读取。如果被跳过的名字看起来像是上述配置项(例如 `OTHERVENDOR_API_KEY`),会告警提示,而不是静默失效。
+
+### 结果 URL
+
+结果 URL 会被规整为 `http`/`https` 链接:裸主机补 `https://` 前缀,协议相对地址 `//host/path` 补上 scheme。解析后落到其它 scheme 的引用(`javascript:`、`data:`、`file:`、`mailto:` 等)会直接从结果列表中丢弃,而不是原样透传——客户端会把这些 URL 渲染成可点击链接。四个内置通道返回的都是普通网页,因此这条规则只对恶意或畸形的响应生效。
+
 ### 单通道设置
 
 每条通道都支持同一组通用开关,配置文件或 `<NAME>_<SUFFIX>` 环境变量均可:

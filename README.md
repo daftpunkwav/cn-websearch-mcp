@@ -149,6 +149,12 @@ Booleans accept `true/false`, `1/0`, `yes/no`, `on/off`. Invalid values are igno
 
 A **blank** value at any layer (`KIMI_API_KEY=`, `"baseUrl": ""`) counts as "not set", so the empty placeholders in a template file never mask a value configured in the layer below — the config file, or the built-in default. A `timeoutMs` beyond 600000 ms is rejected with a warning and falls back, because such a delay no longer fits a 32-bit timer and would silently become 1 ms.
 
+A `.env` file in the working directory is read for these settings only: the `WEBSEARCH_*` names, the legacy `ZHIPU_SEARCH_ENGINE`, and each slot's `<NAME>_API_KEY` / `_BASE_URL` / `_MODEL` / `_ENABLED` / `_PRIORITY` / `_TIMEOUT_MS`. A name that is not one of those never reaches `process.env` — the working directory is not always trusted, and the Node runtime acts on variables such as `NODE_OPTIONS` long before the first search request. A skipped name that looks like one of these settings (say `OTHERVENDOR_API_KEY`) is reported with a warning instead of passing silently.
+
+### Result URLs
+
+A result URL is normalized to an `http`/`https` link: a bare host gains an `https://` prefix, and a protocol-relative `//host/path` gains its scheme. A reference that resolves to any other scheme (`javascript:`, `data:`, `file:`, `mailto:`, …) is dropped from the result list rather than passed on, because clients render these URLs as live links. Every built-in channel returns ordinary web pages, so this only affects hostile or malformed responses.
+
 ### Per-channel settings
 
 Every channel supports the same generic knobs, in the config file or as `<NAME>_<SUFFIX>` environment variables:
