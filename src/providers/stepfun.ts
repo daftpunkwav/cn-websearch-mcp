@@ -29,9 +29,17 @@ import { postJson } from "../http.js";
 import type { NormalizedSearchResult, SearchContext, SearchProvider, SearchRequest } from "../types.js";
 import type { ProviderConfig } from "../config.js";
 
+/**
+ * This adapter's name. One constant because three separate places key on it:
+ * the registry in providers/index.ts looks the config up by it, the runtime
+ * filters the chain by it, and `_meta.provider` stamps it onto every result —
+ * so two hand-written copies could drift and silently mislabel merged results.
+ */
+const NAME = "stepfun";
+
 export function createStepfunProvider(cfg: ProviderConfig): SearchProvider {
   return {
-    name: "stepfun",
+    name: NAME,
     timeoutMs: cfg.timeoutMs,
     isConfigured: () => cfg.apiKey.trim() !== "",
     async search(req: SearchRequest, ctx: SearchContext): Promise<NormalizedSearchResult> {
@@ -64,7 +72,7 @@ export function createStepfunProvider(cfg: ProviderConfig): SearchProvider {
         })
         .filter((x): x is NonNullable<typeof x> => x !== null)
         .slice(0, req.count);
-      return { results, _meta: { provider: "stepfun", total_latency_ms: 0, attempts: [] } };
+      return { results, _meta: { provider: NAME, total_latency_ms: 0, attempts: [] } };
     },
   };
 }

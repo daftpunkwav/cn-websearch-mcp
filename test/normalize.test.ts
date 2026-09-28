@@ -16,11 +16,10 @@ import {
   normalizeDate,
   normalizeUrl,
   str,
-  stripControlChars,
   toItem,
   truncate,
 } from "../src/normalize.js";
-import { ParseError } from "../src/errors.js";
+import { ParseError, stripControlChars } from "../src/errors.js";
 
 describe("hostnameOf", () => {
   it("extracts the hostname and tolerates garbage", () => {

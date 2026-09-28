@@ -1,11 +1,15 @@
 /**
  * @file types
- * @description Shared type contracts for the gateway (pure type module, no runtime logic).
+ * @description Shared type contracts and vocabulary for the gateway (no imports, no I/O).
  *
  * Responsibilities:
  * - Define the normalized search result shape, per-attempt audit records, and merged multi-source metadata
  * - Define the search strategies, the search adapter interface, and the injectable search context
  * - Depend on no internal module itself; shared by the HTTP, normalization, orchestration, adapter and tool layers
+ *
+ * Design notes:
+ * - It carries no logic, but it does own vocabulary: a name that more than one surface has to
+ *   agree on lives here as a value, next to the type derived from it (see SEARCH_STRATEGIES).
  */
 
 // Core types shared across the gateway.
@@ -17,8 +21,16 @@ export type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
  * Search strategies:
  * - `fallback`: try providers in priority order, return on the first success (fewer calls, lower latency)
  * - `aggregate`: query several providers in parallel, merge and dedupe for broader coverage
+ *
+ * This list is the single source of the vocabulary. The type below is derived from it, so the
+ * type and the runtime list cannot drift, and every surface that enumerates or validates a
+ * strategy — config parsing, the MCP tool schema, the `--strategy` flag, the REPL — reads this
+ * one array instead of restating the names. It lives here rather than in the config layer so
+ * that the argument parser, which must stay a dependency-free leaf, reaches the rule directly.
  */
-export type SearchStrategy = "fallback" | "aggregate";
+export const SEARCH_STRATEGIES = ["fallback", "aggregate"] as const;
+
+export type SearchStrategy = (typeof SEARCH_STRATEGIES)[number];
 
 export interface SearchRequest {
   query: string;

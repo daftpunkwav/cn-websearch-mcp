@@ -107,7 +107,8 @@ export function redactSecrets(text: string): string {
  * Untrusted text that ends up in a terminal — an upstream error body carried by
  * HttpError, an item title, a synthesized answer — can carry an escape sequence
  * that repaints or forges output lines, so it is removed at every chokepoint
- * before the text is shown. normalize.ts re-exports this helper for result items.
+ * before the text is shown. This is the single implementation: the result-item
+ * chokepoint (normalize.str) and the error pipeline (summarizeError) both use it.
  */
 const CONTROL_CHARS = /[\u0000-\u0009\u000B-\u001F\u007F-\u009F]/g;
 

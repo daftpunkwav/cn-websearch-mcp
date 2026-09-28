@@ -31,6 +31,14 @@ interface Annotation {
 }
 
 /**
+ * This adapter's name. One constant because three separate places key on it:
+ * the registry in providers/index.ts looks the config up by it, the runtime
+ * filters the chain by it, and `_meta.provider` stamps it onto every result —
+ * so two hand-written copies could drift and silently mislabel merged results.
+ */
+const NAME = "mimo";
+
+/**
  * Merges url_citation (title) and web_search_highlight (snippet) entries by URL.
  *
  * The two annotation kinds can arrive in either order, so a hostname placeholder
@@ -91,7 +99,7 @@ function userLocation(options: Record<string, unknown> | undefined): Record<stri
 
 export function createMimoProvider(cfg: ProviderConfig): SearchProvider {
   return {
-    name: "mimo",
+    name: NAME,
     timeoutMs: cfg.timeoutMs,
     isConfigured: () => cfg.apiKey.trim() !== "",
     async search(req: SearchRequest, ctx: SearchContext): Promise<NormalizedSearchResult> {
@@ -133,7 +141,7 @@ export function createMimoProvider(cfg: ProviderConfig): SearchProvider {
       const results = itemsFromAnnotations(annotations).slice(0, req.count);
       return {
         results,
-        _meta: { provider: "mimo", total_latency_ms: 0, attempts: [], answer: answer || undefined },
+        _meta: { provider: NAME, total_latency_ms: 0, attempts: [], answer: answer || undefined },
       };
     },
   };

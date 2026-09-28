@@ -16,7 +16,7 @@
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { defaultWarn, gatewayEnvKeys } from "./config.js";
+import { defaultWarn, gatewayEnvKeys, PROVIDER_ENV_SUFFIXES } from "./config.js";
 
 /**
  * The exact set of names this gateway reads, owned by config.ts.
@@ -36,8 +36,15 @@ const GATEWAY_KEYS = gatewayEnvKeys();
  * Names that look like a gateway setting without being one. Only these earn a
  * warning when they are skipped: a user who wrote SOMEVENDOR_API_KEY needs to
  * know it was ignored, one who put an unrelated name in their .env does not.
+ *
+ * Built from config.ts's own vocabulary instead of restating it. The suffix
+ * alternation is PROVIDER_ENV_SUFFIXES, so adding a per-slot setting keeps this
+ * recognizer honest automatically; a literal copy here would quietly stop
+ * matching the new suffix and the typo it exists to report would go silent.
+ * SEARCH_ENGINE is spelled out because it is a legacy per-provider knob
+ * (ZHIPU_SEARCH_ENGINE) rather than one of the uniform slot suffixes.
  */
-const GATEWAY_LIKE = /(?:^WEBSEARCH_|_(?:API_KEY|BASE_URL|MODEL|ENABLED|PRIORITY|TIMEOUT_MS|SEARCH_ENGINE)$)/;
+const GATEWAY_LIKE = new RegExp(`(?:^WEBSEARCH_|_(?:${PROVIDER_ENV_SUFFIXES.join("|")}|SEARCH_ENGINE)$)`);
 
 /**
  * Load KEY=VALUE pairs from the .env file in the given directory (cwd by

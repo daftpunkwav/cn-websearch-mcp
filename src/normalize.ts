@@ -27,6 +27,24 @@ export function hostnameOf(url: string): string {
 }
 
 /**
+ * Read a number out of an untyped value, or NaN when nothing numeric was supplied.
+ *
+ * One rule for "is this a number here?", shared by clampInt below and by every
+ * numeric setting in the config layer, because the layers disagree about almost
+ * everything else: a config file may carry JSON numbers, a .env file can only
+ * carry strings, and both funnel into these functions.
+ *
+ * A blank or whitespace-only string counts as "not supplied" rather than as
+ * zero: `Number("")` is 0, which would silently make an empty `WEBSEARCH_COUNT=`
+ * or `KIMI_PRIORITY=` a real value. A number and a non-blank numeric string both
+ * count; nothing else does — notably `Number(true)` is 1, so a stray boolean
+ * must not become a 1 ms budget with no warning at all.
+ */
+export function lenientInt(v: unknown): number {
+  return typeof v === "number" ? v : typeof v === "string" && v.trim() !== "" ? Number(v) : Number.NaN;
+}
+
+/**
  * Clamp to an integer in [min, max]; returns fallback when not parseable as a finite number.
  *
  * A blank or whitespace-only string counts as "not supplied" rather than as zero:
@@ -34,7 +52,7 @@ export function hostnameOf(url: string): string {
  * falling back, making "" and null — both meaning "no value given" — disagree.
  */
 export function clampInt(v: unknown, fallback: number, min: number, max: number): number {
-  const n = typeof v === "number" ? v : typeof v === "string" && v.trim() !== "" ? Number(v) : NaN;
+  const n = lenientInt(v);
   if (!Number.isFinite(n)) return fallback;
   return Math.min(max, Math.max(min, Math.round(n)));
 }
@@ -74,14 +92,6 @@ export function asArray(v: unknown, what: string): unknown[] {
   if (Array.isArray(v)) return v;
   throw new ParseError(`${what}: expected array`);
 }
-
-/**
- * Strip control characters from untrusted upstream text. The single
- * implementation lives in errors.ts, next to the other sanitizer this pipeline
- * needs (summarizeError uses it too); it is re-exported here because result
- * items are the most common untrusted text this module handles.
- */
-export { stripControlChars } from "./errors.js";
 
 /** Safe string getter: returns an empty string for anything that is not a string, control characters stripped. */
 export function str(v: unknown): string {

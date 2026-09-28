@@ -7,7 +7,8 @@
  * - Parse fallback order/priority, strategy, timeout, result count and other settings from the config file and environment variables
  * - Validate each layer's input leniently: invalid values warn and fall back, never throwing
  * - Treat a blank value at any layer as "unset", so template placeholders never mask a lower layer
- * - Own the search-argument bounds (COUNT_MIN/COUNT_MAX/QUERY_MAX) shared by the tool layer and the CLI
+ * - Own the search-argument bounds (COUNT_MIN/COUNT_MAX/QUERY_MAX) shared by the tool layer and the CLI,
+ *   and the rule that turns a requested count into the effective one
  *
  * Design notes:
  * - The default order is alphabetical — not a "recommended order"; custom priority is always explicit user configuration
@@ -20,9 +21,9 @@
 // MCP clients can usually only pass environment variables, so env sits at the top layer.
 
 import type { ConfigFileShape } from "./config-file.js";
-import { maybeObject } from "./normalize.js";
+import { clampInt, lenientInt, maybeObject } from "./normalize.js";
 import { SERVER_NAME } from "./server-info.js";
-import type { SearchStrategy } from "./types.js";
+import { SEARCH_STRATEGIES, type SearchStrategy } from "./types.js";
 
 /**
  * All supported providers, in alphabetical order.
@@ -55,7 +56,22 @@ export const COUNT_MIN = 1;
 export const COUNT_MAX = 50;
 export const QUERY_MAX = 400;
 
-const STRATEGIES: readonly SearchStrategy[] = ["fallback", "aggregate"];
+/**
+ * The result count of one call: an omitted count takes the configured default,
+ * anything else is clamped into the shared range above.
+ *
+ * Three surfaces resolve a count this way (MCP tool layer, one-shot `search`,
+ * `test` probe and the REPL's /count), and each of them clamps to the same two
+ * constants, so the rule lives here instead of being restated per surface.
+ *
+ * `requested` is unknown because the MCP tool layer receives raw client JSON:
+ * a non-number falls back to the configured default, exactly as a blank or
+ * unparseable value does at the config layer.
+ */
+export function effectiveCount(requested: unknown, fallback: number): number {
+  return requested === undefined ? fallback : clampInt(requested, fallback, COUNT_MIN, COUNT_MAX);
+}
+
 const MAX_PROVIDERS_MIN = 1;
 
 /** Neutral per-provider defaults (no keys, no personalized parameters). */
@@ -210,7 +226,7 @@ function asBool(v: unknown): boolean | undefined {
 
 /** Lenient non-negative integer getter (0 is valid, used for priority). */
 function asNonNegativeInt(v: unknown): number | undefined {
-  const n = typeof v === "number" ? v : typeof v === "string" && v.trim() !== "" ? Number(v) : NaN;
+  const n = lenientInt(v);
   if (!Number.isInteger(n) || n < 0) return undefined;
   return n;
 }
@@ -233,8 +249,8 @@ function intField(obj: Record<string, unknown> | undefined, key: string): number
 /**
  * Read obj.key as a positive integer; undefined when missing or invalid (for optional overrides).
  *
- * Only a number or a non-blank numeric string counts. `Number(true)` is 1, so a
- * stray boolean in a config file would otherwise become a 1 ms budget silently.
+ * Only a number or a non-blank numeric string counts: lenientInt decides what "a number here"
+ * means, so this and every other numeric setting in the file agree on blank and on booleans.
  */
 function optionalPositiveInt(
   obj: Record<string, unknown> | undefined,
@@ -244,7 +260,7 @@ function optionalPositiveInt(
 ): number | undefined {
   const raw = obj?.[key];
   if (raw === undefined || raw === null || raw === "") return undefined;
-  const n = typeof raw === "number" ? raw : typeof raw === "string" && raw.trim() !== "" ? Number(raw) : Number.NaN;
+  const n = lenientInt(raw);
   if (Number.isInteger(n) && n > 0) return n;
   warn(`${source}="${String(raw)}" is not a positive integer, ignoring it`);
   return undefined;
@@ -295,17 +311,17 @@ export function parseProviderList(
 export function parseStrategy(raw: unknown, warn: (m: string) => void, source: string): SearchStrategy | undefined {
   if (raw === undefined || raw === null || raw === "") return undefined;
   const s = typeof raw === "string" ? raw.trim().toLowerCase() : "";
-  if ((STRATEGIES as readonly string[]).includes(s)) return s as SearchStrategy;
-  warn(`${source}: unknown strategy "${String(raw)}", expected ${STRATEGIES.join("|")}`);
+  if ((SEARCH_STRATEGIES as readonly string[]).includes(s)) return s as SearchStrategy;
+  warn(`${source}: unknown strategy "${String(raw)}", expected ${SEARCH_STRATEGIES.join("|")}`);
   return undefined;
 }
 
 /**
  * Parse a positive integer; return the fallback when missing, unparseable or out of range (with a warning).
  *
- * Only a number or a non-blank numeric string counts. `Number(true)` is 1, so a
- * stray boolean in a config file would otherwise become a 1 ms budget with no
- * warning at all — every search would then time out instantly.
+ * Only a number or a non-blank numeric string counts (see lenientInt), so a stray boolean in a
+ * config file warns and falls back instead of silently becoming a 1 ms budget that makes every
+ * search time out instantly.
  */
 function positiveInt(
   raw: unknown,
@@ -315,7 +331,7 @@ function positiveInt(
   max = Number.POSITIVE_INFINITY,
 ): number {
   if (raw === undefined || raw === null || raw === "") return fallback;
-  const n = typeof raw === "number" ? raw : typeof raw === "string" && raw.trim() !== "" ? Number(raw) : Number.NaN;
+  const n = lenientInt(raw);
   if (!Number.isInteger(n) || n <= 0) {
     warn(`${source}="${String(raw)}" is not a positive integer, using ${fallback}`);
     return fallback;

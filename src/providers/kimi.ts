@@ -35,6 +35,14 @@ const WEB_SEARCH_URI = "moonshot/web-search:latest";
 const DEFAULT_MAX_ROUNDS = 2;
 const DEFAULT_MAX_TOKENS = 8192;
 
+/**
+ * This adapter's name. One constant because three separate places key on it:
+ * the registry in providers/index.ts looks the config up by it, the runtime
+ * filters the chain by it, and `_meta.provider` stamps it onto every result —
+ * so two hand-written copies could drift and silently mislabel merged results.
+ */
+const NAME = "kimi";
+
 const WEB_SEARCH_TOOL = {
   type: "function",
   function: {
@@ -115,7 +123,7 @@ function throwIfAborted(ctx: SearchContext): void {
 
 export function createKimiProvider(cfg: ProviderConfig): SearchProvider {
   return {
-    name: "kimi",
+    name: NAME,
     timeoutMs: cfg.timeoutMs,
     isConfigured: () => cfg.apiKey.trim() !== "",
     async search(req: SearchRequest, ctx: SearchContext): Promise<NormalizedSearchResult> {
@@ -169,7 +177,7 @@ export function createKimiProvider(cfg: ProviderConfig): SearchProvider {
       }
       return {
         results,
-        _meta: { provider: "kimi", total_latency_ms: 0, attempts: [], answer: answer || undefined },
+        _meta: { provider: NAME, total_latency_ms: 0, attempts: [], answer: answer || undefined },
       };
     },
   };
