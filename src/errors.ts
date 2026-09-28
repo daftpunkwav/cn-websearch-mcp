@@ -86,6 +86,14 @@ export function isTransient(err: unknown): boolean {
 const SECRET_PATTERNS: RegExp[] = [
   // Keys shaped like sk-xxx / ak-xxx
   /(?:sk|ak|pk|rk)[-_][A-Za-z0-9._-]{12,}/gi,
+  // Dot-form keys: an id half and a secret half separated by a dot. This is the
+  // documented format of the Zhipu GLM (open.bigmodel.cn) key, which is one of
+  // this gateway's own channels, and it carries no prefix for the pattern above
+  // to latch onto. Both halves must be long and the secret half must contain a
+  // digit: that is what separates a high-entropy key from a long hostname or a
+  // dotted identifier, which read as words rather than entropy. Measured against
+  // this project's own URLs, prose and the frozen fixtures in test/errors.test.ts.
+  /\b(?=[A-Za-z0-9]{16,}\.[A-Za-z0-9_-]{16,}\b)[A-Za-z0-9]{16,}\.[A-Za-z0-9_-]*\d[A-Za-z0-9_-]*\b/g,
   // Assignment-style keys like apikey=xxx / token: xxx / secret_xxx
   // (a following space is only allowed after an explicit separator, so plain
   // sentences like "the token was invalidated" are not caught)

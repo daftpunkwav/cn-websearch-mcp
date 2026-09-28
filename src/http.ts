@@ -40,7 +40,11 @@ export interface HttpResponse {
 
 /**
  * Merge the caller-provided signal with the per-request timeout into one signal.
- * AbortSignal.any is a Node 20+ API; merged manually for Node 18 compatibility.
+ *
+ * Merged by hand rather than with AbortSignal.any(): that helper only arrived in
+ * Node v18.17.0 and v20.3.0, so the 18.0-18.16 line that `engines: >=18` also
+ * permits has no such method. This is what makes the whole declared range work,
+ * not a workaround for a version that already has it.
  */
 function combinedSignal(timeoutMs: number, external?: AbortSignal): { signal: AbortSignal; cancel: () => void } {
   const controller = new AbortController();
