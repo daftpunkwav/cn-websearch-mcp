@@ -290,6 +290,12 @@ function isHttpsUrl(url: string): boolean {
  * Merge one setting across the two layers and describe where it came from, so
  * a warning quotes the source the user actually configured instead of always
  * blaming the environment variable.
+ *
+ * A blank environment value counts as "unset", matching the per-provider
+ * getters and strategy/dedupe. Template files ship empty placeholders
+ * (`WEBSEARCH_COUNT=`), and the env layer sits above the config file, so
+ * honoring a blank here would drop the caller's file value straight back to
+ * the built-in default.
  */
 function layer(
   envValue: string | undefined,
@@ -297,7 +303,7 @@ function layer(
   envSource: string,
   fileSource: string,
 ): { raw: unknown; source: string } {
-  return envValue !== undefined
+  return envValue !== undefined && envValue.trim() !== ""
     ? { raw: envValue, source: envSource }
     : { raw: fileValue, source: fileSource };
 }
