@@ -105,19 +105,21 @@ describe("toItem", () => {
     expect(toItem({ url: "  " })).toBeNull();
   });
 
-  it("keeps non-http(s) scheme URLs as-is instead of prefixing https://", () => {
-    expect(toItem({ url: "ftp://files.example/f" })).toEqual({
-      title: "files.example",
-      url: "ftp://files.example/f",
-      snippet: "",
-    });
+  it("drops entries whose URL is not an http(s) link instead of passing it through", () => {
+    // Every provider returns ordinary web pages. A script-executing scheme would
+    // be handed to the MCP client and rendered as a live link there.
+    expect(toItem({ url: "javascript:alert(1)" })).toBeNull();
+    expect(toItem({ url: "data:text/html,<script>alert(1)</script>" })).toBeNull();
+    expect(toItem({ url: "vbscript:msgbox(1)" })).toBeNull();
+    expect(toItem({ url: "file:///etc/passwd" })).toBeNull();
   });
 
-  it("does not mangle a scheme that carries no // separator", () => {
-    // These used to be glued onto "https://" and emitted as broken URLs with an
-    // empty hostname-derived title.
-    expect(toItem({ url: "mailto:a@b.example" })).toMatchObject({ url: "mailto:a@b.example" });
-    expect(toItem({ url: "javascript:alert(1)" })).toMatchObject({ url: "javascript:alert(1)" });
+  it("drops entries whose scheme is only hidden behind a stripped control character", () => {
+    // The URL parser removes tab/newline before it reads the scheme, so
+    // "java\tscript:alert(1)" is a javascript: URL even though the scheme
+    // syntax test never sees one.
+    expect(toItem({ url: "java\tscript:alert(1)" })).toBeNull();
+    expect(toItem({ url: "java\nscript:alert(1)" })).toBeNull();
   });
 
   it("resolves protocol-relative and host:port references", () => {
@@ -131,6 +133,29 @@ describe("normalizeUrl", () => {
     expect(normalizeUrl("https://a.example/x?y=1")).toBe("https://a.example/x?y=1");
     expect(normalizeUrl("http://a.example")).toBe("http://a.example");
     expect(normalizeUrl("example.com/x")).toBe("https://example.com/x");
+  });
+
+  it("refuses any scheme that is not http(s)", () => {
+    expect(normalizeUrl("javascript:alert(1)")).toBeNull();
+    expect(normalizeUrl("JavaScript:alert(1)")).toBeNull();
+    expect(normalizeUrl("data:text/html,<script>alert(1)</script>")).toBeNull();
+    expect(normalizeUrl("vbscript:msgbox(1)")).toBeNull();
+    expect(normalizeUrl("file:///etc/passwd")).toBeNull();
+    expect(normalizeUrl("blob:https://a.example/1234")).toBeNull();
+    // Inert but useless as a search result: a web search returns web pages.
+    expect(normalizeUrl("ftp://files.example/f")).toBeNull();
+    expect(normalizeUrl("mailto:a@b.example")).toBeNull();
+  });
+
+  it("refuses a scheme that only appears after control characters are stripped", () => {
+    expect(normalizeUrl("java\tscript:alert(1)")).toBeNull();
+    expect(normalizeUrl("java\nscript:alert(1)")).toBeNull();
+    expect(normalizeUrl(" javascript:alert(1) ")).toBeNull();
+  });
+
+  it("refuses values that are not parseable URLs at all", () => {
+    expect(normalizeUrl("")).toBeNull();
+    expect(normalizeUrl("https://")).toBeNull();
   });
 });
 

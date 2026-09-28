@@ -25,6 +25,13 @@ import type { FetchLike } from "./types.js";
  */
 const MAX_BODY_BYTES = 8 * 1024 * 1024;
 
+/**
+ * How much of an error body reaches an HttpError message. Applied after
+ * redaction, so a credential is never cut in half on its way into the audit
+ * trail. Matches the limit summarizeError applies to the same text downstream.
+ */
+const ERROR_MESSAGE_MAX = 300;
+
 export interface HttpOptions {
   timeoutMs: number;
   signal?: AbortSignal;
@@ -107,7 +114,10 @@ export async function postJson(
   }
   if (res.status >= 400) {
     // Upstream error bodies may echo account/key identifiers; redact before they reach the message.
-    throw new HttpError(res.status, `HTTP ${res.status}: ${redactSecrets(text.slice(0, 300))}`);
+    // Redact first, truncate second: cutting first leaves the head of a credential
+    // that straddles the boundary in the message, and the fragment is too short to
+    // match any redaction pattern.
+    throw new HttpError(res.status, `HTTP ${res.status}: ${redactSecrets(text).slice(0, ERROR_MESSAGE_MAX)}`);
   }
   return { status: res.status, text, json };
 }
@@ -138,7 +148,17 @@ async function readText(res: Response): Promise<string> {
     await res.body?.cancel().catch(() => undefined);
     throw new ParseError(`response body too large: ${declared} bytes exceeds the ${MAX_BODY_BYTES} byte limit`);
   }
-  if (!res.body?.getReader) return await res.text();
+  if (!res.body?.getReader) {
+    // No stream to count against, so the declared length is the only bound
+    // available — and an upstream is free to understate it. Re-check the
+    // result so a body that passed the pre-check on a false promise still
+    // fails closed instead of being handed on as a normal response.
+    const text = await res.text();
+    if (Buffer.byteLength(text, "utf8") > MAX_BODY_BYTES) {
+      throw new ParseError(`response body too large: over the ${MAX_BODY_BYTES} byte limit`);
+    }
+    return text;
+  }
 
   const reader = res.body.getReader();
   const chunks: Uint8Array[] = [];

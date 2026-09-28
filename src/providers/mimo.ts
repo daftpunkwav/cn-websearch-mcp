@@ -47,7 +47,10 @@ function itemsFromAnnotations(annotations: unknown[]): NormalizedItem[] {
     if (!a) continue;
     const url = str(a.url).trim();
     if (!url) continue;
+    // Same rule as every other adapter: a reference that is not an http(s)
+    // link never reaches the client as a clickable URL.
     const urlNorm = normalizeUrl(url);
+    if (!urlNorm) continue;
     const kind = str(a.type);
     const title = str(a.title).trim();
     const existing = byUrl.get(urlNorm);

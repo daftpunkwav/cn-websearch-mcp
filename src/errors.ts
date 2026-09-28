@@ -83,6 +83,21 @@ export function redactSecrets(text: string): string {
   return SECRET_PATTERNS.reduce((acc, re) => acc.replace(re, (m) => `${m.slice(0, 3)}***`), text);
 }
 
+/**
+ * Control characters that must never reach a caller: C0 except the newline that
+ * multi-line LLM answers legitimately contain, plus DEL and the C1 block.
+ * Untrusted text that ends up in a terminal — an upstream error body carried by
+ * HttpError, an item title, a synthesized answer — can carry an escape sequence
+ * that repaints or forges output lines, so it is removed at every chokepoint
+ * before the text is shown. normalize.ts re-exports this helper for result items.
+ */
+const CONTROL_CHARS = /[\u0000-\u0009\u000B-\u001F\u007F-\u009F]/g;
+
+/** Remove control characters from untrusted text. */
+export function stripControlChars(s: string): string {
+  return s.replace(CONTROL_CHARS, "");
+}
+
 /** Collapse consecutive whitespace into single spaces, keeping the audit trail single-line readable. */
 function collapseWhitespace(text: string): string {
   return text.replace(/\s+/g, " ").trim();
@@ -90,12 +105,16 @@ function collapseWhitespace(text: string): string {
 
 /**
  * Produce a short, key-free error summary for AttemptRecord.error.
- * In order: collapse whitespace → redact credential-like fragments → truncate to 300 chars.
+ * In order: strip control characters → redact credential-like fragments →
+ * collapse whitespace → truncate to 300 chars. Each step must precede the next:
+ * stripping first lets redaction match a credential split by a control character,
+ * and redacting before truncating means a value cut in half by the length limit
+ * is never emitted as a recognizable fragment.
  */
 export function summarizeError(err: unknown): string {
   if (err instanceof Error) {
-    const msg = collapseWhitespace(redactSecrets(err.message));
+    const msg = collapseWhitespace(redactSecrets(stripControlChars(err.message)));
     return `${err.name}: ${msg.length > 300 ? msg.slice(0, 300) + "..." : msg}`;
   }
-  return collapseWhitespace(redactSecrets(String(err))).slice(0, 300);
+  return collapseWhitespace(redactSecrets(stripControlChars(String(err)))).slice(0, 300);
 }

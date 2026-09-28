@@ -77,6 +77,22 @@ describe("summarizeError", () => {
     expect(summary).not.toContain("0123456789abcdef");
     expect(summary).toContain("sk-***");
   });
+
+  it("strips terminal escape sequences from upstream text", () => {
+    // The audit trail is printed straight to the terminal by the CLI and sent to
+    // MCP clients, so an upstream error body carrying ESC could repaint or forge
+    // output lines. Newlines must survive as spaces, not vanish.
+    const summary = summarizeError(new Error("failed\u001b[31mRED\u001b[0m\nnext line\u0007"));
+    expect(summary).not.toContain("\u001b");
+    expect(summary).not.toContain("\u0007");
+    expect(summary).toBe("Error: failed[31mRED[0m next line");
+  });
+
+  it("strips escape sequences before matching, so a split secret is still redacted", () => {
+    const summary = summarizeError(new Error("key sk-EXAMPLE\u0007KEY0123456789 rejected"));
+    expect(summary).not.toContain("EXAMPLEKEY0123456789");
+    expect(summary).toContain("sk-***");
+  });
 });
 
 describe("redactSecrets", () => {

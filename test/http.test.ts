@@ -140,6 +140,18 @@ describe("postJson", () => {
     expect(err.message).toContain("ak-***");
   });
 
+  it("redacts a secret that straddles the truncation boundary", async () => {
+    // Truncating first and redacting after leaves the head of a secret that
+    // crosses the cut in the message: the 300-char slice ends mid-credential,
+    // and the short remainder no longer matches any pattern.
+    const pad = "y".repeat(290);
+    const secret = "sk-0123456789abcdef";
+    const f: FetchLike = async () => new Response(`${pad} ${secret} denied`, { status: 500 });
+    const err = (await postJson("https://x.example", {}, {}, { ...base, fetchImpl: f }).catch((e) => e)) as HttpError;
+    expect(err.message).not.toContain("0123456");
+    expect(err.message).toContain("sk-***");
+  });
+
   it("propagates an Error abort reason from the body read unchanged", async () => {
     // The orchestrator's own TimeoutError must survive the body read; wrapping
     // it again would lose the identity the audit trail classifies on.
@@ -175,6 +187,23 @@ describe("postJson", () => {
     const f: FetchLike = async () => huge;
     const err = await postJson("https://x.example", {}, {}, { ...base, fetchImpl: f }).catch((e) => e);
     // A permanent failure: retrying an oversized body would just re-download it.
+    expect(err).toBeInstanceOf(ParseError);
+    expect((err as ParseError).message).toContain("too large");
+  });
+
+  it("refuses a body that understates its size and offers no stream to count", async () => {
+    // A Response-shaped object without a readable body falls back to text(),
+    // which the Content-Length pre-check cannot bound: an upstream that
+    // declares a small length and then sends an oversized payload would
+    // otherwise be buffered whole and reported as a normal success.
+    const oversized = "y".repeat(9 * 1024 * 1024);
+    const lying = {
+      status: 200,
+      headers: new Headers({ "Content-Length": "12" }),
+      text: async () => oversized,
+    } as unknown as Response;
+    const f: FetchLike = async () => lying;
+    const err = await postJson("https://x.example", {}, {}, { ...base, fetchImpl: f }).catch((e) => e);
     expect(err).toBeInstanceOf(ParseError);
     expect((err as ParseError).message).toContain("too large");
   });

@@ -119,13 +119,25 @@ describe("mimo provider", () => {
     const fetchImpl: FetchLike = async () =>
       jsonResponse({
         choices: [{ message: { content: "", annotations: [
-          { type: "url_citation", title: "f", url: "ftp://files.example/f" },
+          { type: "url_citation", title: "b", url: "b.example/2" },
           { type: "url_citation", title: "c", url: "//cdn.example/a.js" },
         ] } }],
       });
     const out = await createMimoProvider(cfg).search({ query: "q", count: 8 }, ctx(fetchImpl));
-    // ftp:// used to be glued into "https://ftp://..." here, unlike every other adapter.
-    expect(out.results.map((r) => r.url)).toEqual(["ftp://files.example/f", "https://cdn.example/a.js"]);
+    // A bare host used to be glued into "https://ftp://..." here, unlike every other adapter.
+    expect(out.results.map((r) => r.url)).toEqual(["https://b.example/2", "https://cdn.example/a.js"]);
+  });
+
+  it("drops citations whose URL is not an http(s) link", async () => {
+    const fetchImpl: FetchLike = async () =>
+      jsonResponse({
+        choices: [{ message: { content: "", annotations: [
+          { type: "url_citation", title: "x", url: "javascript:alert(1)" },
+          { type: "url_citation", title: "y", url: "https://ok.example/1" },
+        ] } }],
+      });
+    const out = await createMimoProvider(cfg).search({ query: "q", count: 8 }, ctx(fetchImpl));
+    expect(out.results.map((r) => r.url)).toEqual(["https://ok.example/1"]);
   });
 
   it("throws ParseError when choices is empty", async () => {

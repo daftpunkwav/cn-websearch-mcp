@@ -14,7 +14,7 @@
 // garbage input: normalize what can be normalized, otherwise throw ParseError
 // or return a fallback — never an unexpected exception.
 
-import { ParseError } from "./errors.js";
+import { ParseError, stripControlChars } from "./errors.js";
 import type { NormalizedItem } from "./types.js";
 
 /** Best-effort hostname extraction; returns an empty string on parse failure. */
@@ -76,19 +76,12 @@ export function asArray(v: unknown, what: string): unknown[] {
 }
 
 /**
- * Control characters that must never reach a caller: C0 except the newline
- * that multi-line LLM answers legitimately contain, plus DEL and the C1 block.
- * Upstream fields (title, url, snippet, content) are untrusted text that the
- * CLI prints straight to a terminal, where an escape sequence could repaint or
- * forge output lines. Stripping happens once, in `str` / `normalizeDate`, so
- * every adapter is covered without repeating the concern.
+ * Strip control characters from untrusted upstream text. The single
+ * implementation lives in errors.ts, next to the other sanitizer this pipeline
+ * needs (summarizeError uses it too); it is re-exported here because result
+ * items are the most common untrusted text this module handles.
  */
-const CONTROL_CHARS = /[\u0000-\u0009\u000B-\u001F\u007F-\u009F]/g;
-
-/** Remove control characters from untrusted upstream text. */
-export function stripControlChars(s: string): string {
-  return s.replace(CONTROL_CHARS, "");
-}
+export { stripControlChars } from "./errors.js";
 
 /** Safe string getter: returns an empty string for anything that is not a string, control characters stripped. */
 export function str(v: unknown): string {
@@ -103,20 +96,41 @@ export function str(v: unknown): string {
 const URL_SCHEME = /^[a-z][a-z0-9+.-]*:(?!\d)/i;
 
 /**
- * Canonicalize one upstream reference's URL: a value that already carries a
- * scheme is kept verbatim (so "ftp://x" is not mangled into "https://ftp://x",
- * and "mailto:a@b.c" is not turned into a broken host), a protocol-relative
- * "//host/path" gets the scheme only, and a bare host gets "https://" in front.
+ * The only protocols a result URL may use. Every field this gateway normalizes
+ * is handed to an MCP client or a terminal that turns a URL into a live link,
+ * and a script-executing scheme (`javascript:`, `data:`, `vbscript:`) would
+ * then run in that consumer's context. A web search returns web pages, so any
+ * other scheme is data this tool has no business passing along.
  */
-export function normalizeUrl(url: string): string {
-  if (url.startsWith("//")) return `https:${url}`;
-  return URL_SCHEME.test(url) ? url : `https://${url}`;
+const ALLOWED_PROTOCOLS: ReadonlySet<string> = new Set(["http:", "https:"]);
+
+/**
+ * Canonicalize one upstream reference's URL, or return null when the value must
+ * not become a link: a value that already carries a scheme is kept verbatim, a
+ * protocol-relative "//host/path" gets the scheme only, and a bare host gets
+ * "https://" in front.
+ *
+ * The result is then re-read through the URL parser instead of trusting the
+ * syntax test alone. The parser deletes tab and newline before it looks at the
+ * scheme, so "java\tscript:alert(1)" is a javascript: URL even though the regex
+ * above sees no scheme at all — checking `protocol` there closes that gap and
+ * every other way a crafted reference could slip past.
+ */
+export function normalizeUrl(url: string): string | null {
+  const raw = url.trim();
+  if (!raw) return null;
+  const candidate = raw.startsWith("//") ? `https:${raw}` : URL_SCHEME.test(raw) ? raw : `https://${raw}`;
+  try {
+    return ALLOWED_PROTOCOLS.has(new URL(candidate).protocol) ? candidate : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
  * Normalize a raw search item into a NormalizedItem. `url` is required —
- * items without a URL are dropped outright, never fabricated. URL forms are
- * resolved by normalizeUrl, so "ftp://x" is kept and a bare host gets https://.
+ * items without a URL, or whose URL is not an http(s) link, are dropped
+ * outright, never fabricated and never passed on as a clickable scheme.
  */
 export function toItem(raw: {
   title?: unknown;
@@ -128,6 +142,7 @@ export function toItem(raw: {
   const url = str(raw.url).trim();
   if (!url) return null;
   const urlNorm = normalizeUrl(url);
+  if (!urlNorm) return null;
   const item: NormalizedItem = {
     title: str(raw.title).trim() || hostnameOf(urlNorm),
     url: urlNorm,
