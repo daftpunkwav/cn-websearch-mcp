@@ -159,10 +159,12 @@ export function createKimiProvider(cfg: ProviderConfig): SearchProvider {
       const seen = new Set<string>();
       const results: NormalizedItem[] = [];
       for (const url of urls) {
-        if (seen.has(url)) continue;
-        seen.add(url);
         const item = toItem({ url });
-        if (item) results.push(item);
+        // Key on the normalized URL actually emitted, so a bare-host reference
+        // and its absolute twin collapse instead of yielding the same item twice.
+        if (!item || seen.has(item.url)) continue;
+        seen.add(item.url);
+        results.push(item);
         if (results.length >= req.count) break;
       }
       return {

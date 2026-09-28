@@ -242,6 +242,10 @@ export async function runRepl(deps: CliDeps, io: { input: NodeJS.ReadableStream 
   // Serial queue: input lines can arrive faster than async searches; chaining awaits prevents interleaved output.
   let pending: Promise<void> = Promise.resolve();
   let quit = false;
+  // Whether readline has already been torn down (stdin EOF, Ctrl-D or Ctrl-C).
+  // Tracked here because the interface is closed while a search may still be in
+  // flight, and prompting a closed interface throws ERR_USE_AFTER_CLOSE.
+  let closed = false;
   rl.on("line", (raw) => {
     if (quit) return;
     pending = pending.then(async () => {
@@ -258,7 +262,7 @@ export async function runRepl(deps: CliDeps, io: { input: NodeJS.ReadableStream 
         // summarizeError keeps credential-looking text out of the terminal.
         write(`error: ${summarizeError(err)}`);
       }
-      rl.prompt();
+      if (!closed) rl.prompt();
     });
   });
 
@@ -270,6 +274,7 @@ export async function runRepl(deps: CliDeps, io: { input: NodeJS.ReadableStream 
 
   return await new Promise<number>((resolve) => {
     rl.on("close", () => {
+      closed = true;
       void pending.then(() => resolve(0));
     });
     rl.prompt();
