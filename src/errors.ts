@@ -8,8 +8,6 @@
  * - Compress any error into a short, non-sensitive summary string
  */
 
-// Error taxonomy shared by the adapters and the orchestrator.
-
 export class TimeoutError extends Error {
   constructor(message = "request timed out") {
     super(message);

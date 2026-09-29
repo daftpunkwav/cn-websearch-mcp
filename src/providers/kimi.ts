@@ -36,10 +36,9 @@ const DEFAULT_MAX_ROUNDS = 2;
 const DEFAULT_MAX_TOKENS = 8192;
 
 /**
- * This adapter's name. One constant because three separate places key on it:
- * the registry in providers/index.ts looks the config up by it, the runtime
- * filters the chain by it, and `_meta.provider` stamps it onto every result —
- * so two hand-written copies could drift and silently mislabel merged results.
+ * This adapter's name, and the config key / `_meta.provider` stamp that must
+ * agree with it: the registry, the chain filter and every result label key on
+ * this one value, so a second hand-written copy could drift silently.
  */
 const NAME = "kimi";
 

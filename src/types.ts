@@ -12,8 +12,6 @@
  *   agree on lives here as a value, next to the type derived from it (see SEARCH_STRATEGIES).
  */
 
-// Core types shared across the gateway.
-
 /** Injectable fetch implementation so tests can mock HTTP without real keys. */
 export type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
 
@@ -66,8 +64,6 @@ export type AttemptStatus = "ok" | "timeout" | "transient_error" | "permanent_er
  * retried, whoever raised it), "transient_error" is the only retryable verdict,
  * and "cancelled" means the caller went away rather than the channel failing.
  */
-
-/** One row of the audit trail of a web_search call. */
 export interface AttemptRecord {
   provider: string;
   status: AttemptStatus;

@@ -22,8 +22,17 @@ export interface ProbeRow {
   provider: string;
   ok: boolean;
   latency_ms: number;
+  /**
+   * How many results the channel returned. A count, not the results
+   * themselves — `cmdTest` serializes this row verbatim under `--json`, so the
+   * name is part of that output's field names.
+   */
   results: number;
-  /** Title of the first result (on success), for eyeballing whether the channel really works. */
+  /**
+   * Title of the first result (on success), for eyeballing whether the channel
+   * really works: the first result's title capped at SAMPLE_TITLE_MAX, or
+   * "(no results)" when the channel answered with an empty list.
+   */
   sample: string;
   /** Failure summary; empty string on success. */
   error: string;
