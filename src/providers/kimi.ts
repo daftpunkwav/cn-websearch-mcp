@@ -152,7 +152,13 @@ export function createKimiProvider(cfg: ProviderConfig): SearchProvider {
           const fn = asObject(call.function ?? null, "kimi tool_call.function");
           throwIfAborted(ctx);
           const fiberCtx = await runFiber(cfg, str(fn.name), str(fn.arguments), ctx);
-          urls.push(...urlsFromFiber(fiberCtx));
+          // Appended one at a time rather than with push(...refs): the spread
+          // passes every reference as a call argument, and the engine's
+          // argument stack overflows around 125k of them. A fiber that
+          // references that many pages is a ~4MB body, which the 8MB response
+          // cap admits — so the spread would turn a large-but-legal upstream
+          // response into a RangeError instead of results.
+          for (const url of urlsFromFiber(fiberCtx)) urls.push(url);
           const output = str(fiberCtx.encrypted_output) || str(fiberCtx.output);
           messages.push({ role: "tool", content: output, tool_call_id: str(call.id) });
         }
