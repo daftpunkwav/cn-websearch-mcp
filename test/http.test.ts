@@ -152,6 +152,36 @@ describe("postJson", () => {
     expect(err.message).toContain("sk-***");
   });
 
+  it("reports the status, not a redaction failure, for a huge error body of one long word run", async () => {
+    // A proxy or WAF error page is HTML carrying a multi-megabyte unbroken run
+    // of word characters. The dot-form redaction pattern's greedy run used to
+    // overflow V8's regex backtrack stack on input like this, and the RangeError
+    // it threw escaped from the throw expression below: the call reported
+    // "RangeError: Maximum call stack size exceeded" instead of the 400 that
+    // actually explains the failure. 7 MB is under the 8 MB body cap, so this
+    // is a body the layer accepts and must describe.
+    const f: FetchLike = async () => new Response("<html>" + "a".repeat(7 * 1024 * 1024) + "</html>", { status: 400 });
+    const err = (await postJson("https://x.example", {}, {}, { ...base, fetchImpl: f }).catch((e) => e)) as HttpError;
+    expect(err).toBeInstanceOf(HttpError);
+    expect(err.status).toBe(400);
+    expect(err.message).toContain("HTTP 400:");
+    expect(err.message).not.toContain("RangeError");
+    expect(err.message).not.toContain("Maximum call stack");
+  });
+
+  it("still redacts credentials in a huge error body", async () => {
+    // The bound must not become a shortcut around redaction: same body shape as
+    // above, with the real-world Kimi 429 payload at its head.
+    const body = '{"message":"Your account org-0123456789abcdef <ak-EXAMPLEKEY01234567890> is suspended"}' +
+      "a".repeat(7 * 1024 * 1024);
+    const f: FetchLike = async () => new Response(body, { status: 429 });
+    const err = (await postJson("https://x.example", {}, {}, { ...base, fetchImpl: f }).catch((e) => e)) as HttpError;
+    expect(err).toBeInstanceOf(HttpError);
+    expect(err.message).not.toContain("0123456789abcdef");
+    expect(err.message).not.toContain("EXAMPLEKEY01234567890");
+    expect(err.message).toContain("ak-***");
+  });
+
   it("propagates an Error abort reason from the body read unchanged", async () => {
     // The orchestrator's own TimeoutError must survive the body read; wrapping
     // it again would lose the identity the audit trail classifies on.

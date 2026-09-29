@@ -13,7 +13,7 @@
 // abort support, plus error classification. Credentials never reach logs or
 // error messages.
 
-import { ERROR_MESSAGE_MAX, HttpError, NetworkError, ParseError, redactSecrets, TimeoutError } from "./errors.js";
+import { HttpError, NetworkError, ParseError, redactForMessage, TimeoutError } from "./errors.js";
 import type { FetchLike } from "./types.js";
 
 /**
@@ -111,10 +111,11 @@ export async function postJson(
   }
   if (res.status >= 400) {
     // Upstream error bodies may echo account/key identifiers; redact before they reach the message.
-    // Redact first, truncate second: cutting first leaves the head of a credential
-    // that straddles the boundary in the message, and the fragment is too short to
-    // match any redaction pattern.
-    throw new HttpError(res.status, `HTTP ${res.status}: ${redactSecrets(text).slice(0, ERROR_MESSAGE_MAX)}`);
+    // redactForMessage keeps that order (redact first, truncate second: cutting first leaves the
+    // head of a credential that straddles the boundary in the message, and the fragment is too
+    // short to match any redaction pattern) and bounds how much of the body it looks at, so an
+    // error body at the 8 MB cap cannot make redaction itself fail.
+    throw new HttpError(res.status, `HTTP ${res.status}: ${redactForMessage(text)}`);
   }
   return { status: res.status, text, json };
 }

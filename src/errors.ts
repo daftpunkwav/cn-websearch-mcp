@@ -104,9 +104,63 @@ const SECRET_PATTERNS: RegExp[] = [
   /Bearer\s+[A-Za-z0-9._-]{8,}/gi,
 ];
 
-/** Redact fragments that look like credentials; keeps a 3-char prefix for debugging (e.g. ak-***). */
+/**
+ * What redaction yields when the regex engine itself fails. A fixed marker, and
+ * never the original text: the failure mode being guarded against is exactly the
+ * one where we no longer know what the text contains, so passing it through is
+ * the one option that cannot be defended.
+ */
+const REDACTION_FAILED = "<redaction failed>";
+
+/**
+ * How far past the message it keeps, redactForMessage redacts.
+ *
+ * Two reasons, one constant, and the second is what makes the first affordable.
+ * Every pattern recognizes a match from at most 33 characters (the dot-form
+ * pair: 16 + "." + 16), so a window this far past the kept prefix always
+ * recognizes a match that *starts* inside it — which is the whole point of
+ * redacting before truncating. But the dot-form pattern's `[A-Za-z0-9]{16,}` is
+ * an unbounded greedy run, and V8's regex backtrack stack is finite: fed a
+ * multi-megabyte run of word characters — exactly the shape an HTML error page
+ * from a proxy or WAF has — it throws RangeError, and that engine error
+ * replaces the HTTP status that actually explains the failure. Capping the
+ * input caps the stack use, so that failure is unreachable rather than merely
+ * caught. 4096 is ~13x the longest documented key shape of the four channels
+ * (the Zhipu pair is 32 + 1 + 32); a real credential is 65 characters.
+ */
+const REDACT_HEADROOM = 4096;
+
+/**
+ * Redact fragments that look like credentials; keeps a 3-char prefix for debugging (e.g. ak-***).
+ *
+ * Total by construction. Every caller is an error path, so a redaction bug that
+ * escaped would replace a usable HTTP status with an internal engine error — and
+ * a caller that caught it and fell back to the raw text would leak the very
+ * thing redaction exists to remove. See REDACTION_FAILED.
+ */
 export function redactSecrets(text: string): string {
-  return SECRET_PATTERNS.reduce((acc, re) => acc.replace(re, (m) => `${m.slice(0, 3)}***`), text);
+  try {
+    return SECRET_PATTERNS.reduce((acc, re) => acc.replace(re, (m) => `${m.slice(0, 3)}***`), text);
+  } catch {
+    return REDACTION_FAILED;
+  }
+}
+
+/**
+ * Redact an untrusted text down to the audit-trail message size: the same
+ * redact-then-cut order summarizeError uses, and for the same reason — cutting
+ * first leaves the head of a credential that straddles the boundary, and a
+ * fragment that short matches no pattern.
+ *
+ * Only the head of the text is redacted, past the kept message by
+ * REDACT_HEADROOM, so the cost is a constant instead of the size of the
+ * upstream body: the 8 MB cap in http.ts is a *legal* body, and redacting all
+ * of it spent tens of milliseconds per failure to produce a message that is
+ * then cut to ERROR_MESSAGE_MAX anyway.
+ */
+export function redactForMessage(text: string): string {
+  const window = ERROR_MESSAGE_MAX + REDACT_HEADROOM;
+  return redactSecrets(text.length > window ? text.slice(0, window) : text).slice(0, ERROR_MESSAGE_MAX);
 }
 
 /**

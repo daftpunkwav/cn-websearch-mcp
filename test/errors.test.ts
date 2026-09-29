@@ -5,9 +5,11 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  ERROR_MESSAGE_MAX,
   HttpError,
   NetworkError,
   ParseError,
+  redactForMessage,
   redactSecrets,
   TimeoutError,
   isTransient,
@@ -124,6 +126,125 @@ describe("redactSecrets", () => {
     expect(redactSecrets("GET https://api.example.com/v1/chat failed")).toBe(
       "GET https://api.example.com/v1/chat failed",
     );
+  });
+
+  it("never propagates a redaction failure, and never returns the text it failed on", () => {
+    // A stand-in for the engine failure that started this: a greedy run of
+    // millions of word characters overflows V8's regex backtrack stack. What
+    // matters here is the contract, not the trigger — a caller of this function
+    // is already reporting a failure, so an escaping redaction error would
+    // replace that failure's cause with an internal one.
+    const hostile = Object.assign(Object.create(String.prototype) as String, {
+      replace: () => {
+        throw new RangeError("Maximum call stack size exceeded");
+      },
+    });
+    expect(redactSecrets(hostile as unknown as string)).toBe("<redaction failed>");
+  });
+});
+
+/**
+ * The bounded redaction used for the audit trail.
+ *
+ * Two contracts, both load-bearing:
+ * - it never throws, however large the untrusted text is (a body at http.ts's
+ *   8 MB cap is legal input, and the message it produces is ERROR_MESSAGE_MAX
+ *   characters, so the extra work buys nothing);
+ * - a credential is still redacted whatever its offset in the kept prefix, and
+ *   in particular one that straddles the cut — that is what redacting before
+ *   truncating is for.
+ */
+describe("redactForMessage", () => {
+  it("agrees with redact-then-truncate for every shape the pipeline can hand it", () => {
+    // The window is far wider than any single message, so short inputs must be
+    // indistinguishable from calling redactSecrets directly. These are the
+    // frozen fixtures plus the shapes that used to differ only in length.
+    const samples = [
+      '{"message":"Your account org-0123456789abcdef <ak-EXAMPLEKEY01234567890> is suspended"}',
+      "Authorization: Bearer sk-abcdefghijklmnop123",
+      "api_key=abcdef123456",
+      "1234567890abcdef1234567890abcdef.ABCDEFGHIJKLMNOPQRSTUVWXYZ1234",
+      "GET https://api.moonshot.cn/v1/chat/completions failed",
+      "y".repeat(1000),
+      "y".repeat(4396),
+      "a".repeat(4397),
+      "a".repeat(50_000),
+    ];
+    for (const sample of samples) {
+      expect(redactForMessage(sample)).toBe(redactSecrets(sample).slice(0, ERROR_MESSAGE_MAX));
+    }
+  });
+
+  it("redacts a credential at every offset, including across the truncation cut", () => {
+    // Synthetic secret, same shape as the documented channels' keys.
+    const secret = "sk-EXAMPLEKEY0123456789";
+    for (let offset = 0; offset <= ERROR_MESSAGE_MAX + 16; offset++) {
+      const body = "y".repeat(offset) + secret + " rejected";
+      const out = redactForMessage(body);
+      expect(out, `offset ${offset}`).not.toContain("EXAMPLEKEY");
+      expect(out, `offset ${offset}`).not.toContain("0123456789");
+    }
+  });
+
+  it("redacts a dot-form key that straddles the truncation cut", () => {
+    const secret = "1234567890abcdef1234567890abcdef.A1B2C3D4E5F6G7H8I9J0K1L2";
+    for (let offset = 0; offset <= ERROR_MESSAGE_MAX + 16; offset++) {
+      const out = redactForMessage("y".repeat(offset) + secret + " invalid");
+      expect(out, `offset ${offset}`).not.toContain("1234567890abcdef");
+      expect(out, `offset ${offset}`).not.toContain("A1B2C3D4");
+    }
+  });
+
+  it("survives a multi-megabyte run of word characters", () => {
+    // The shape an HTML error page from a proxy or WAF has. The dot-form
+    // pattern's unbounded greedy run overflows V8's regex backtrack stack on
+    // input like this, so the message is built without ever seeing all of it.
+    const body = `<html><body>${"a".repeat(7 * 1024 * 1024)}</body></html>`;
+    const out = redactForMessage(body);
+    expect(out).toBe(body.slice(0, ERROR_MESSAGE_MAX));
+  });
+
+  it("keeps redacting real credentials inside a body that is mostly noise", () => {
+    const body = "a".repeat(3 * 1024 * 1024) + " key sk-EXAMPLEKEY0123456789 rejected";
+    expect(redactForMessage(body)).not.toContain("EXAMPLEKEY");
+  });
+
+  it("never emits a fragment its own patterns could still match", () => {
+    // The property the headroom actually buys, stated so it can be checked
+    // rather than argued: redaction is idempotent here, so nothing in the
+    // emitted message is credential-shaped. A pattern matches somewhere in a
+    // string exactly when redacting that string changes it, so this is the
+    // whole question — is any secret-shaped text reaching a caller? — with no
+    // judgement left in it.
+    //
+    // The corpus is the shapes that actually diverge from redacting the whole
+    // body: a credential glued to a filler run longer than the headroom (P1
+    // then swallows the filler along with the key, and the window cuts the pair
+    // apart), a long run on its own, and credential-shaped text at every
+    // alignment around both the emit cut and the window cut.
+    const secrets = [
+      "sk-EXAMPLEKEY0123456789",
+      "org-0123456789abcdef",
+      "api_key=ABCDEFGHIJKLMNOPQRSTUV",
+      "Bearer 8f3c1d9e7b5a4c2f6e8d0b1a3c5e7f9d",
+      "1234567890abcdef1234567890abcdef.ABCDEFGHIJKLMNOPQRSTUVWXYZ1234",
+      "9876543210fedcba9876543210fedcba.A1B2C3D4E5F6G7H8I9J0K1L2",
+    ];
+    const bodies: string[] = [];
+    for (const s of secrets) {
+      for (const pad of [0, 200, 300, 500, 4096, 4200, 5000, 12_000]) {
+        bodies.push("y".repeat(pad) + s + " rejected by upstream");
+        for (const tail of [200, 300, 400, 4300, 4400, 4600]) bodies.push("y".repeat(pad) + s + "y".repeat(tail));
+      }
+    }
+    for (const n of [16, 33, 100, 4096, 4200, 20_000]) {
+      bodies.push("a".repeat(n), `<html>${"a".repeat(n)}</html>`);
+      bodies.push("y".repeat(50) + "A".repeat(n) + ".B1C2D3E4F5G6H7I8J9K0L1M2N3O4P5Q6R7S8T9U0");
+    }
+    for (const body of bodies) {
+      const out = redactForMessage(body);
+      expect(redactSecrets(out), `len ${body.length}`).toBe(out);
+    }
   });
 });
 
