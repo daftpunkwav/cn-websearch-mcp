@@ -51,7 +51,7 @@ export async function probeProvider(
   const timer = setTimeout(() => ac.abort(new TimeoutError()), opts.timeoutMs);
   const t0 = Date.now();
   try {
-    const out = await p.search(req, {
+    const result = await p.search(req, {
       timeoutMs: opts.timeoutMs,
       signal: ac.signal,
       fetchImpl: opts.fetchImpl ?? fetch,
@@ -61,8 +61,8 @@ export async function probeProvider(
       provider: p.name,
       ok: true,
       latency_ms: Date.now() - t0,
-      results: out.results.length,
-      sample: out.results[0]?.title?.slice(0, SAMPLE_TITLE_MAX) ?? "(no results)",
+      results: result.results.length,
+      sample: result.results[0]?.title?.slice(0, SAMPLE_TITLE_MAX) ?? "(no results)",
       error: "",
     };
   } catch (err) {

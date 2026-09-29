@@ -246,19 +246,19 @@ export function mergeSourceItems(
     return sources.flatMap((s) => s.items.map((item) => ({ ...item, source: item.source ?? s.provider })));
   }
   const seenAt = new Map<string, number>();
-  const out: NormalizedItem[] = [];
+  const merged: NormalizedItem[] = [];
   for (const s of sources) {
     for (const item of s.items) {
       const tagged: NormalizedItem = item.source ? item : { ...item, source: s.provider };
       const key = canonicalUrl(tagged.url);
       const at = seenAt.get(key);
       if (at === undefined) {
-        seenAt.set(key, out.length);
-        out.push(tagged);
+        seenAt.set(key, merged.length);
+        merged.push(tagged);
       } else {
-        out[at] = mergeItems(out[at]!, tagged);
+        merged[at] = mergeItems(merged[at]!, tagged);
       }
     }
   }
-  return out;
+  return merged;
 }

@@ -262,8 +262,9 @@ export async function searchWithFallback(req: SearchRequest, opts: OrchestratorO
   for (const p of opts.providers) {
     const { records, result } = await runProvider(p, req, opts);
     attempts.push(...records);
-    const ok = records[records.length - 1];
-    if (ok && ok.status === "ok" && result) {
+    // The last record carries this provider's final verdict for the call.
+    const lastRecord = records[records.length - 1];
+    if (lastRecord && lastRecord.status === "ok" && result) {
       return {
         results: result.results,
         _meta: {

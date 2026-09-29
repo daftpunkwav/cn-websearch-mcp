@@ -101,8 +101,8 @@ async function runFiber(cfg: ProviderConfig, name: string, args: string, ctx: Se
 }
 
 /** Extracts reference URLs from the fiber context; returns an empty array on malformed structure instead of throwing. */
-function urlsFromFiber(ctxObj: Record<string, unknown>): string[] {
-  const refs = ctxObj.references;
+function urlsFromFiber(fiberContext: Record<string, unknown>): string[] {
+  const refs = fiberContext.references;
   if (!Array.isArray(refs)) return [];
   const urls: string[] = [];
   for (const ref of refs) {
@@ -136,29 +136,29 @@ export function createKimiProvider(cfg: ProviderConfig): SearchProvider {
       // drop tools and issue one more chat call to force a final answer.
       for (let round = 0; round < maxRounds; round++) {
         throwIfAborted(ctx);
-        const msg = await chat(cfg, messages, ctx, { withTools: true, maxTokens });
-        const toolCalls = Array.isArray(msg.tool_calls) ? msg.tool_calls : [];
+        const message = await chat(cfg, messages, ctx, { withTools: true, maxTokens });
+        const toolCalls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
         if (!toolCalls.length) {
-          answer = str(msg.content).trim();
+          answer = str(message.content).trim();
           break;
         }
         // In thinking mode the server requires the assistant turn to pass reasoning_content back verbatim.
-        const assistant: ChatMessage = { role: "assistant", content: msg.content ?? null, tool_calls: toolCalls };
-        if (msg.reasoning_content) assistant.reasoning_content = msg.reasoning_content;
+        const assistant: ChatMessage = { role: "assistant", content: message.content ?? null, tool_calls: toolCalls };
+        if (message.reasoning_content) assistant.reasoning_content = message.reasoning_content;
         messages.push(assistant);
-        for (const tc of toolCalls) {
-          const call = asObject(tc, "kimi tool_call");
+        for (const rawCall of toolCalls) {
+          const call = asObject(rawCall, "kimi tool_call");
           const fn = asObject(call.function ?? null, "kimi tool_call.function");
           throwIfAborted(ctx);
-          const fiberCtx = await runFiber(cfg, str(fn.name), str(fn.arguments), ctx);
+          const fiberContext = await runFiber(cfg, str(fn.name), str(fn.arguments), ctx);
           // Appended one at a time rather than with push(...refs): the spread
           // passes every reference as a call argument, and the engine's
           // argument stack overflows around 125k of them. A fiber that
           // references that many pages is a ~4MB body, which the 8MB response
           // cap admits — so the spread would turn a large-but-legal upstream
           // response into a RangeError instead of results.
-          for (const url of urlsFromFiber(fiberCtx)) urls.push(url);
-          const output = str(fiberCtx.encrypted_output) || str(fiberCtx.output);
+          for (const url of urlsFromFiber(fiberContext)) urls.push(url);
+          const output = str(fiberContext.encrypted_output) || str(fiberContext.output);
           messages.push({ role: "tool", content: output, tool_call_id: str(call.id) });
         }
         if (round === maxRounds - 1) {

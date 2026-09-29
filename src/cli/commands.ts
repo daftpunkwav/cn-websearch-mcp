@@ -96,7 +96,7 @@ export async function cmdSearch(deps: CliDeps, args: CliArgs): Promise<number> {
   const count = effectiveCount(args.count, config.count);
   const query = truncate(args.query.trim(), QUERY_MAX);
   try {
-    const out = await search(
+    const result = await search(
       { query, count },
       {
         providers: picked.providers,
@@ -106,7 +106,7 @@ export async function cmdSearch(deps: CliDeps, args: CliArgs): Promise<number> {
         strategy,
       },
     );
-    writeLine(output, args.json ? JSON.stringify(out, null, 2) : formatSearchResult(out));
+    writeLine(output, args.json ? JSON.stringify(result, null, 2) : formatSearchResult(result));
     return 0;
   } catch (err) {
     // Every structured failure carries an audit trail; print it the same way

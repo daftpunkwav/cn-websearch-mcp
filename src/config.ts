@@ -274,12 +274,12 @@ function providerEntry(file: ConfigFileShape | undefined, name: ProviderName): R
 
 /** Read the top-level providers object from the config file, filtering out non-object values. */
 function providerEntries(file: ConfigFileShape | undefined): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
+  const entries: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(maybeObject(file?.providers) ?? {})) {
     const entry = maybeObject(value);
-    if (entry) out[key] = entry;
+    if (entry) entries[key] = entry;
   }
-  return out;
+  return entries;
 }
 
 /**

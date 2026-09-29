@@ -51,16 +51,16 @@ function itemsFromAnnotations(annotations: unknown[]): NormalizedItem[] {
   for (const raw of annotations) {
     // One malformed entry must not sink the whole citation list: a null element
     // carries no fields at all, and a non-object one carries none we can read.
-    const a: Annotation | undefined = maybeObject(raw);
-    if (!a) continue;
-    const url = str(a.url).trim();
+    const annotation: Annotation | undefined = maybeObject(raw);
+    if (!annotation) continue;
+    const url = str(annotation.url).trim();
     if (!url) continue;
     // Same rule as every other adapter: a reference that is not an http(s)
     // link never reaches the client as a clickable URL.
     const urlNorm = normalizeUrl(url);
     if (!urlNorm) continue;
-    const kind = str(a.type);
-    const title = str(a.title).trim();
+    const kind = str(annotation.type);
+    const title = str(annotation.title).trim();
     const existing = byUrl.get(urlNorm);
     if (kind === "url_citation") {
       if (existing) {
@@ -87,14 +87,14 @@ function itemsFromAnnotations(annotations: unknown[]): NormalizedItem[] {
  */
 function userLocation(options: Record<string, unknown> | undefined): Record<string, unknown> {
   const loc = maybeObject(options?.location);
-  const out: Record<string, unknown> = { type: "approximate" };
+  const location: Record<string, unknown> = { type: "approximate" };
   const country = str(loc?.country).trim() || "China";
-  out.country = country;
+  location.country = country;
   for (const key of ["region", "city"] as const) {
     const value = str(loc?.[key]).trim();
-    if (value) out[key] = value;
+    if (value) location[key] = value;
   }
-  return out;
+  return location;
 }
 
 export function createMimoProvider(cfg: ProviderConfig): SearchProvider {

@@ -195,7 +195,7 @@ export function createGatewayTools(deps: GatewayToolsDeps) {
       }
 
       try {
-        const out = await searchFn(
+        const result = await searchFn(
           { query: truncate(query, QUERY_MAX), count },
           {
             providers: selection.providers,
@@ -206,7 +206,7 @@ export function createGatewayTools(deps: GatewayToolsDeps) {
             signal,
           },
         );
-        return textContent(out);
+        return textContent(result);
       } catch (err) {
         // The expected outcomes of a call — nobody was configured, every provider
         // failed, the caller went away — are answers, not crashes: each one

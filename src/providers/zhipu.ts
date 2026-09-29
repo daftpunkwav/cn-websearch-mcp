@@ -59,18 +59,18 @@ export function createZhipuProvider(cfg: ProviderConfig): SearchProvider {
       const hits = asArray(body.search_result, "zhipu search_result");
       // A malformed single hit affects only that hit: degrade to an empty object and let toItem decide.
       const results = hits
-        .map((h) => {
-          const o = (h && typeof h === "object" ? h : {}) as Record<string, unknown>;
-          const content = str(o.content).trim();
+        .map((hit) => {
+          const fields = (hit && typeof hit === "object" ? hit : {}) as Record<string, unknown>;
+          const content = str(fields.content).trim();
           return toItem({
-            title: o.title,
-            url: o.link,
+            title: fields.title,
+            url: fields.link,
             snippet: truncate(content, 300),
             content,
-            published_date: o.publish_date,
+            published_date: fields.publish_date,
           });
         })
-        .filter((x): x is NonNullable<typeof x> => x !== null)
+        .filter((item): item is NonNullable<typeof item> => item !== null)
         .slice(0, req.count);
       return { results, _meta: { provider: NAME, total_latency_ms: 0, attempts: [] } };
     },

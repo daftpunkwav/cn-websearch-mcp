@@ -194,8 +194,8 @@ function collapseWhitespace(text: string): string {
  */
 export function summarizeError(err: unknown): string {
   if (err instanceof Error) {
-    const msg = collapseWhitespace(redactSecrets(stripControlChars(err.message)));
-    return `${err.name}: ${truncateForAudit(msg)}`;
+    const message = collapseWhitespace(redactSecrets(stripControlChars(err.message)));
+    return `${err.name}: ${truncateForAudit(message)}`;
   }
   return truncateForAudit(collapseWhitespace(redactSecrets(stripControlChars(String(err)))));
 }

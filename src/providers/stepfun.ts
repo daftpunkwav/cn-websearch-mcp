@@ -59,17 +59,17 @@ export function createStepfunProvider(cfg: ProviderConfig): SearchProvider {
       const hits = asArray(body.results, "stepfun results");
       // A malformed single hit affects only that hit: degrade to an empty object and let toItem decide.
       const results = hits
-        .map((h) => {
-          const o = (h && typeof h === "object" ? h : {}) as Record<string, unknown>;
+        .map((hit) => {
+          const fields = (hit && typeof hit === "object" ? hit : {}) as Record<string, unknown>;
           return toItem({
-            title: o.title,
-            url: o.url,
-            snippet: str(o.snippet),
-            content: str(o.content) || undefined,
-            published_date: o.time,
+            title: fields.title,
+            url: fields.url,
+            snippet: str(fields.snippet),
+            content: str(fields.content) || undefined,
+            published_date: fields.time,
           });
         })
-        .filter((x): x is NonNullable<typeof x> => x !== null)
+        .filter((item): item is NonNullable<typeof item> => item !== null)
         .slice(0, req.count);
       return { results, _meta: { provider: NAME, total_latency_ms: 0, attempts: [] } };
     },

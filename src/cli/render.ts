@@ -49,14 +49,14 @@ export function redactedConfig(config: GatewayConfig): Record<string, unknown> {
 }
 
 /** Formats one search result as human-readable text. */
-export function formatSearchResult(out: NormalizedSearchResult): string {
-  const meta = out._meta;
+export function formatSearchResult(result: NormalizedSearchResult): string {
+  const meta = result._meta;
   const sources = meta.providers?.length ? meta.providers.join(", ") : meta.provider;
   const lines: string[] = [
-    `answered by: ${sources}  (${meta.total_latency_ms}ms total, ${out.results.length} result(s))`,
+    `answered by: ${sources}  (${meta.total_latency_ms}ms total, ${result.results.length} result(s))`,
     "",
   ];
-  out.results.forEach((item, i) => {
+  result.results.forEach((item, i) => {
     const source = item.source && meta.providers && meta.providers.length > 1 ? `  [${item.source}]` : "";
     lines.push(`${i + 1}. ${item.title || "(untitled)"}${source}`);
     lines.push(`   ${item.url}`);
