@@ -61,8 +61,10 @@ export function createRuntime(options: RuntimeOptions = {}): GatewayRuntime {
 
 /**
  * Whether a provider can search: enabled in config AND has a key (both are
- * required). Implemented as a lenient table lookup; unknown names count as
- * unusable, with no type assertions involved.
+ * required). The single place that decides this — the adapters do not answer it
+ * themselves, so the chain a caller gets cannot disagree with the status the
+ * tool layer reports. Implemented as a lenient table lookup; unknown names count
+ * as unusable, with no type assertions involved.
  */
 function isUsable(config: GatewayConfig, name: string): boolean {
   const entry = (config.providers as Record<string, ProviderConfig | undefined>)[name];

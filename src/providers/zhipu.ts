@@ -39,7 +39,6 @@ export function createZhipuProvider(cfg: ProviderConfig): SearchProvider {
   return {
     name: NAME,
     timeoutMs: cfg.timeoutMs,
-    isConfigured: () => cfg.apiKey.trim() !== "",
     async search(req: SearchRequest, ctx: SearchContext): Promise<NormalizedSearchResult> {
       const options = cfg.options;
       const payload = {

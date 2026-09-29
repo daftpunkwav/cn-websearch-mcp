@@ -37,11 +37,6 @@ function sequentialFetch(responses: Array<() => Response>): { fetchImpl: FetchLi
 }
 
 describe("kimi provider", () => {
-  it("isConfigured reflects key presence", () => {
-    expect(createKimiProvider(cfg).isConfigured()).toBe(true);
-    expect(createKimiProvider({ ...cfg, apiKey: "" }).isConfigured()).toBe(false);
-  });
-
   it("runs the 4-step loop and collects fiber references + final answer", async () => {
     const { fetchImpl, calls } = sequentialFetch([
       () =>

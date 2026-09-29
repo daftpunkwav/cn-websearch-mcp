@@ -24,16 +24,21 @@ describe("buildProviders", () => {
     });
     const providers = buildProviders(cfg);
     expect(providers.map((p) => p.name)).toEqual(["kimi", "zhipu", "mimo", "stepfun"]);
-    for (const p of providers) expect(p.isConfigured()).toBe(true);
   });
 
   it("passes each provider's own config to its factory", () => {
-    const cfg = loadConfig({ env: env({ STEPFUN_API_KEY: "s-key", KIMI_API_KEY: "" }), warn: noWarn });
+    // An adapter exposes only what its factory derived from the config it was
+    // handed, so slots configured differently must come back with different
+    // values: that is what shows a factory is not handed a shared config, and
+    // also that a slot with nothing set is not back-filled from another slot.
+    const cfg = loadConfig({
+      env: env({ KIMI_TIMEOUT_MS: "1111", STEPFUN_TIMEOUT_MS: "2222" }),
+      warn: noWarn,
+    });
     const providers = buildProviders(cfg);
-    const stepfun = providers.find((p) => p.name === "stepfun")!;
-    const kimi = providers.find((p) => p.name === "kimi")!;
-    expect(stepfun.isConfigured()).toBe(true);
-    expect(kimi.isConfigured()).toBe(false);
+    expect(providers.find((p) => p.name === "kimi")!.timeoutMs).toBe(1111);
+    expect(providers.find((p) => p.name === "stepfun")!.timeoutMs).toBe(2222);
+    expect(providers.find((p) => p.name === "mimo")!.timeoutMs).toBeUndefined();
   });
 
   it("carries the per-provider timeout budget into the adapter", () => {

@@ -20,11 +20,6 @@ function jsonResponse(payload: unknown, status = 200): Response {
 }
 
 describe("mimo provider", () => {
-  it("isConfigured reflects key presence", () => {
-    expect(createMimoProvider(cfg).isConfigured()).toBe(true);
-    expect(createMimoProvider({ ...cfg, apiKey: "" }).isConfigured()).toBe(false);
-  });
-
   it("builds the shim-verified request and merges citations with highlights", async () => {
     const calls: Array<{ url: string; init: RequestInit }> = [];
     const fetchImpl: FetchLike = async (url, init) => {

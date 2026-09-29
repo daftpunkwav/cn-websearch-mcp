@@ -8,7 +8,6 @@
 
 - `name` —— 字面槽位名(同时也是配置键与 `source` 标签)。
 - `timeoutMs` —— 可选的单槽位超时预算覆盖;未设置时回退到全局 `timeoutMs`。
-- `isConfigured()` —— API key 是否非空。
 - `search(req, ctx)` —— 一次逻辑搜索。实现保持单薄:只做请求构造与响应解析。超时、重试、fallback 与聚合始终是编排层的职责。返回的 `_meta` 携带 `provider`(在通道会合成答案时还有 `answer`);`attempts` 与 `total_latency_ms` 由编排层填充。
 
 ## 注册表

@@ -9,7 +9,6 @@ import type { NormalizedSearchResult, SearchProvider } from "../src/types.js";
 
 const ok = (name: string): SearchProvider => ({
   name,
-  isConfigured: () => true,
   search: async (): Promise<NormalizedSearchResult> => ({
     results: [],
     _meta: { provider: name, total_latency_ms: 0, attempts: [] },

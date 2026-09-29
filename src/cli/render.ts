@@ -19,6 +19,9 @@ import { truncate } from "../normalize.js";
 /** Snippet length cap for rendering: terminal readability first; full content remains available via --json. */
 const SNIPPET_MAX = 160;
 
+/** Failure-note cap in the probe table: one readable column; the full summary is in --json. */
+const PROBE_NOTE_MAX = 80;
+
 /** Secret redaction: echo only whether a key is set, never its contents. */
 export function redactedConfig(config: GatewayConfig): Record<string, unknown> {
   const providers: Record<string, unknown> = {};
@@ -114,7 +117,7 @@ export function formatProbeTable(rows: ProbeRow[]): string {
         (r.ok ? "ok" : "failed").padEnd(7),
         `${r.latency_ms}ms`.padEnd(8),
         String(r.results).padEnd(8),
-        r.ok ? r.sample : truncate(r.error, 80),
+        r.ok ? r.sample : truncate(r.error, PROBE_NOTE_MAX),
       ].join(" "),
     );
   }

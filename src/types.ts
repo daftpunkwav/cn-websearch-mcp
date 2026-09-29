@@ -114,14 +114,15 @@ export interface SearchProvider {
   readonly name: string;
   /** Per-provider timeout budget (ms); falls back to the global budget when unset. */
   readonly timeoutMs?: number;
-  /** Whether the required API key exists in the environment. */
-  isConfigured(): boolean;
   /**
    * Perform one logical search. Implementations must stay thin: request
    * construction and response parsing only; timeout, retry and fallback
    * are always the orchestrator's job. The returned _meta must carry
    * provider (and answer, where applicable); attempts and total_latency_ms
    * are filled in by the orchestrator.
+   *
+   * Whether a provider may search at all is not answered here: it needs the
+   * `enabled` switch and the API key, which runtime.ts owns and filters on.
    */
   search(req: SearchRequest, ctx: SearchContext): Promise<NormalizedSearchResult>;
 }

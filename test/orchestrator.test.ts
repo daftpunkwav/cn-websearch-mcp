@@ -30,7 +30,6 @@ function makeProvider(
   return {
     provider: {
       name,
-      isConfigured: () => true,
       search: async (r, c) => behavior(r, c, ++n),
     },
     calls: () => n,
@@ -242,7 +241,6 @@ describe("searchAggregate", () => {
   it("labels synthesized answers per provider when several respond with one", async () => {
     const withAnswer = (name: string, answer: string): SearchProvider => ({
       name,
-      isConfigured: () => true,
       search: async () => ({
         results: [],
         _meta: { provider: name, total_latency_ms: 0, attempts: [], answer },
@@ -255,7 +253,6 @@ describe("searchAggregate", () => {
   it("returns a single answer unlabelled and omits the field when there is none", async () => {
     const one: SearchProvider = {
       name: "a",
-      isConfigured: () => true,
       search: async () => ({ results: [], _meta: { provider: "a", total_latency_ms: 0, attempts: [], answer: "only" } }),
     };
     const silent = makeProvider("b", async () => okResult("b", 1));
@@ -480,7 +477,6 @@ describe("runSearch", () => {
     const slow: SearchProvider = {
       name: "slow",
       timeoutMs: 20,
-      isConfigured: () => true,
       search: (_r, ctx) =>
         new Promise<NormalizedSearchResult>((_res, reject) => {
           ctx.signal.addEventListener("abort", () => reject(ctx.signal.reason));

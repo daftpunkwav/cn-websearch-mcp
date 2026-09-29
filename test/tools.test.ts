@@ -14,7 +14,6 @@ import type { AttemptRecord, NormalizedSearchResult, SearchProvider, SearchReque
 function fakeProvider(name: string, behavior?: (req: SearchRequest) => Promise<NormalizedSearchResult>): SearchProvider {
   return {
     name,
-    isConfigured: () => true,
     search:
       behavior ??
       (async () => ({
@@ -283,7 +282,6 @@ describe("web_search dispatch", () => {
   it("formats all-providers-failed as isError with the attempt trail", async () => {
     const failing = (name: string): SearchProvider => ({
       name,
-      isConfigured: () => true,
       search: async () => {
         throw new HttpError(401, `HTTP 401: bad key (${name})`);
       },
@@ -344,7 +342,6 @@ describe("web_search dispatch", () => {
   it("falls through a dead provider to the next one (real orchestrator)", async () => {
     const dead: SearchProvider = {
       name: "dead",
-      isConfigured: () => true,
       search: async () => {
         throw new AllProvidersFailedError([{ provider: "dead", status: "permanent_error", latency_ms: 1 }]);
       },

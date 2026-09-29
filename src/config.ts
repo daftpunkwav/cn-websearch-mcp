@@ -268,20 +268,16 @@ function optionalPositiveInt(
 
 /** Read the providers.<name> sub-object from the config file; undefined on type mismatch. */
 function providerEntry(file: ConfigFileShape | undefined, name: ProviderName): Record<string, unknown> | undefined {
-  const providers = file?.providers;
-  if (!providers || typeof providers !== "object" || Array.isArray(providers)) return undefined;
-  const entry = (providers as Record<string, unknown>)[name];
-  if (!entry || typeof entry !== "object" || Array.isArray(entry)) return undefined;
-  return entry as Record<string, unknown>;
+  const providers = maybeObject(file?.providers);
+  return providers ? maybeObject(providers[name]) : undefined;
 }
 
 /** Read the top-level providers object from the config file, filtering out non-object values. */
 function providerEntries(file: ConfigFileShape | undefined): Record<string, unknown> {
-  const providers = file?.providers;
-  if (!providers || typeof providers !== "object" || Array.isArray(providers)) return {};
   const out: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(providers as Record<string, unknown>)) {
-    if (value && typeof value === "object" && !Array.isArray(value)) out[key] = value;
+  for (const [key, value] of Object.entries(maybeObject(file?.providers) ?? {})) {
+    const entry = maybeObject(value);
+    if (entry) out[key] = entry;
   }
   return out;
 }

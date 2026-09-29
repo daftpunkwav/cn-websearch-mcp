@@ -125,7 +125,6 @@ export function createKimiProvider(cfg: ProviderConfig): SearchProvider {
   return {
     name: NAME,
     timeoutMs: cfg.timeoutMs,
-    isConfigured: () => cfg.apiKey.trim() !== "",
     async search(req: SearchRequest, ctx: SearchContext): Promise<NormalizedSearchResult> {
       const maxRounds = clampInt(cfg.options?.maxRounds, DEFAULT_MAX_ROUNDS, 1, 5);
       const maxTokens = clampInt(cfg.options?.maxTokens, DEFAULT_MAX_TOKENS, 256, 32_768);

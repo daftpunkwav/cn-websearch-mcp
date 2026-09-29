@@ -54,8 +54,8 @@ const okResult = (provider: string): NormalizedSearchResult => ({
 
 describe("pickProviders", () => {
   const chain: SearchProvider[] = [
-    { name: "kimi", isConfigured: () => true, search: async () => okResult("kimi") },
-    { name: "stepfun", isConfigured: () => true, search: async () => okResult("stepfun") },
+    { name: "kimi", search: async () => okResult("kimi") },
+    { name: "stepfun", search: async () => okResult("stepfun") },
   ];
 
   it("defaults to the whole chain", () => {
@@ -303,7 +303,6 @@ describe("default (non-injected) code paths", () => {
   // to cover the default implementations (deps.search ?? runSearch / deps.probe ?? probeAll).
   const fake = (name: string): SearchProvider => ({
     name,
-    isConfigured: () => true,
     search: async () => ({
       results: [{ title: `${name} hit`, url: `https://${name}.example/1`, snippet: "s" }],
       _meta: { provider: name, total_latency_ms: 1, attempts: [{ provider: name, status: "ok", latency_ms: 1 }] },
@@ -346,7 +345,6 @@ describe("default (non-injected) code paths", () => {
   it("still formats an all-failed search when using the real orchestrator", async () => {
     const broken: SearchProvider = {
       name: "stepfun",
-      isConfigured: () => true,
       search: async () => {
         throw new HttpError(401, "HTTP 401: bad key");
       },

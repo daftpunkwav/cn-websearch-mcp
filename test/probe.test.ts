@@ -14,7 +14,7 @@ function provider(
   name: string,
   behavior: (r: SearchRequest, ctx: SearchContext) => Promise<NormalizedSearchResult>,
 ): SearchProvider {
-  return { name, isConfigured: () => true, search: behavior };
+  return { name, search: behavior };
 }
 
 function ok(name: string, titles: string[]): Promise<NormalizedSearchResult> {

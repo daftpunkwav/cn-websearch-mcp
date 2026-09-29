@@ -29,6 +29,9 @@ export interface ProbeRow {
   error: string;
 }
 
+/** Sample-title cap: enough to recognize the channel's first hit in a table row, not a preview. */
+const SAMPLE_TITLE_MAX = 60;
+
 /**
  * Probe one provider. Any failure (network, timeout, protocol, parsing) is
  * converted into a row with ok=false and never thrown — the whole point of a
@@ -59,7 +62,7 @@ export async function probeProvider(
       ok: true,
       latency_ms: Date.now() - t0,
       results: out.results.length,
-      sample: out.results[0]?.title?.slice(0, 60) ?? "(no results)",
+      sample: out.results[0]?.title?.slice(0, SAMPLE_TITLE_MAX) ?? "(no results)",
       error: "",
     };
   } catch (err) {

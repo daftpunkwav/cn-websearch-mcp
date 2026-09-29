@@ -36,6 +36,16 @@ export interface ToolOutput {
   isError?: boolean;
 }
 
+/**
+ * The two tool names, once each. A definition and its dispatcher have to agree
+ * on these strings, and they are written in different places — renaming a tool
+ * in the schema while the dispatch still compares the old literal would leave
+ * the tool listed but always answering "unknown tool", which is a confusing way
+ * to discover the rename.
+ */
+const WEB_SEARCH = "web_search";
+const PROVIDER_STATUS = "provider_status";
+
 /** Search execution function signature (runSearch by default; injectable for tests). */
 export type SearchFn = (req: SearchRequest, opts: DispatchOptions) => Promise<NormalizedSearchResult>;
 
@@ -64,7 +74,7 @@ export function textContent(payload: unknown, isError = false): ToolOutput {
 export function buildToolDefinitions(defaultCount: number, defaultStrategy: SearchStrategy) {
   return [
     {
-      name: "web_search",
+      name: WEB_SEARCH,
       description:
         "Search the web through any of the configured built-in search channels. " +
         "Two strategies: 'fallback' tries slots in your configured priority order and returns the first success; " +
@@ -104,7 +114,7 @@ export function buildToolDefinitions(defaultCount: number, defaultStrategy: Sear
       },
     },
     {
-      name: "provider_status",
+      name: PROVIDER_STATUS,
       description:
         "Read-only status: effective strategy and settings, plus which providers are enabled, have API keys and " +
         "are part of the active search chain.",
@@ -162,11 +172,11 @@ export function createGatewayTools(deps: GatewayToolsDeps) {
     args: Record<string, unknown>,
     signal?: AbortSignal,
   ): Promise<ToolOutput> {
-    if (name === "provider_status") {
+    if (name === PROVIDER_STATUS) {
       return textContent(providerStatus());
     }
 
-    if (name === "web_search") {
+    if (name === WEB_SEARCH) {
       const query = typeof args.query === "string" ? args.query.trim() : "";
       if (!query) {
         return textContent({ error: "invalid arguments: 'query' must be a non-empty string" }, true);

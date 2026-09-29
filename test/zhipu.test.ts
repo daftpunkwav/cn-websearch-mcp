@@ -20,11 +20,6 @@ function jsonResponse(payload: unknown, status = 200): Response {
 }
 
 describe("zhipu provider", () => {
-  it("isConfigured reflects key presence", () => {
-    expect(createZhipuProvider(cfg).isConfigured()).toBe(true);
-    expect(createZhipuProvider({ ...cfg, apiKey: "" }).isConfigured()).toBe(false);
-  });
-
   it("calls the standalone web_search API and maps search_result fields", async () => {
     const calls: Array<{ url: string; init: RequestInit }> = [];
     const fetchImpl: FetchLike = async (url, init) => {

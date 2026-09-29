@@ -41,7 +41,6 @@ export function createStepfunProvider(cfg: ProviderConfig): SearchProvider {
   return {
     name: NAME,
     timeoutMs: cfg.timeoutMs,
-    isConfigured: () => cfg.apiKey.trim() !== "",
     async search(req: SearchRequest, ctx: SearchContext): Promise<NormalizedSearchResult> {
       const category = str(cfg.options?.category).trim();
       const payload = {

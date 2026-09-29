@@ -20,11 +20,6 @@ function jsonResponse(payload: unknown, status = 200): Response {
 }
 
 describe("stepfun provider", () => {
-  it("isConfigured reflects key presence", () => {
-    expect(createStepfunProvider(cfg).isConfigured()).toBe(true);
-    expect(createStepfunProvider({ ...cfg, apiKey: "" }).isConfigured()).toBe(false);
-  });
-
   it("calls /v1/search with n and maps result fields incl. full text", async () => {
     const calls: Array<{ url: string; init: RequestInit }> = [];
     const fetchImpl: FetchLike = async (url, init) => {

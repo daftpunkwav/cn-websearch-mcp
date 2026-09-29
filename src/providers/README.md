@@ -12,7 +12,6 @@ An adapter is a factory `create<Name>Provider(cfg: ProviderConfig): SearchProvid
 - `name` — the literal slot name (also the config key and the `source` tag).
 - `timeoutMs` — optional per-slot budget override; falls back to the global
   `timeoutMs` when unset.
-- `isConfigured()` — whether a non-empty API key is present.
 - `search(req, ctx)` — one logical search. Implementations stay thin:
   request construction and response parsing only. Timeout, retry, fallback
   and aggregation are always the orchestrator's job. The returned `_meta`
