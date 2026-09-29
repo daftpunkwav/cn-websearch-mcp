@@ -7,7 +7,7 @@ Requires Node >= 18.
 ```bash
 npm install
 npm run build          # tsc → dist/
-npm run typecheck      # tsc over src/, test/ and scripts/ (no emit)
+npm run typecheck      # tsc over src/, test/, scripts/ and vitest.config.ts (no emit)
 npm test               # vitest run, all HTTP mocked (no API keys needed)
 npm run test:coverage  # test run plus the coverage gate (95% minimum on src/)
 ```

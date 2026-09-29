@@ -9,12 +9,12 @@ the MCP stdio server and the CLI — both are assembled from the same runtime
 
 | File | Role |
 |---|---|
-| `types.ts` | Shared contracts: `SearchProvider`, `SearchRequest`, `NormalizedSearchResult`, `AttemptRecord`, `SearchContext`. Pure types, no runtime logic; excluded from coverage. |
+| `types.ts` | Shared contracts: `SearchProvider`, `SearchRequest`, `NormalizedSearchResult`, `AttemptRecord`, `SearchContext`, and the `SEARCH_STRATEGIES` vocabulary every surface validates against. No imports, no I/O and no branching; it is inside the measured tree and stays at 100% on its own. |
 | `errors.ts` | Error taxonomy (`TimeoutError`, `NetworkError`, `HttpError`, `ParseError`), transient/permanent classification, and `redactSecrets` / `summarizeError` for key-free audit text. |
 | `normalize.ts` | Field normalization shared by all adapters: `toItem`, `clampInt`, `truncate`, `normalizeDate`, shape asserts (`asObject` / `asArray`), control-character stripping for untrusted upstream text, URL canonicalization and multi-source merge (`mergeSourceItems`). |
-| `config-file.ts` | Config file I/O only: locate (`WEBSEARCH_CONFIG` or `cn-websearch.config.json` under cwd) and parse JSON. Never validates semantics and never throws — failures warn and return `undefined`. |
+| `config-file.ts` | Config file I/O only: locate (`WEBSEARCH_CONFIG` or `cn-websearch.config.json` under cwd), check the size bound, and parse JSON. Never validates semantics and never throws — failures warn and return `undefined`. |
 | `config.ts` | Config resolution: merges built-in defaults → config file → environment variables into `GatewayConfig`. Every value is parsed leniently (invalid input warns and falls back), a blank value at any layer means "unset", and timeouts are bounded. Defines `KNOWN_PROVIDERS`, the neutral per-slot defaults, and the search-argument bounds (`COUNT_MIN` / `COUNT_MAX` / `QUERY_MAX`) shared by the tool layer and the CLI. |
-| `dotenv.ts` | Minimal `.env` loader (no dependencies); existing `process.env` entries always win. |
+| `dotenv.ts` | Minimal `.env` loader (no dependencies): size-bounded, exports only the names the gateway reads, and never overwrites an existing `process.env` entry. |
 | `http.ts` | Shared JSON POST helper: merges caller signal with a per-request timeout (Node 18 compatible), caps how much of a response body is buffered, maps failures to the error taxonomy, redacts upstream bodies before they reach error messages. |
 | `orchestrator.ts` | Search orchestration: `runSearch` dispatches by strategy; `searchWithFallback` walks the chain, `searchAggregate` runs providers in parallel and merges. Owns the per-attempt wall-clock budget, caller cancellation, the single transient retry with its backoff, and the `_meta.attempts` audit trail. |
 | `probe.ts` | Single-provider live probe (`probeProvider`) returning a data row instead of throwing; `probeAll` runs probes sequentially. Shared by the CLI `test` command and `scripts/smoke.ts`. |

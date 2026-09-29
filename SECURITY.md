@@ -22,20 +22,28 @@ You can expect an acknowledgement within a few days.
   status output reports only whether a key is set. Every error **returned to a
   caller** — the audit trail, the tool result, the terminal — is either passed
   through `summarizeError`, which redacts, or is a self-authored message
-  assembled from already-redacted attempt text. Redaction always runs on the
-  whole string and truncation happens after it, so a value cut in half by a
-  length limit is never emitted as a recognizable fragment. The only
-  unprocessed output is the top-level fatal handlers (`src/index.ts`,
-  `src/cli/index.ts`), which print the underlying error to stderr for the local
-  operator.
+  assembled from already-redacted attempt text. Redaction always runs before
+  truncation, so a value cut in half by a length limit is never emitted as a
+  recognizable fragment. For an upstream HTTP error body only the leading
+  window is scanned — the message size plus a headroom wider than any of the
+  four channels' documented key shapes — so every key that could still be
+  emitted is redacted, while a megabyte of error text is not scanned to produce
+  a message that is cut again anyway. The only unprocessed output is the
+  top-level fatal handlers (`src/index.ts`, `src/cli/index.ts`), which print the
+  underlying error to stderr for the local operator.
 - A `.env` file is data from the working directory, which is not necessarily
   trusted — any repository can ship one. Only the names the gateway actually
   reads (`WEBSEARCH_*`, `ZHIPU_SEARCH_ENGINE`, and each slot's documented
   suffixes) are exported to `process.env`; everything else is dropped, so such
   a file cannot set `NODE_OPTIONS`, `LD_PRELOAD` or any other variable the Node
-  runtime acts on before the first request.
+  runtime acts on before the first request. A `.env` over 64 KiB is ignored with
+  a warning instead of being read into memory and split into lines, since the
+  same untrusted-cwd argument bounds its size as well as its contents.
 - `.env` and `cn-websearch.config.json` (which may hold API keys) are
-  git-ignored by default.
+  git-ignored by default. A `cn-websearch.config.json` over 1 MiB is refused
+  with a warning before it is read: its read is synchronous, so an oversized
+  file from an untrusted working directory would otherwise be buffered and
+  parsed before anything could stop it.
 - The test suite never contacts real upstreams: all HTTP is mocked in unit
   tests, and the end-to-end helpers build an env map from scratch that forwards
   only what node needs to start, so no credential reaches a subprocess.

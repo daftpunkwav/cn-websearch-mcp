@@ -6,13 +6,13 @@
 
 | 文件 | 职责 |
 |---|---|
-| `types.ts` | 共享契约:`SearchProvider`、`SearchRequest`、`NormalizedSearchResult`、`AttemptRecord`、`SearchContext`。纯类型,无运行逻辑;不计入覆盖率。 |
+| `types.ts` | 共享契约:`SearchProvider`、`SearchRequest`、`NormalizedSearchResult`、`AttemptRecord`、`SearchContext`,以及各入口面据以校验的 `SEARCH_STRATEGIES` 词表。无 import、无 I/O、无分支;它位于被统计的覆盖率树内,且自身保持 100%。 |
 | `errors.ts` | 错误分类(`TimeoutError`、`NetworkError`、`HttpError`、`ParseError`)、瞬时/永久失败判定,以及用于生成不含密钥的审计文本的 `redactSecrets` / `summarizeError`。 |
-| `normalize.ts` | 所有适配器共享的字段归一化:`toItem`、`clampInt`、`truncate`、`normalizeDate`、结构断言(`asObject` / `asArray`)、URL 规范化与多来源合并(`mergeSourceItems`)。 |
-| `config-file.ts` | 仅负责配置文件 I/O:定位(`WEBSEARCH_CONFIG` 或 cwd 下的 `cn-websearch.config.json`)并解析 JSON。从不做语义校验、从不抛错——失败只告警并返回 `undefined`。 |
-| `config.ts` | 配置解析:把「内置默认值 → 配置文件 → 环境变量」合并为 `GatewayConfig`。每个值都宽松解析(非法输入告警并回退)。定义 `KNOWN_PROVIDERS` 与中立的每槽位默认值。 |
-| `dotenv.ts` | 极简 `.env` 加载器(零依赖);已存在的 `process.env` 条目始终优先。 |
-| `http.ts` | 共享 JSON POST 辅助:把调用方 signal 与每请求超时合并(兼容 Node 18),把失败映射到错误分类,上游响应体在进入错误消息前完成脱敏。 |
+| `normalize.ts` | 所有适配器共享的字段归一化:`toItem`、`clampInt`、`truncate`、`normalizeDate`、结构断言(`asObject` / `asArray`)、不可信上游文本的控制字符剥离、URL 规范化与多来源合并(`mergeSourceItems`)。 |
+| `config-file.ts` | 仅负责配置文件 I/O:定位(`WEBSEARCH_CONFIG` 或 cwd 下的 `cn-websearch.config.json`)、检查体积上限、解析 JSON。从不做语义校验、从不抛错——失败只告警并返回 `undefined`。 |
+| `config.ts` | 配置解析:把「内置默认值 → 配置文件 → 环境变量」合并为 `GatewayConfig`。每个值都宽松解析(非法输入告警并回退);任意一层的空值视为「未设置」;超时值有上限。定义 `KNOWN_PROVIDERS`、中立的每槽位默认值,以及工具层与 CLI 共用的搜索入参边界(`COUNT_MIN` / `COUNT_MAX` / `QUERY_MAX`)。 |
+| `dotenv.ts` | 极简 `.env` 加载器(零依赖):有体积上限,只导出网关读取的变量名,且从不覆盖已存在的 `process.env` 条目。 |
+| `http.ts` | 共享 JSON POST 辅助:把调用方 signal 与每请求超时合并(兼容 Node 18),限制响应体的缓冲量,把失败映射到错误分类,上游响应体在进入错误消息前完成脱敏。 |
 | `orchestrator.ts` | 搜索编排:`runSearch` 按策略分发;`searchWithFallback` 依次遍历链路,`searchAggregate` 并行调用各通道并合并。独占每次尝试的墙钟预算、单次瞬时重试与 `_meta.attempts` 审计轨迹。 |
 | `probe.ts` | 单通道在线探测(`probeProvider`),以数据行代替抛错返回;`probeAll` 顺序执行探测。CLI `test` 命令与 `scripts/smoke.ts` 共用。 |
 | `providers/` | 各通道适配器(`kimi`、`mimo`、`stepfun`、`zhipu`)与工厂注册表。见 [providers/README.zh.md](providers/README.zh.md)。 |

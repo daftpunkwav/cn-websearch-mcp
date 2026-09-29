@@ -95,7 +95,9 @@ Environment variables win because MCP clients can generally only pass `env`.
 
 Put `cn-websearch.config.json` in the working directory; it is picked up automatically. Or point at it explicitly with `WEBSEARCH_CONFIG=/path/to/file.json`.
 
-See [cn-websearch.config.example.json](cn-websearch.config.example.json) for every supported key. A minimal example:
+See [cn-websearch.config.example.json](cn-websearch.config.example.json) for a populated example. Per-slot `baseUrl` and `timeoutMs` work in that file exactly like the top-level settings listed below. A file larger than 1 MiB is refused with a warning — far above any real configuration, and the read is synchronous, so a repository shipping a huge file could not otherwise be stopped before it was parsed.
+
+A minimal example:
 
 ```json
 {
@@ -149,11 +151,11 @@ Booleans accept `true/false`, `1/0`, `yes/no`, `on/off`. Invalid values are igno
 
 A **blank** value at any layer (`KIMI_API_KEY=`, `"baseUrl": ""`) counts as "not set", so the empty placeholders in a template file never mask a value configured in the layer below — the config file, or the built-in default. A `timeoutMs` beyond 600000 ms is rejected with a warning and falls back, because such a delay no longer fits a 32-bit timer and would silently become 1 ms.
 
-A `.env` file in the working directory is read for these settings only: the `WEBSEARCH_*` names, the legacy `ZHIPU_SEARCH_ENGINE`, and each slot's `<NAME>_API_KEY` / `_BASE_URL` / `_MODEL` / `_ENABLED` / `_PRIORITY` / `_TIMEOUT_MS`. A name that is not one of those never reaches `process.env` — the working directory is not always trusted, and the Node runtime acts on variables such as `NODE_OPTIONS` long before the first search request. A skipped name that looks like one of these settings (say `OTHERVENDOR_API_KEY`) is reported with a warning instead of passing silently.
+A `.env` file in the working directory is read for these settings only: the `WEBSEARCH_*` names, the legacy `ZHIPU_SEARCH_ENGINE`, and each slot's `<NAME>_API_KEY` / `_BASE_URL` / `_MODEL` / `_ENABLED` / `_PRIORITY` / `_TIMEOUT_MS`. A name that is not one of those never reaches `process.env` — the working directory is not always trusted, and the Node runtime acts on variables such as `NODE_OPTIONS` long before the first search request. A skipped name that looks like one of these settings (say `OTHERVENDOR_API_KEY`) is reported with a warning instead of passing silently. A `.env` larger than 64 KiB is ignored with a warning rather than read: the same untrusted-cwd argument applies to its size, and rejecting it silently would look like a gateway with no keys configured.
 
 ### Result URLs
 
-A result URL is normalized to an `http`/`https` link: a bare host gains an `https://` prefix, and a protocol-relative `//host/path` gains its scheme. A reference that resolves to any other scheme (`javascript:`, `data:`, `file:`, `mailto:`, …) is dropped from the result list rather than passed on, because clients render these URLs as live links. Every built-in channel returns ordinary web pages, so this only affects hostile or malformed responses.
+A result URL is normalized to an `http`/`https` link: a bare host gains an `https://` prefix, and a protocol-relative `//host/path` gains its scheme. A reference that resolves to any other scheme (`javascript:`, `data:`, `file:`, `mailto:`, …) is dropped from the result list rather than passed on, because clients render these URLs as live links. Every built-in channel returns ordinary web pages, so this only affects hostile or malformed responses. Because a dropped item takes its whole row with it, a call can return fewer results than the `count` you asked for.
 
 ### Per-channel settings
 
@@ -222,6 +224,7 @@ Read-only: effective strategy and settings, and per slot whether it is enabled, 
 - In `aggregate`, partial failure is not failure: successful channels' results are returned and the failures stay in `_meta.attempts`.
 - Every attempt is recorded in `_meta.attempts` — success, retry, timeout, cancellation or error.
 - If everyone fails, `web_search` returns a structured error containing the full attempt list.
+- If nothing is configured at all, `web_search` also returns a structured error rather than crashing — the ordinary state of a fresh install, reported with an empty attempt list because no attempt was ever made.
 - Worst case for a full fallback walk is roughly `2 × timeoutMs + backoff` **per channel**, so a four-channel chain with the default budget can take up to ~4 minutes. Set `WEBSEARCH_TIMEOUT_MS` or `WEBSEARCH_MAX_PROVIDERS` to suit your client's deadline.
 
 ## Channel matrix

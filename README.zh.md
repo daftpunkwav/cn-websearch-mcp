@@ -95,7 +95,9 @@ cn-websearch> /status  /config  /json on  /help  /quit
 
 在工作目录放 `cn-websearch.config.json` 即自动生效;或用 `WEBSEARCH_CONFIG=/path/to/file.json` 显式指定。
 
-全部可用字段见 [cn-websearch.config.example.json](cn-websearch.config.example.json)。最小示例:
+已填好各字段的示例见 [cn-websearch.config.example.json](cn-websearch.config.example.json);每槽位的 `baseUrl` 与 `timeoutMs` 在该文件中的写法与下文列出的顶层设置一致。超过 1 MiB 的文件会被告警拒绝——这远高于任何真实配置,而读取是同步的,否则一个携带超大文件的仓库会在被解析前无从阻止。
+
+最小示例:
 
 ```json
 {
@@ -149,11 +151,11 @@ STEPFUN_PRIORITY=10
 
 任意一层的**空值**(`KIMI_API_KEY=`、`"baseUrl": ""`)都视为「未设置」,因此模板文件里的空占位不会遮蔽下一层的真实值(配置文件或内置默认值)。超过 600000 ms 的 `timeoutMs` 会被告警拒绝并回退——这样的时长已超出 32 位定时器范围,会被静默变成 1 ms。
 
-工作目录下的 `.env` 只读取这些配置项:`WEBSEARCH_*` 全局变量、旧的 `ZHIPU_SEARCH_ENGINE`,以及每个通道槽位的 `<NAME>_API_KEY` / `_BASE_URL` / `_MODEL` / `_ENABLED` / `_PRIORITY` / `_TIMEOUT_MS`。其余变量名不会进入 `process.env`——工作目录未必可信,而 `NODE_OPTIONS` 这类变量在第一次搜索请求之前就会被 Node 运行时读取。如果被跳过的名字看起来像是上述配置项(例如 `OTHERVENDOR_API_KEY`),会告警提示,而不是静默失效。
+工作目录下的 `.env` 只读取这些配置项:`WEBSEARCH_*` 全局变量、旧的 `ZHIPU_SEARCH_ENGINE`,以及每个通道槽位的 `<NAME>_API_KEY` / `_BASE_URL` / `_MODEL` / `_ENABLED` / `_PRIORITY` / `_TIMEOUT_MS`。其余变量名不会进入 `process.env`——工作目录未必可信,而 `NODE_OPTIONS` 这类变量在第一次搜索请求之前就会被 Node 运行时读取。如果被跳过的名字看起来像是上述配置项(例如 `OTHERVENDOR_API_KEY`),会告警提示,而不是静默失效。超过 64 KiB 的 `.env` 同样会被告警忽略而不读取:工作目录不可信这一点对体积同样成立,且静默丢弃看起来就像一个没配任何密钥的网关。
 
 ### 结果 URL
 
-结果 URL 会被规整为 `http`/`https` 链接:裸主机补 `https://` 前缀,协议相对地址 `//host/path` 补上 scheme。解析后落到其它 scheme 的引用(`javascript:`、`data:`、`file:`、`mailto:` 等)会直接从结果列表中丢弃,而不是原样透传——客户端会把这些 URL 渲染成可点击链接。四个内置通道返回的都是普通网页,因此这条规则只对恶意或畸形的响应生效。
+结果 URL 会被规整为 `http`/`https` 链接:裸主机补 `https://` 前缀,协议相对地址 `//host/path` 补上 scheme。解析后落到其它 scheme 的引用(`javascript:`、`data:`、`file:`、`mailto:` 等)会直接从结果列表中丢弃,而不是原样透传——客户端会把这些 URL 渲染成可点击链接。四个内置通道返回的都是普通网页,因此这条规则只对恶意或畸形的响应生效。被丢弃的条目会带走整行,因此一次调用返回的结果数可能少于你请求的 `count`。
 
 ### 单通道设置
 
@@ -220,6 +222,7 @@ STEPFUN_PRIORITY=10
 - `aggregate` 下部分失败不算失败:成功者的结果照常返回,失败明细留在 `_meta.attempts`。
 - 每次尝试都记录在 `_meta.attempts`——成功、重试、超时、取消或报错。
 - 全部失败时,`web_search` 返回包含完整尝试列表的结构化错误。
+- 完全没有配置任何通道时,`web_search` 同样返回结构化错误而不是崩溃——这是全新安装的正常状态;由于从未发起过任何尝试,其中的尝试列表为空。
 - 一整轮 fallback 的最坏耗时约为每通道 `2 × timeoutMs + 退避`,四个通道用默认预算时可达约 4 分钟;请按客户端的超时上限调整 `WEBSEARCH_TIMEOUT_MS` 或 `WEBSEARCH_MAX_PROVIDERS`。
 
 ## 通道矩阵

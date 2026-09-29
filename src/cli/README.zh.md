@@ -15,7 +15,7 @@
 | `repl` | 交互会话。别名:`shell`、`interactive`。 |
 | `help` / `version` | 用法文本 / 身份信息行。 |
 
-选项:`-n/--count <1-50>`、`--strategy fallback|aggregate`、`--providers a,b`(限定单次调用)、`--no-dedupe`、`-q/--query`、`--json`。`--flag value` 与 `--flag=value` 两种形式都支持。
+选项:`-n/--count <1-50>`、`--strategy fallback|aggregate`、`--providers a,b`(限定单次调用)、`--no-dedupe`、`-q/--query`、`--json`。取值型选项同时支持 `--flag value` 与 `--flag=value` 两种形式;`--no-dedupe` 与 `--json` 是开关,带内联值(`--json=false`)会被拒绝并以退出码 2 退出,而不是被静默忽略——要打开它只能不带值写这个 flag。
 
 入参边界与 MCP 工具层一致:`count` 夹到 1-50,查询词截到 400 字符,`search` 与 `test` 同样适用。
 

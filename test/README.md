@@ -37,7 +37,9 @@ check.
 ## Coverage gate
 
 `npm run test:coverage` enforces a 95% minimum on `src/` for lines, functions,
-branches and statements (`vitest.config.ts`). `src/types.ts` is type-only, and
-`test/` + `scripts/` are outside the measured tree because `include` is limited
-to `src/**`. A change that drops coverage below the gate fails the run — add or
-extend unit tests rather than lowering the threshold.
+branches and statements (`vitest.config.ts`). `src/types.ts` is inside that
+tree, but it carries only contracts and the strategy vocabulary with no
+branching, so it stays at 100% on its own; `test/` + `scripts/` are outside the
+measured tree because `include` is limited to `src/**`. A change that drops
+coverage below the gate fails the run — add or extend unit tests rather than
+lowering the threshold.

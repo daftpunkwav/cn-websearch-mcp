@@ -23,7 +23,10 @@ CLI without spawning a subprocess.
 
 Options: `-n/--count <1-50>`, `--strategy fallback|aggregate`,
 `--providers a,b` (restrict one call), `--no-dedupe`, `-q/--query`,
-`--json`. Both `--flag value` and `--flag=value` forms are accepted.
+`--json`. Options that take a value accept both `--flag value` and
+`--flag=value`; `--no-dedupe` and `--json` are switches, so an inline value
+(`--json=false`) is rejected with exit code 2 rather than silently ignored —
+writing the flag without a value is the only way to turn it on.
 
 Argument bounds match the MCP tool layer: `count` is clamped to 1-50 and a
 query is capped at 400 characters, on `search` and `test` alike.
