@@ -235,7 +235,70 @@ describe("postJson", () => {
     const f: FetchLike = async () => lying;
     const err = await postJson("https://x.example", {}, {}, { ...base, fetchImpl: f }).catch((e) => e);
     expect(err).toBeInstanceOf(ParseError);
-    expect((err as ParseError).message).toContain("too large");
+    // The message must name the limit, so an operator can tell what was
+    // exceeded rather than only that something was.
+    expect((err as ParseError).message).toContain("8388608");
+  });
+
+  it("accepts a legal body from a response with no stream to count", async () => {
+    // The counterpart of the check above: the non-streaming fallback measures
+    // the text it already buffered, so a body *inside* the cap must still come
+    // back as a normal success. Without this the fallback could refuse every
+    // response-shaped object that lacks a reader and the test above would
+    // still pass.
+    const noStream = {
+      status: 200,
+      headers: new Headers({ "Content-Length": "7" }),
+      text: async () => '{"a":1}',
+    } as unknown as Response;
+    const f: FetchLike = async () => noStream;
+    const res = await postJson("https://x.example", {}, {}, { ...base, fetchImpl: f });
+    expect(res.status).toBe(200);
+    expect(res.json).toEqual({ a: 1 });
+  });
+
+  it("wraps a body read that fails with a non-Error throwable", async () => {
+    // The body read is a second failure site with its own classification; a
+    // rejection that is not an Error must still become a NetworkError rather
+    // than escaping postJson as a bare string.
+    const broken = { status: 200, text: () => Promise.reject("string body failure") } as unknown as Response;
+    const f: FetchLike = async () => broken;
+    const err = await postJson("https://x.example", {}, {}, { ...base, fetchImpl: f }).catch((e) => e);
+    expect(err).toBeInstanceOf(NetworkError);
+    expect((err as NetworkError).message).toBe("string body failure");
+  });
+
+  it("skips a nullish chunk instead of failing the read", async () => {
+    // A reader is allowed to hand back a chunk-less tick; counting it as zero
+    // bytes keeps the body intact instead of throwing on `value.byteLength`.
+    const stream = new ReadableStream<unknown>({
+      start(controller) {
+        controller.enqueue(undefined);
+        controller.enqueue(new TextEncoder().encode('{"a":1}'));
+        controller.close();
+      },
+    });
+    const f: FetchLike = async () => new Response(stream as never, { status: 200 });
+    const res = await postJson("https://x.example", {}, {}, { ...base, fetchImpl: f });
+    expect(res.json).toEqual({ a: 1 });
+  });
+
+  it("uses the default TimeoutError when a body lands after a non-Error abort", async () => {
+    // The post-read abort check is a third site with the same shape as the
+    // fetch-level one: a reason supplied by the caller is never echoed back,
+    // because it is data the peer chose.
+    const ac = new AbortController();
+    const f: FetchLike = async () => {
+      ac.abort("string reason");
+      return new Response('{"a":1}', { status: 200 });
+    };
+    const err = await postJson("https://x.example", {}, {}, {
+      timeoutMs: 5_000,
+      signal: ac.signal,
+      fetchImpl: f,
+    }).catch((e) => e);
+    expect(err).toBeInstanceOf(TimeoutError);
+    expect((err as TimeoutError).message).toBe("request timed out");
   });
 
   it("refuses a streamed body that grows past the cap", async () => {

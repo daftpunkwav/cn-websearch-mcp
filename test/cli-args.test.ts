@@ -112,6 +112,14 @@ describe("parseArgs", () => {
     expect(ok(["search", "q", "--no-dedupe"]).dedupe).toBe(false);
   });
 
+  it("combines --providers with trailing bare words for `test`", () => {
+    // Both spellings name the same thing, so supplying both must union them
+    // rather than letting whichever came last silently drop the other half of
+    // the request.
+    expect(ok(["test", "--providers", "kimi", "stepfun"]).providers).toEqual(["kimi", "stepfun"]);
+    expect(ok(["test", "--providers=kimi,mimo", "stepfun"]).providers).toEqual(["kimi", "mimo", "stepfun"]);
+  });
+
   it("does not treat a following flag as an option value", () => {
     expect(fail(["search", "--count", "--json"])).toContain("invalid --count value: (missing)");
   });

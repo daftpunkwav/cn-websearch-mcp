@@ -543,4 +543,30 @@ describe("the gateway environment contract", () => {
       expect(withVar, `${name} is listed but not read`).not.toBe(base);
     }
   });
+
+  it("falls back to process.env when no env map is supplied", () => {
+    // The documented default for a direct caller. Driven with every gateway
+    // name cleared and restored, so the result cannot depend on whatever the
+    // developer's shell happens to export.
+    const saved = new Map<string, string | undefined>();
+    for (const name of gatewayEnvKeys()) {
+      saved.set(name, process.env[name]);
+      delete process.env[name];
+    }
+    try {
+      process.env.WEBSEARCH_STRATEGY = "aggregate";
+      process.env.KIMI_API_KEY = "from-process-env";
+      const cfg = loadConfig({ warn: noWarn });
+      expect(cfg.strategy).toBe("aggregate");
+      expect(cfg.providers.kimi.apiKey).toBe("from-process-env");
+      // And with nothing set at all, the neutral defaults still come through.
+      delete process.env.WEBSEARCH_STRATEGY;
+      expect(loadConfig({ warn: noWarn }).strategy).toBe(DEFAULT_STRATEGY);
+    } finally {
+      for (const [name, value] of saved) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+    }
+  });
 });

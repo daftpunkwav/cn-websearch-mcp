@@ -63,6 +63,14 @@ describe("truncate / normalizeDate", () => {
     expect(normalizeDate(NaN)).toBeUndefined(); // fails the finiteness check
     expect(normalizeDate({ obj: true })).toBeUndefined(); // neither a string nor a number
   });
+
+  it("drops a date that is nothing but control characters", () => {
+    // The string is non-blank, so it passes the emptiness check, but stripping
+    // control characters leaves nothing. Emitting "" would put an empty
+    // published_date on the item and render as a blank date in the CLI.
+    expect(normalizeDate("\u0001")).toBeUndefined();
+    expect(toItem({ url: "https://a.example/1", published_date: "\u0001" })?.published_date).toBeUndefined();
+  });
 });
 
 describe("untrusted upstream text is stripped of control characters", () => {

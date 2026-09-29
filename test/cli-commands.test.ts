@@ -5,7 +5,7 @@
 
 import { describe, expect, it, vi } from "vitest";
 import { PassThrough } from "node:stream";
-import { cmdSearch, cmdStatus, cmdTest, pickProviders } from "../src/cli/commands.js";
+import { cmdSearch, cmdStatus, cmdTest, pickProviders, writeLine } from "../src/cli/commands.js";
 import { createRuntime } from "../src/runtime.js";
 import { loadConfig } from "../src/config.js";
 import { AllProvidersFailedError, CallCancelledError, NoProviderConfiguredError } from "../src/orchestrator.js";
@@ -257,7 +257,65 @@ describe("cmdTest", () => {
         })),
     });
     expect(await cmdTest(deps, { command: "test", query: "", json: true })).toBe(1);
-    expect(Array.isArray(JSON.parse(out.join("")))).toBe(true);
+    // The rows must survive serialization verbatim, not just be *some* JSON:
+    // the failing slot's diagnosis is the only thing the table would have
+    // carried, so a dropped or renamed field loses it.
+    const rows = JSON.parse(out.join(""));
+    expect(Array.isArray(rows)).toBe(true);
+    expect(rows).toHaveLength(2);
+    expect(rows.map((r: { provider: string; ok: boolean; error: string }) => [r.provider, r.ok, r.error])).toEqual([
+      ["kimi", true, ""],
+      ["stepfun", false, "down"],
+    ]);
+  });
+
+  it("publishes the documented --json field names for every probe row", async () => {
+    // `test --json` is consumed by scripts, so the row's key set is an output
+    // contract. `results` is a count and `sample` the first result's title —
+    // names the JSDoc explains but the wire form cannot. Driven through the
+    // REAL probe (no injected `probe`), because an injected double would
+    // supply the very field names under test and the assertion would hold no
+    // matter how src/probe.ts named them.
+    const hits = (name: string): SearchProvider => ({
+      name,
+      search: async () => ({
+        results: [
+          { title: "First title", url: `https://${name}.example/1`, snippet: "" },
+          { title: "Second", url: `https://${name}.example/2`, snippet: "" },
+        ],
+        _meta: { provider: name, total_latency_ms: 1, attempts: [] },
+      }),
+    });
+    const out: string[] = [];
+    const stream = (sink: string[]): NodeJS.WritableStream => {
+      const s = new PassThrough();
+      s.on("data", (c) => sink.push(c.toString()));
+      return s;
+    };
+    const providers = [hits("stepfun")];
+    const deps: CliDeps = {
+      runtime: {
+        config: loadConfig({ env: { STEPFUN_API_KEY: "s" }, warn: () => {} }),
+        providers,
+        chain: providers,
+      },
+      output: stream(out),
+      error: stream([]),
+    };
+    await cmdTest(deps, { command: "test", query: "", json: true });
+    const [row] = JSON.parse(out.join(""));
+    // The key set is pinned exactly, so a rename has to be made here on
+    // purpose instead of silently breaking every script parsing this output.
+    expect(Object.keys(row).sort()).toEqual(["error", "latency_ms", "ok", "provider", "results", "sample"]);
+    expect(row).toMatchObject({
+      provider: "stepfun",
+      ok: true,
+      // A count, not the results themselves.
+      results: 2,
+      // The first result's title.
+      sample: "First title",
+      error: "",
+    });
   });
 
   it("uses the provided query, else the neutral default probe query", async () => {
@@ -352,6 +410,27 @@ describe("default (non-injected) code paths", () => {
     const { deps, err } = ioFor([broken]);
     expect(await cmdSearch(deps, searchArgs())).toBe(1);
     expect(err()).toContain("all configured providers failed");
+  });
+});
+
+describe("writeLine", () => {
+  /** Capture everything a single writeLine call puts on the stream. */
+  function written(text: string): string {
+    const out: string[] = [];
+    const s = new PassThrough();
+    s.on("data", (c) => out.push(c.toString()));
+    writeLine(s, text);
+    return out.join("");
+  }
+
+  it("terminates a line exactly once, whatever the caller passed", () => {
+    // Every CLI module prints through this one helper precisely so a message
+    // is never double-spaced; a caller that already ended its text with a
+    // newline must not get a second one.
+    expect(written("hello")).toBe("hello\n");
+    expect(written("hello\n")).toBe("hello\n");
+    // A blank line is still terminated, so output cannot run together.
+    expect(written("")).toBe("\n");
   });
 });
 

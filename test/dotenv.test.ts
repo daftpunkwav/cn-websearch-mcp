@@ -4,7 +4,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadDotEnv } from "../src/dotenv.js";
@@ -57,6 +57,28 @@ describe("loadDotEnv", () => {
     const env: Record<string, string> = {};
     loadDotEnv(join(tmpdir(), "no-such-dir-xyz"), env as NodeJS.ProcessEnv);
     expect(env).toEqual({});
+  });
+
+  it("treats a .env that cannot be read as no .env at all", () => {
+    // Size is measured with statSync and the read happens separately, so a path
+    // that stats successfully but cannot be read reaches the second step. A
+    // directory named `.env` is the reproducible case: it stats at 0 bytes (so
+    // it passes the size check) and then fails the read. The contract is the
+    // same one a missing file has — no keys exported, and no throw out of a
+    // loader the entry point calls at module scope, where an exception would
+    // stop the server from starting at all.
+    const dir = makeDir();
+    try {
+      mkdirSync(join(dir, ".env"));
+      const env: Record<string, string> = {};
+      const warnings: string[] = [];
+      expect(() => loadDotEnv(dir, env as NodeJS.ProcessEnv, (m) => warnings.push(m))).not.toThrow();
+      expect(env).toEqual({});
+      // Nothing was read, so nothing is worth reporting.
+      expect(warnings).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("refuses a file too large to be configuration, and reports it", () => {

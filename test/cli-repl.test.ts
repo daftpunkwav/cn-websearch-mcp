@@ -217,3 +217,109 @@ describe("runRepl", () => {
     expect(code).toBe(0);
   });
 });
+
+/**
+ * Fault tolerance around the per-command handler.
+ *
+ * Everything here drives the session through a stream that is marked as a TTY,
+ * because that is what readline keys its interrupt handling off: a plain pipe
+ * delivers `\u0003` as ordinary text and never raises SIGINT, so a test written
+ * against a bare PassThrough would pass without the interrupt path running at
+ * all (verified: the session hangs instead of exiting).
+ */
+describe("runRepl fault tolerance", () => {
+  /** Same as session(), but with a TTY-marked output and a controllable input. */
+  function ttySession(
+    write: (input: PassThrough) => void,
+    over: { search?: CliDeps["search"]; probe?: CliDeps["probe"] } = {},
+  ): { done: Promise<{ text: string; code: number }> } {
+    const input = new PassThrough();
+    const output = new PassThrough() as PassThrough & { isTTY?: boolean };
+    output.isTTY = true;
+    const chunks: string[] = [];
+    output.on("data", (c) => chunks.push(c.toString()));
+    const runtime = createRuntime({
+      env: { STEPFUN_API_KEY: "s" },
+      warn: () => {},
+      configPath: undefined,
+    });
+    const deps: CliDeps = {
+      runtime,
+      output,
+      error: output,
+      search: over.search ?? (async () => okResult("stepfun")),
+      probe:
+        over.probe ??
+        (async (providers: SearchProvider[]) =>
+          providers.map((p) => ({ provider: p.name, ok: true, latency_ms: 1, results: 1, sample: "T", error: "" }))),
+    };
+    const running = runRepl(deps, { input });
+    write(input);
+    return { done: running.then((code) => ({ text: chunks.join(""), code })) };
+  }
+
+  /** Fails the test rather than hanging if the session never settles. */
+  const settle = <T,>(p: Promise<T>): Promise<T> =>
+    Promise.race([p, new Promise<T>((_, rej) => setTimeout(() => rej(new Error("session never exited")), 3_000))]);
+
+  it("reports a command that throws and keeps the session usable", async () => {
+    // `/test` awaits the probe with no try/catch of its own, so a throwing
+    // probe is what actually reaches the REPL's per-command handler; a
+    // throwing search is absorbed by cmdSearch and never gets there.
+    const { done } = ttySession(
+      (input) => {
+        input.write("/test\n/quit\n");
+        input.end();
+      },
+      {
+        probe: async () => {
+          throw new Error("probe exploded while holding ak-EXAMPLEKEY01234567890");
+        },
+      },
+    );
+    const { text, code } = await settle(done);
+    // The credential-shaped fragment must not reach the terminal: the handler
+    // summarizes through the same redaction the audit trail uses.
+    expect(text).toContain("probe exploded");
+    expect(text).not.toContain("EXAMPLEKEY01234567890");
+    expect(text).toContain("ak-***");
+    // The session survived the failure and still exited normally.
+    expect(code).toBe(0);
+  });
+
+  it("exits 0 on Ctrl-C without a closed-interface write", async () => {
+    // The prompt is written after each handled line. Once SIGINT closes the
+    // interface, a queued continuation that prompts anyway would throw
+    // ERR_USE_AFTER_CLOSE out of the promise chain instead of resolving.
+    const uncaught: string[] = [];
+    const onUncaught = (err: Error): void => {
+      uncaught.push(`${err.name}: ${err.message}`);
+    };
+    process.on("uncaughtException", onUncaught);
+    try {
+      let release: (() => void) | undefined;
+      const { done } = ttySession(
+        (input) => {
+          input.write("a slow query\n");
+          // Let the search start, then interrupt while it is still in flight so
+          // the queued continuation runs after the interface is already closed.
+          setTimeout(() => input.write("\u0003"), 30);
+          setTimeout(() => release?.(), 60);
+        },
+        {
+          search: async () => {
+            await new Promise<void>((r) => {
+              release = r;
+            });
+            return okResult("stepfun");
+          },
+        },
+      );
+      const { code } = await settle(done);
+      expect(code).toBe(0);
+      expect(uncaught).toEqual([]);
+    } finally {
+      process.off("uncaughtException", onUncaught);
+    }
+  });
+});

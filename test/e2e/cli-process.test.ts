@@ -58,10 +58,13 @@ describe("CLI process end-to-end", () => {
     expect(stderr).toContain("no provider is ready");
   });
 
-  it("search with --json and no provider still emits valid JSON on stderr", async () => {
-    const { code, stderr } = await runCliInEphemeralCwd(["search", "--json", "q"]);
+  it("search with --json and no provider keeps stdout empty and explains itself on stderr", async () => {
+    const { code, stdout, stderr } = await runCliInEphemeralCwd(["search", "--json", "q"]);
     expect(code).toBe(1);
-    // stderr is the error path; json mode only affects successful output paths.
+    // --json shapes the success path only; the failure path is a diagnostic
+    // line, not JSON. A script reading stdout must get nothing at all rather
+    // than a half-formed payload it would have to guess about.
+    expect(stdout).toBe("");
     expect(stderr).toContain("no provider is ready");
   });
 

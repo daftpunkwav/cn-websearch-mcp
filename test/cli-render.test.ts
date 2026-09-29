@@ -114,6 +114,14 @@ describe("formatStatus", () => {
     expect(empty).toContain("no provider is ready");
   });
 
+  it("reports dedupe as off when it is disabled", () => {
+    // The other half of the on/off pair: a status line that always printed
+    // "on" would tell a user aggregation is deduplicating when it is not.
+    const cfg = loadConfig({ env: { WEBSEARCH_DEDUPE: "false" }, warn: () => {} });
+    expect(formatStatus(cfg, ["kimi"])).toContain("dedupe        : off");
+    expect(formatStatus(loadConfig({ env: {}, warn: () => {} }), ["kimi"])).toContain("dedupe        : on");
+  });
+
   it("marks a disabled slot and a slot without a key as such", () => {
     const cfg = loadConfig({ env: { KIMI_API_KEY: "k", ZHIPU_ENABLED: "false" }, warn: () => {} });
     const rows = formatStatus(cfg, ["kimi"]).split("\n");

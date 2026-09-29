@@ -435,6 +435,31 @@ describe("transient retry backoff", () => {
     // The first attempt keeps its own verdict; the second is the cancellation.
     expect((err as CallCancelledError).attempts.map((x) => x.status)).toEqual(["transient_error", "cancelled"]);
   });
+
+  it("does not start a backoff at all when the caller already cancelled", async () => {
+    // A provider that aborts the caller's signal before failing must not buy
+    // the retry: the attempt is already recorded as cancelled, so there is no
+    // backoff to wait out and no second call to make against a peer that left.
+    const controller = new AbortController();
+    const a = makeProvider("a", async (_r, _c, call) => {
+      if (call === 1) {
+        controller.abort();
+        throw new HttpError(429, "HTTP 429: slow down");
+      }
+      return okResult("a");
+    });
+    const t0 = Date.now();
+    const err = await searchWithFallback(req, { ...opts, providers: [a.provider], signal: controller.signal }).catch(
+      (e) => e,
+    );
+    expect(err).toBeInstanceOf(CallCancelledError);
+    // Far below the 1s backoff a transient failure would have paid.
+    expect(Date.now() - t0).toBeLessThan(500);
+    // The cancellation is recorded as such, not as the transient failure the
+    // provider happened to raise on its way out.
+    expect((err as CallCancelledError).attempts.map((x) => x.status)).toEqual(["cancelled"]);
+    expect(a.calls()).toBe(1);
+  });
 });
 
 describe("runSearch", () => {
