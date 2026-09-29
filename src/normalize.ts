@@ -99,6 +99,22 @@ export function str(v: unknown): string {
 }
 
 /**
+ * Drop a leading UTF-8 byte-order mark from text read off disk or off the wire.
+ *
+ * Editors on Windows commonly save with a BOM, and neither `JSON.parse` nor the
+ * `.env` key parser tolerates one: without this the first key of a `.env` carries
+ * an invisible prefix and never matches an env lookup, and a BOM'd JSON body is
+ * rejected outright. The failure is silent in both cases — the file loads, the
+ * value is simply never found — so the rule lives in one place rather than being
+ * restated by each reader, where a variant would quietly stop covering one of
+ * them. Three readers need it: the `.env` loader, the config file reader and the
+ * HTTP body reader.
+ */
+export function stripBom(text: string): string {
+  return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+}
+
+/**
  * Scheme syntax of RFC 3986 (`scheme ":" ...`). The negative lookahead keeps a
  * bare "host:port/path" on the path that gets the https:// prefix: the digits
  * after the colon are a port there, not a scheme.

@@ -59,6 +59,25 @@ describe("loadDotEnv", () => {
     expect(env).toEqual({});
   });
 
+  it("refuses a file too large to be configuration, and reports it", () => {
+    // The working directory is not necessarily trusted, so an oversized .env is
+    // a file to decline rather than read. It has to be reported: a gateway that
+    // silently loaded no keys is indistinguishable from an unconfigured one. The
+    // padding is generated here, never committed.
+    const dir = makeDir();
+    try {
+      writeFileSync(join(dir, ".env"), `KIMI_API_KEY=real\n#${"x".repeat(70 * 1024)}`);
+      const env: Record<string, string> = {};
+      const warnings: string[] = [];
+      loadDotEnv(dir, env as NodeJS.ProcessEnv, (m) => warnings.push(m));
+      expect(env).toEqual({});
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0]).toContain("too large");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("reads only the first = as separator and keeps later ones in the value", () => {
     const { env } = load("WEBSEARCH_CONFIG=https://x.example/a=b");
     expect(env.WEBSEARCH_CONFIG).toBe("https://x.example/a=b");

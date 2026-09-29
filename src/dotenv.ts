@@ -7,6 +7,7 @@
  * - Strip matching surrounding quotes from values; skip comment lines and malformed lines
  * - Only export the names the gateway actually reads, so a .env cannot reach the
  *   variables the Node runtime itself acts on
+ * - Refuse a file large enough to be an attack rather than configuration
  * - Never overwrite existing process.env entries; silently skip when the file is missing
  */
 
@@ -14,9 +15,26 @@
 // The list of names it may export is owned by config.ts (gatewayEnvKeys), which
 // is also the module that decides what "a gateway setting" means.
 
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { defaultWarn, gatewayEnvKeys, PROVIDER_ENV_SUFFIXES } from "./config.js";
+import { stripBom } from "./normalize.js";
+
+/**
+ * Largest `.env` this loader will read, checked before the read.
+ *
+ * The same threat model that motivates the name whitelist below applies to the
+ * file's size: the working directory is not necessarily trusted, so any
+ * repository can ship a `.env` — and an oversized one would be read whole into
+ * memory and then split into lines before the whitelist ever got a say. A real
+ * `.env` is a few dozen lines; this bound is two orders of magnitude above that
+ * and only ever rejects a file that is not configuration.
+ *
+ * Size is measured first so the read never happens; the check is on the file as
+ * it exists when it is measured, which is what makes the bound worth having
+ * rather than a guarantee.
+ */
+const MAX_DOTENV_BYTES = 64 * 1024;
 
 /**
  * The exact set of names this gateway reads, owned by config.ts.
@@ -58,22 +76,36 @@ const GATEWAY_LIKE = new RegExp(`(?:^WEBSEARCH_|_(?:${PROVIDER_ENV_SUFFIXES.join
  * Names the gateway does not read are skipped: see GATEWAY_KEYS for why an
  * arbitrary .env must not become process.env. A skipped name that looks like a
  * gateway setting is reported through `warn`, so a typo is visible instead of
- * silently doing nothing.
+ * silently doing nothing. A file over MAX_DOTENV_BYTES is ignored with a
+ * warning for the same reason: dropping it silently would look like a gateway
+ * that had no keys configured.
  */
 export function loadDotEnv(
   dir: string = process.cwd(),
   into: NodeJS.ProcessEnv = process.env,
   warn: (message: string) => void = defaultWarn,
 ): void {
+  const path = join(dir, ".env");
+  let size: number;
+  try {
+    size = statSync(path).size;
+  } catch {
+    return; // a missing or unreadable .env is the normal case, not a problem
+  }
+  // Skipping an oversized .env silently would leave the gateway running on no
+  // keys at all with no explanation, so it is reported like any other problem
+  // this loader can have with the file.
+  if (size > MAX_DOTENV_BYTES) {
+    warn(`.env is too large (${size} bytes exceeds the ${MAX_DOTENV_BYTES} byte limit); ignoring it`);
+    return;
+  }
   let raw: string;
   try {
-    raw = readFileSync(join(dir, ".env"), "utf8");
+    raw = readFileSync(path, "utf8");
   } catch {
     return;
   }
-  // Editors on Windows commonly save with a UTF-8 BOM; without stripping it the
-  // first key would silently carry an invisible prefix and never match env lookups.
-  if (raw.charCodeAt(0) === 0xfeff) raw = raw.slice(1);
+  raw = stripBom(raw);
   for (const line of raw.split(/\r?\n/)) {
     const t = line.trim();
     if (t === "" || t.startsWith("#")) continue;

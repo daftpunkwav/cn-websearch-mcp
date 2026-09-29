@@ -253,10 +253,31 @@ describe("postJson", () => {
   });
 
   it("still reads a large-but-legal body through the streaming path", async () => {
-    const payload = JSON.stringify({ choices: [], pad: "z".repeat(300_000) });
-    const f: FetchLike = async () => new Response(payload, { status: 200 });
+    const pad = "z".repeat(300_000);
+    const f: FetchLike = async () => new Response(JSON.stringify({ choices: [], pad }), { status: 200 });
     const res = await postJson("https://x.example", {}, {}, { ...base, fetchImpl: f });
-    expect(res.text).toHaveLength(payload.length);
+    // Asserted on the parsed body: a body past the initial buffer has to survive
+    // the growth of the accumulating buffer whole, not truncated at a capacity.
+    expect(res.json).toEqual({ choices: [], pad });
+  });
+
+  it("assembles a body delivered in many small chunks", async () => {
+    // The streaming reader accumulates into one growing buffer, so the chunk
+    // size an upstream picks cannot change the bytes that come out the other
+    // end, nor how much memory the read costs. 16-byte chunks are a realistic
+    // trickle, and 5000 of them carry the body past the initial buffer, so this
+    // covers the growth as well as the assembly.
+    const text = JSON.stringify({ choices: [], pad: "abcdefghij".repeat(8_000) });
+    const bytes = new TextEncoder().encode(text);
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (let i = 0; i < bytes.length; i += 16) controller.enqueue(bytes.subarray(i, i + 16));
+        controller.close();
+      },
+    });
+    const f: FetchLike = async () => new Response(stream, { status: 200 });
+    const res = await postJson("https://x.example", {}, {}, { ...base, fetchImpl: f });
+    expect(res.json).toEqual(JSON.parse(text));
   });
 
   it("refuses a body that lands after the caller cancelled", async () => {

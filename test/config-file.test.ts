@@ -101,6 +101,24 @@ describe("readConfigFile", () => {
     }
   });
 
+  it("refuses a file too large to be configuration, through the same warn path", () => {
+    // The config path can sit in an untrusted cwd and is read synchronously, so
+    // an enormous file must be measured before it is buffered. The refusal
+    // travels the existing unreadable path: a warning, and undefined so the
+    // gateway keeps running. The padding is generated here, never committed.
+    const dir = mkdtempSync(join(tmpdir(), "cwsmcp-bigcfg-"));
+    try {
+      const path = join(dir, "cn-websearch.config.json");
+      writeFileSync(path, `{"pad":"${"x".repeat(1024 * 1024 + 1)}"}`);
+      const warnings: string[] = [];
+      expect(readConfigFile(path, (m) => warnings.push(m))).toBeUndefined();
+      expect(warnings[0]).toContain("not readable");
+      expect(warnings[0]).toContain("over the");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("redacts credential-looking text from both warning paths", () => {
     // The file may hold API keys, so nothing from a read failure or a parse
     // failure may reach stderr unscrubbed.

@@ -5,6 +5,7 @@
  * Responsibilities:
  * - Locate the config file: explicit WEBSEARCH_CONFIG wins, otherwise the conventional file under cwd
  * - Read and parse JSON; any failure (missing, unreadable, invalid JSON, non-object) only warns and returns undefined
+ * - Refuse a file too large to be configuration, through that same warn-and-continue path
  * - Define the config file's field shape (loose types; semantic validation is the config module's job)
  */
 
@@ -12,12 +13,26 @@
 // an object; field semantics and value validity are config.ts's job, so the
 // two layers can be tested independently.
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { redactSecrets } from "./errors.js";
+import { stripBom } from "./normalize.js";
 
 /** Conventional file name looked up in the current working directory when no explicit path is set. */
 export const CONFIG_FILENAME = "cn-websearch.config.json";
+
+/**
+ * Largest config file read from disk, measured before the read.
+ *
+ * The path can be a conventional file under an untrusted cwd, and a read is
+ * synchronous: a repository that ships an enormous `cn-websearch.config.json`
+ * would have the whole thing buffered and parsed on the main thread before
+ * anything could warn about it. Nothing this gateway reads from one file
+ * approaches a megabyte, so the bound only ever rejects a file that is not
+ * configuration. The size is measured on the file as it exists when it is
+ * checked, which is what makes it worth having rather than a guarantee.
+ */
+const MAX_CONFIG_FILE_BYTES = 1024 * 1024;
 
 /**
  * Raw shape of the config file. Every field is unknown: the entry point is
@@ -34,8 +49,23 @@ export interface ConfigFileShape {
   providers?: unknown;
 }
 
-/** Injection point for reading a text file (defaults to a synchronous UTF-8 read). */
+/** Injection point for reading a text file (defaults to a synchronous, size-bounded UTF-8 read). */
 export type ReadFileFn = (path: string) => string;
+
+/**
+ * Default reader: measure, then read. Refusing here rather than inside
+ * readConfigFile keeps the size bound part of *how a file is read* — a caller
+ * that supplies its own ReadFileFn has taken over that step — and lets the
+ * refusal travel the existing "unreadable" path, which already warns and
+ * returns undefined instead of blocking startup.
+ */
+const readConfigText: ReadFileFn = (path) => {
+  const size = statSync(path).size;
+  if (size > MAX_CONFIG_FILE_BYTES) {
+    throw new Error(`config file is ${size} bytes, over the ${MAX_CONFIG_FILE_BYTES} byte limit`);
+  }
+  return readFileSync(path, "utf8");
+};
 
 /** Injection point for file-existence checks (defaults to fs.existsSync). */
 export type FileExistsFn = (path: string) => boolean;
@@ -65,7 +95,7 @@ export function resolveConfigPath(
 export function readConfigFile(
   path: string,
   warn: (m: string) => void,
-  readFile: ReadFileFn = (p) => readFileSync(p, "utf8"),
+  readFile: ReadFileFn = readConfigText,
 ): ConfigFileShape | undefined {
   let raw: string;
   try {
@@ -77,8 +107,7 @@ export function readConfigFile(
     warn(`config file not readable (${path}): ${redactSecrets(detail)}`);
     return undefined;
   }
-  // JSON.parse rejects a leading UTF-8 BOM (common in Windows-edited files); strip it first.
-  if (raw.charCodeAt(0) === 0xfeff) raw = raw.slice(1);
+  raw = stripBom(raw);
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);

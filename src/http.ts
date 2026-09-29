@@ -14,6 +14,7 @@
 // error messages.
 
 import { HttpError, NetworkError, ParseError, redactForMessage, TimeoutError } from "./errors.js";
+import { stripBom } from "./normalize.js";
 import type { FetchLike } from "./types.js";
 
 /**
@@ -25,6 +26,15 @@ import type { FetchLike } from "./types.js";
  */
 const MAX_BODY_BYTES = 8 * 1024 * 1024;
 
+/**
+ * Starting capacity of the streaming read buffer, not a limit on the body.
+ *
+ * Sized so an ordinary response — a JSON document with a handful of results —
+ * is read without ever growing, while a large one (a Kimi fiber referencing
+ * many pages) pays only a handful of doublings.
+ */
+const INITIAL_BUFFER_BYTES = 64 * 1024;
+
 export interface HttpOptions {
   timeoutMs: number;
   signal?: AbortSignal;
@@ -33,7 +43,6 @@ export interface HttpOptions {
 
 export interface HttpResponse {
   status: number;
-  text: string;
   /** Parsed JSON body; null when the body is not valid JSON. */
   json: unknown;
 }
@@ -117,7 +126,7 @@ export async function postJson(
     // error body at the 8 MB cap cannot make redaction itself fail.
     throw new HttpError(res.status, `HTTP ${res.status}: ${redactForMessage(text)}`);
   }
-  return { status: res.status, text, json };
+  return { status: res.status, json };
 }
 
 /**
@@ -165,19 +174,39 @@ async function readText(res: Response): Promise<string> {
   }
 
   const reader = res.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let received = 0;
+  // One growing buffer rather than an array of chunks. The cap bounds the
+  // *bytes* of a body, never the number of chunks the stream is free to
+  // deliver, and each retained chunk costs far more than its own length (an
+  // array slot plus a typed-array header, ~250 B for a 1-byte chunk measured on
+  // this Node line). Collecting chunks therefore made memory scale with the
+  // chunk size an upstream chose: a legal 8 MB body arriving one byte at a time
+  // would have needed gigabytes of heap before the cap ever fired. Doubling the
+  // capacity keeps every copy amortized over the bytes it moves, so the whole
+  // read stays linear in the body size and bounded by a small multiple of it.
+  //
+  // The buffer is deliberately left uninitialized: only the first `len` bytes
+  // are ever written and only they are ever read back.
+  let buf = Buffer.allocUnsafe(INITIAL_BUFFER_BYTES);
+  let len = 0;
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
-    received += value?.byteLength ?? 0;
-    if (received > MAX_BODY_BYTES) {
+    if (!value) continue;
+    const size = value.byteLength;
+    if (len + size > MAX_BODY_BYTES) {
       await reader.cancel();
       throw new ParseError(`response body too large: over the ${MAX_BODY_BYTES} byte limit`);
     }
-    if (value) chunks.push(value);
+    if (len + size > buf.length) {
+      let capacity = buf.length;
+      while (capacity < len + size) capacity *= 2;
+      const grown = Buffer.allocUnsafe(capacity);
+      buf.copy(grown, 0, 0, len);
+      buf = grown;
+    }
+    buf.set(value, len);
+    len += size;
   }
   // Match Response.text(): strip a leading UTF-8 BOM so a BOM'd JSON body still parses.
-  const text = Buffer.concat(chunks).toString("utf8");
-  return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+  return stripBom(buf.toString("utf8", 0, len));
 }
