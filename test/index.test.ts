@@ -29,6 +29,33 @@ vi.mock("@modelcontextprotocol/sdk/server/stdio.js", () => ({
   },
 }));
 
+/**
+ * The entry point loads `.env` from `process.cwd()` at module scope, and vitest
+ * runs from the project root — which holds a real `.env` with real keys. Left
+ * unmocked, importing the entry point would export those credentials into this
+ * worker, and every assertion about which providers exist would then depend on
+ * whether the developer happens to have keys configured. Stubbing the loader
+ * keeps this file hermetic and lets the tests state the chain they mean.
+ * (The loader's own behaviour is covered by dotenv.test.ts.)
+ */
+vi.mock("../src/dotenv.js", () => ({ loadDotEnv: vi.fn() }));
+
+/** Gateway variable names the loader would have exported; none may appear. */
+const GATEWAY_VARS = [
+  "WEBSEARCH_CONFIG",
+  "WEBSEARCH_COUNT",
+  "WEBSEARCH_DEDUPE",
+  "WEBSEARCH_MAX_PROVIDERS",
+  "WEBSEARCH_ORDER",
+  "WEBSEARCH_STRATEGY",
+  "WEBSEARCH_TIMEOUT_MS",
+  "ZHIPU_SEARCH_ENGINE",
+  "KIMI_API_KEY",
+  "MIMO_API_KEY",
+  "STEPFUN_API_KEY",
+  "ZHIPU_API_KEY",
+];
+
 async function importEntryPoint() {
   vi.resetModules();
   mocks.setRequestHandler.mockClear();
@@ -86,12 +113,27 @@ describe("server entry point", () => {
     ) => Promise<{ content: Array<{ text: string }>; isError?: boolean }>;
     const controller = new AbortController();
     controller.abort();
-    // No provider is configured in this environment, so the call fails either
-    // way; what matters is that it fails as a structured tool error rather than
-    // throwing out of the handler.
     const res = await callHandler({ params: { name: "web_search", arguments: { query: "q" } } }, { signal: controller.signal });
     expect(res.isError).toBe(true);
-    expect(JSON.parse(res.content[0]!.text).error).toBeTruthy();
+    // The specific structured error, not merely a truthy message: with the
+    // loader stubbed and no gateway variable exported, the chain is empty, so
+    // the call must fail as "no provider is configured" with an empty audit
+    // trail. Asserting only truthiness would pass for any failure at all,
+    // including a crash the handler happened to convert.
+    const body = JSON.parse(res.content[0]!.text);
+    expect(body.error).toContain("no provider is configured");
+    expect(body.attempts).toEqual([]);
+  });
+
+  it("importing the entry point does not export the project's real .env", async () => {
+    // The entry point calls loadDotEnv(process.cwd(), process.env) at module
+    // scope. Unmocked, that reads the repository's real .env and writes the
+    // developer's credentials into this worker's environment — which would
+    // both leak them and make the rest of this file's assumptions depend on
+    // local machine state.
+    await importEntryPoint();
+    const leaked = GATEWAY_VARS.filter((name) => process.env[name] !== undefined);
+    expect(leaked).toEqual([]);
   });
 
   it("does not auto-start when argv[1] is undefined", async () => {
