@@ -6,7 +6,8 @@ The adapter contract and slot matrix live in [README.md](README.md).
 
 - One adapter file per slot. Export `create<Name>Provider(cfg: ProviderConfig): SearchProvider`.
 - Keep the slot name in one module-level constant. Use it for `name` and for `_meta.provider`. That string matches the config key in `KNOWN_PROVIDERS`.
-- `search` builds the request and parses the response. Leave the attempt budget, retry, fallback, aggregation, and cancellation to `orchestrator.ts`.
+- `search` builds the request and parses the response. Leave the attempt budget, retry, fallback, aggregation, and the cancellation verdict to `orchestrator.ts`.
+- A multi-round adapter rethrows an already-aborted `ctx.signal` before the next hop. `kimi.ts` does this in `throwIfAborted`.
 - Send HTTP through `postJson` in `http.ts`.
 - Import only lower layers: `types`, `errors`, `normalize`, `http`, and `config` types. Never import `orchestrator`, `runtime`, `tools`, `cli`, or a sibling adapter.
 - Read channel-specific options from `ProviderConfig.options` and clamp them in the adapter. A new option is a field on that object.

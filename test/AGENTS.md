@@ -14,7 +14,8 @@ Layout and coverage details live in [README.md](README.md).
 
 - Never put a real API key in a test. Synthetic placeholder strings are allowed.
 - Unit tests stub `fetchImpl` and do not open the network.
-- When the code under test loads `.env` from cwd, run it in a fresh temp directory (`runCliInEphemeralCwd` or `freshTempDir` in `e2e/_helpers.ts`).
+- When an assertion depends on the `.env` at cwd, run in a fresh temp directory (`runCliInEphemeralCwd` or `freshTempDir`).
+- The entry-point suite stubs `loadDotEnv`.
 - Live upstream checks belong in `scripts/smoke.ts` (`npm run smoke`).
 
 ## Conventions
