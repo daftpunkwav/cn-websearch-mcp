@@ -17,7 +17,8 @@ The command table and file map live in [README.md](README.md).
 - Value options accept `--flag value` and `--flag=value`.
 - `--json` and `--no-dedupe` are switches. An inline value such as `--json=false` is a usage error (`EXIT.usage`).
 - Clamp `count` with `effectiveCount` and cap the query with `truncate(..., QUERY_MAX)`, on `search` and on `test`. The bounds match the MCP tool layer.
-- Provider filters go through `pickProviders`, which calls `selectProviders` in `provider-selection.ts`.
+- `search` and `test` restrict the chain through `pickProviders`, which calls `selectProviders`.
+- REPL `/providers` validates names with `parseProviderNames` and stores them on the session. The later search or probe still goes through `pickProviders`.
 
 ## Commands and session
 

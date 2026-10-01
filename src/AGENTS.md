@@ -8,7 +8,8 @@ The module map and layering diagram live in [README.md](README.md).
 - `types.ts`, `errors.ts`, and `normalize.ts` stay free of internal imports beyond each other.
 - `config-file.ts` and `dotenv.ts` are the only modules that read the disk.
 - `config.ts` never reads or writes the disk. `runtime.ts` passes config-file content in.
-- Per-attempt timeout, the single transient retry and its backoff, caller cancellation, fallback walking, parallel aggregation, and `_meta.attempts` live only in `orchestrator.ts`.
+- The attempt budget, the single transient retry and its backoff, caller cancellation, fallback walking, parallel aggregation, and the real attempt trail live in `orchestrator.ts`.
+- `http.ts` aborts a fetch on its own timer. `probe.ts` times its own probe.
 - Adapters in `providers/` stay limited to request construction and response parsing. See [providers/AGENTS.md](providers/AGENTS.md).
 - Provider-name rules — normalization, unknown names, and slots that are not usable — live only in `provider-selection.ts`. The MCP tool layer, the one-shot CLI, and the REPL all call it.
 - Runtime assembly happens only in `runtime.ts` (`createRuntime`). Entry points consume that runtime. They do not re-resolve config or rebuild providers.
@@ -24,7 +25,7 @@ The module map and layering diagram live in [README.md](README.md).
 
 - Never print or log API keys or credential-like strings. Use `redactSecrets` in `errors.ts` and `redactedConfig` in `cli/render.ts` at the boundary.
 - An error message returned to a caller goes through `summarizeError`, or is written from already-redacted text. Never return a raw `err.message`. Top-level fatal handlers may log the whole error to stderr.
-- Strip control characters from untrusted upstream text only in `str` and `normalizeDate` (`normalize.ts`). Adapters and the renderer do not add a second sanitizer.
+- `stripControlChars` in `errors.ts` is the only control-character stripper. Upstream fields go through `str` and `normalizeDate`. Error text goes through `summarizeError`. Adapters and the renderer do not strip control characters.
 - A blank configuration value means "not set" at every layer. Keep that rule in `config.ts` when adding a field.
 - Invalid configuration input never throws. Warn and fall back in `config.ts`, `config-file.ts`, and `runtime.ts`.
 - When a public function depends on env, warn, fetch, streams, or signals, those are arguments.

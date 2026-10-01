@@ -14,13 +14,15 @@ Layout and coverage details live in [README.md](README.md).
 
 - Never put a real API key in a test. Synthetic placeholder strings are allowed.
 - Unit tests stub `fetchImpl` and do not open the network.
-- A subprocess test that needs a deterministic "no keys" state runs the binary with cwd in a fresh temp directory via `runCliInEphemeralCwd` in `e2e/_helpers.ts`.
+- When the code under test loads `.env` from cwd, run it in a fresh temp directory (`runCliInEphemeralCwd` or `freshTempDir` in `e2e/_helpers.ts`).
 - Live upstream checks belong in `scripts/smoke.ts` (`npm run smoke`).
 
 ## Conventions
 
-- In-process CLI tests call `runCli` from `src/cli/index.ts` with injected dependencies.
-- Subprocess tests call `runCli` or `runCliInEphemeralCwd` from `e2e/_helpers.ts`.
-- A test reads or writes `process.env` only to cover the fallback that uses it, and restores every key it changes.
+- Call the module under test and inject the dependencies it accepts.
+- In-process CLI tests call `runCli`, `parseArgs`, `cmdSearch`, `cmdStatus`, `cmdTest`, the render functions, or `runRepl`, matching the module.
+- Subprocess CLI journeys use `runCli` or `runCliInEphemeralCwd` from `e2e/_helpers.ts`.
+- The MCP stdio journey spawns `dist/index.js` with `cleanEnv()` and `freshTempDir()`.
+- A test that changes `process.env` restores every key it changes.
 - File headers stay in English, with `@file` and `@description`.
 - In `vitest.config.ts`, keep the per-test timeout at 30 seconds and the coverage gate at 95% lines, functions, branches, and statements on `src/`.
