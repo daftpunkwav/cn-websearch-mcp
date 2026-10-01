@@ -1,37 +1,29 @@
 # test/ agent rules
 
-Working rules for coding agents in the test suite. Layout and coverage details
-live in [README.md](README.md).
+Layout and coverage details live in [README.md](README.md).
 
 ## Placement
 
-- Unit/integration tests go in `test/` as `<module>.test.ts`, mirroring the
-  `src/` file name. A new `src/foo.ts` means a new `test/foo.test.ts`. When the
-  src name would collide (`src/index.ts` and `src/providers/index.ts`), the test
-  file is qualified by its path: `test/index.test.ts`, `test/providers-index.test.ts`.
-- Subprocess end-to-end tests go in [e2e/](e2e/), one journey per file
-  (protocol round-trip, CLI process behavior, config priority, build
-  artifact). Shared scaffolding lives in `e2e/_helpers.ts`; vitest only
-  collects `*.test.ts` files, and the underscore prefix marks the file as
-  scaffolding rather than a suite.
+- Unit and integration tests live in this directory as `<module>.test.ts`, mirroring the `src/` file name. `src/foo.ts` gets `test/foo.test.ts`.
+- When two sources share a file name, qualify the test by path: `test/index.test.ts` for `src/index.ts`, `test/providers-index.test.ts` for `src/providers/index.ts`.
+- One test file covers one module and stays self-contained.
+- `upstream-contract.test.ts` is the exception: it pins the channel wire contracts across `src/providers/`.
+- Subprocess journeys live in [e2e/](e2e/). Follow [e2e/AGENTS.md](e2e/AGENTS.md).
 
 ## Hermeticity
 
-- Never inject real API keys into any test. Unit tests stub `fetchImpl`; e2e
-  tests use `cleanEnv()` from `_helpers.ts`, which starts from an empty map and
-  forwards only what node needs to start, so no provider key or gateway
-  variable can reach the subprocess. Tests that need a
-  deterministic "no keys" state must run the binary with cwd in a fresh temp
-  dir (`runCliInEphemeralCwd`), because the project root's real `.env` would
-  otherwise be picked up by the in-process dotenv loader.
-- Live upstream checks belong to `scripts/smoke.ts` (`npm run smoke`), never
-  to vitest.
+- Never put a real API key in a test. Synthetic placeholder strings are allowed.
+- Unit tests stub `fetchImpl` and do not open the network.
+- When an assertion depends on the `.env` at cwd, run in a fresh temp directory (`runCliInEphemeralCwd` or `freshTempDir`).
+- The entry-point suite stubs `loadDotEnv`.
+- Live upstream checks belong in `scripts/smoke.ts` (`npm run smoke`).
 
 ## Conventions
 
-- One test file tests one module or one journey; keep each file
-  self-contained.
-- Prefer driving the CLI through `runCli()`/`runCliInEphemeralCwd()` or the
-  injected-dependency APIs over asserting on global process state.
-- E2E tests exercise `dist/index.js` — run `npm run build` before
-  `npm test` when `src/` changed, or the subprocess runs stale code.
+- Call the module under test and inject the dependencies it accepts.
+- In-process CLI tests call `runCli`, `parseArgs`, `cmdSearch`, `cmdStatus`, `cmdTest`, the render functions, or `runRepl`, matching the module.
+- Subprocess CLI journeys use `runCli` or `runCliInEphemeralCwd` from `e2e/_helpers.ts`.
+- The MCP stdio journey spawns `dist/index.js` with `cleanEnv()` and `freshTempDir()`.
+- A test that changes `process.env` restores every key it changes.
+- File headers stay in English, with `@file` and `@description`.
+- In `vitest.config.ts`, keep the per-test timeout at 30 seconds and the coverage gate at 95% lines, functions, branches, and statements on `src/`.
