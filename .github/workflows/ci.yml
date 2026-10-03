@@ -10,7 +10,48 @@ permissions:
   contents: read
 
 jobs:
+  changes:
+    # Fail-open docs triage: only markdown/LICENSE-only diffs skip the test
+    # matrix; anything unrecognized counts as code and runs everything.
+    name: Detect changed paths
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      docs_only: ${{ steps.classify.outputs.docs_only }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Classify
+        id: classify
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" != "pull_request" ] || ! git cat-file -e "$BASE" 2>/dev/null; then
+            echo "docs_only=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          # --no-renames: a code file renamed into docs/ must classify as
+          # code (both sides of the rename are listed). Fail closed: a diff
+          # error runs everything rather than skipping it.
+          if ! changed="$(git diff --no-renames --name-only "$BASE...HEAD")"; then
+            echo "docs_only=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          docs_only=true
+          while IFS= read -r f; do
+            case "$f" in
+              *.md|LICENSE|.gitignore|.gitattributes|docs/*) ;;
+              *) docs_only=false ;;
+            esac
+          done <<< "$changed"
+          echo "docs_only=$docs_only" >> "$GITHUB_OUTPUT"
+
   build-and-test:
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -53,17 +94,18 @@ jobs:
     # Summary check: always runs, passes when every job that ran succeeded
     # (skipped is fine) and fails on any failure or cancellation, so a
     # cancelled run can never masquerade as green.
-    needs: [build-and-test, deps-policy]
+    needs: [changes, build-and-test, deps-policy]
     if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Evaluate gate results
         env:
+          CHANGES: ${{ needs.changes.result }}
           BUILD_AND_TEST: ${{ needs.build-and-test.result }}
           DEPS_POLICY: ${{ needs.deps-policy.result }}
         run: |
           set -euo pipefail
-          results="build_and_test=$BUILD_AND_TEST deps_policy=$DEPS_POLICY"
+          results="changes=$CHANGES build_and_test=$BUILD_AND_TEST deps_policy=$DEPS_POLICY"
           echo "$results"
           if grep -qE '=(failure|cancelled)' <<< "$results"; then
             echo "::error::one or more gates failed or were cancelled"
