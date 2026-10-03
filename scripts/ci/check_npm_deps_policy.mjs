@@ -52,8 +52,18 @@ const violations = [...found]
   .filter((name) => banned[name] !== undefined)
   .sort();
 
+// "npm:<real>@<range>" with <real> possibly scoped ("@scope/pkg"), so the
+// real name ends at the last "@" - the version separator - not the first.
+// The first-@ parse turned "npm:@scope/banned@1.0.0" into an empty name and
+// let a scoped ban slip through.
+function aliasRealName(target) {
+  const spec = target.replace(/^npm:/, "");
+  const at = spec.lastIndexOf("@");
+  return at > 0 ? spec.slice(0, at) : spec;
+}
+
 const aliasViolations = aliases
-  .map((alias) => ({ ...alias, real: alias.target.match(/^npm:([^@]+)/)?.[1] ?? "" }))
+  .map((alias) => ({ ...alias, real: aliasRealName(alias.target) }))
   .filter((alias) => banned[alias.real] !== undefined)
   .sort((a, b) => a.installed.localeCompare(b.installed));
 
