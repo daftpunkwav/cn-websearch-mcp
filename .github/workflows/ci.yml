@@ -34,13 +34,19 @@ jobs:
           if [ "$EVENT" != "pull_request" ] || ! git cat-file -e "$BASE" 2>/dev/null; then
             echo "docs_only=false" >> "$GITHUB_OUTPUT"; exit 0
           fi
+          # --no-renames: a code file renamed into docs/ must classify as
+          # code (both sides of the rename are listed). Fail closed: a diff
+          # error runs everything rather than skipping it.
+          if ! changed="$(git diff --no-renames --name-only "$BASE...HEAD")"; then
+            echo "docs_only=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
           docs_only=true
           while IFS= read -r f; do
             case "$f" in
               *.md|LICENSE|.gitignore|.gitattributes|docs/*) ;;
               *) docs_only=false ;;
             esac
-          done < <(git diff --name-only "$BASE...HEAD")
+          done <<< "$changed"
           echo "docs_only=$docs_only" >> "$GITHUB_OUTPUT"
 
   build-and-test:
