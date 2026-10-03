@@ -1,0 +1,4 @@
+{
+  "$comment": "Accepted npm advisories: unfixable upstream with unreachable entry points in our usage. Every entry must name the GHSA id, the affected package, and why it is accepted. npm audit has no --ignore flag, so scripts/ci/npm-audit-check.mjs enforces this list (CI pipes `npm audit --json` into it). Re-check entries when the dependency tree changes.",
+  "allow": []
+}
