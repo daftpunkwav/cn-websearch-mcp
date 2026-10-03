@@ -1,0 +1,13 @@
+# Gitleaks ignores for this repository, one fingerprint per line.
+#
+# Every entry below is a synthetic fixture, not a credential: the redaction
+# tests use obviously-fake placeholder keys (sequential hex, alphabet runs,
+# the literal word EXAMPLE) to exercise secret scrubbing. Fingerprints were
+# produced by gitleaks 8.30.1 over full history and point at the introducing
+# commit. If a fixture moves, its fingerprint changes and the scan fails
+# again - extend this file deliberately and keep the comment trail.
+4342a8b116ae330904d913700f27eb1a5433a8ae:test/config-file.test.ts:generic-api-key:47
+503011e33747e4d04be63a7e9336e074584cf967:test/http.test.ts:generic-api-key:148
+bb8541543f62aaa468bcf8656df630f1ef655dee:test/errors.test.ts:generic-api-key:95
+ff4ad8581160b1ec53cc3e7d8fad4612cc28c1bb:test/errors.test.ts:generic-api-key:165
+ff4ad8581160b1ec53cc3e7d8fad4612cc28c1bb:test/errors.test.ts:generic-api-key:190
