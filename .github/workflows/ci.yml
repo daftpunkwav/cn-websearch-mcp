@@ -48,10 +48,10 @@ jobs:
           exit 1
 
   build-and-test:
+    # Tier 2: the guard already encodes the label, so approval alone
+    # governs - a labeled PR's new pushes keep running the full matrix.
     needs: full-approval
-    if: >-
-      needs.full-approval.result == 'success' &&
-      (github.event_name != 'pull_request' || github.event.action == 'labeled')
+    if: needs.full-approval.result == 'success'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
