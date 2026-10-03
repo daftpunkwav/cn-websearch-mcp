@@ -33,6 +33,14 @@ updates:
     ignore:
       - dependency-name: "@types/node"
         versions: [">=23"]
+      # vitest 5 pulls vite 8, whose peers reject @types/node 18 - and the
+      # matrix still tests Node 18. Raise together with the matrix floor.
+      - dependency-name: "vitest"
+        versions: [">=4"]
+      - dependency-name: "@vitest/mocker"
+        versions: [">=4"]
+      - dependency-name: "@vitest/coverage-v8"
+        versions: [">=4"]
     labels:
       - "dependencies"
       - "javascript"
