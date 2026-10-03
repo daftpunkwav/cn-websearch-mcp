@@ -1,0 +1,4 @@
+{
+  "$comment": "Banned dependencies (npm). Names are canonical, as in package-lock 'packages' keys minus the node_modules/ prefix. The check scans the transitive tree too, so a ban here blocks any path of arrival. Extend with a reason - a ban without one will be questioned at review.",
+  "npm": {}
+}

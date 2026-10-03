@@ -24,3 +24,14 @@ jobs:
       - run: npm run typecheck
       # e2e tests in test/e2e/ exercise dist/, so build must precede tests
       - run: npm run test:coverage
+
+  # This workflow has no path filtering (single-package repo, every job runs
+  # on every push/PR), so edits to dependency-policy.json or the checker
+  # itself always re-trigger this job.
+  deps-policy:
+    name: Dependency denylist (npm)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      # Reads package-lock.json plus package.json only; no npm install needed.
+      - run: node scripts/ci/check_npm_deps_policy.mjs
