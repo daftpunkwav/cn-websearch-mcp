@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
 
+# Least privilege: jobs only check out code and publish no artifacts.
+permissions:
+  contents: read
+
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
@@ -24,3 +28,37 @@ jobs:
       - run: npm run typecheck
       # e2e tests in test/e2e/ exercise dist/, so build must precede tests
       - run: npm run test:coverage
+
+  # This workflow has no path filtering (single-package repo, every job runs
+  # on every push/PR), so edits to dependency-policy.json or the checker
+  # itself always re-trigger this job.
+  deps-policy:
+    name: Dependency denylist (npm)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      # Reads package-lock.json plus package.json only; no npm install needed.
+      - run: node scripts/ci/check_npm_deps_policy.mjs
+
+  gate:
+    name: gate
+    # Summary check: always runs, passes when every job that ran succeeded
+    # (skipped is fine) and fails on any failure or cancellation, so a
+    # cancelled run can never masquerade as green.
+    needs: [build-and-test, deps-policy]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Evaluate gate results
+        env:
+          BUILD_AND_TEST: ${{ needs.build-and-test.result }}
+          DEPS_POLICY: ${{ needs.deps-policy.result }}
+        run: |
+          set -euo pipefail
+          results="build_and_test=$BUILD_AND_TEST deps_policy=$DEPS_POLICY"
+          echo "$results"
+          if grep -qE '=(failure|cancelled)' <<< "$results"; then
+            echo "::error::one or more gates failed or were cancelled"
+            exit 1
+          fi
+          echo "all gates passed (skipped excluded)"

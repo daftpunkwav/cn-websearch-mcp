@@ -12,6 +12,15 @@ upstreams, these scripts exist precisely for that.
 `mcp-probe.mjs` spawns `dist/index.js`, so run `npm run build` first;
 `smoke.ts` runs from source through tsx and needs no build.
 
+## ci/ — offline CI gates
+
+No network and no install required; both run in CI and can be run locally.
+
+| File | Role |
+|---|---|
+| `ci/check_npm_deps_policy.mjs` | Denylist gate: fails when a package banned by `ci/dependency-policy.json` appears in `package-lock.json` (transitive tree and aliases included) or `package.json`. |
+| `ci/npm-audit-check.mjs` | Audit gate: fails on any high/critical `npm audit` finding not listed in `ci/npm-audit-allowlist.json`; fails closed on malformed input. CI pipes `npm audit --json` into it. |
+
 The live half of `smoke.ts` is not automatable, but its wiring is:
 `test/probe.test.ts` drives the same `createRuntime` → `chain` → `probeAll`
 path with synthetic keys and an injected fetch, so a probe that stopped
