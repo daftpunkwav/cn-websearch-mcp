@@ -53,11 +53,24 @@ if (report == null || typeof report !== "object" || report.vulnerabilities == nu
   fail("audit report has no vulnerabilities section");
 }
 
-const vulns = report.vulnerabilities ?? {};
-const metaCounts =
-  report.metadata && typeof report.metadata === "object"
-    ? (report.metadata.vulnerabilities ?? {})
-    : null;
+// Fail closed on non-object sections: Object.entries over a string or an
+// array enumerates nothing reportable, so a doctored or corrupted report
+// would pass as "no findings".
+function isPlainObject(value) {
+  return value != null && typeof value === "object" && !Array.isArray(value);
+}
+
+if (report == null || typeof report !== "object" || !isPlainObject(report.vulnerabilities)) {
+  fail("audit report has no vulnerabilities section");
+}
+if (report.metadata != null) {
+  if (!isPlainObject(report.metadata) || !isPlainObject(report.metadata.vulnerabilities)) {
+    fail("audit report metadata is malformed");
+  }
+}
+
+const vulns = report.vulnerabilities;
+const metaCounts = report.metadata != null ? report.metadata.vulnerabilities : null;
 const seenIds = new Set();
 const blocking = [];
 let countedHigh = 0;
