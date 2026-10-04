@@ -114,7 +114,7 @@ function backoffFor(err: unknown): number {
 /** Wait for ms, returning early when the caller cancels (so a retry backoff is never stranded). */
 function delay(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
-    if (signal?.aborted) return resolve();
+    if (signal?.aborted) { resolve(); return; }
     let timer: ReturnType<typeof setTimeout> | undefined;
     const finish = (): void => {
       if (timer) clearTimeout(timer);
@@ -187,9 +187,9 @@ async function runProvider(
     // A dedicated marker reason, so a cancellation is never mistaken for this
     // layer's own timeout and never surfaces a peer-supplied message. It is only
     // ever an abort reason here; the trail travels on the thrown error.
-    const onCallerAbort = (): void => ac.abort(new CallCancelledError([]));
+    const onCallerAbort = (): void => { ac.abort(new CallCancelledError([])); };
     callerSignal?.addEventListener("abort", onCallerAbort, { once: true });
-    const timer = setTimeout(() => ac.abort(new TimeoutError()), budget);
+    const timer = setTimeout(() => { ac.abort(new TimeoutError()); }, budget);
     const t0 = Date.now();
     let backoffMs: number | undefined;
     try {
@@ -287,7 +287,7 @@ function joinAnswers(answered: Array<{ provider: string; answer?: string }>): st
     .map((a) => ({ provider: a.provider, answer: (a.answer ?? "").trim() }))
     .filter((a) => a.answer !== "");
   if (!parts.length) return "";
-  if (parts.length === 1) return parts[0]!.answer;
+  if (parts.length === 1) return parts[0]?.answer ?? "";
   return parts.map((a) => `[${a.provider}] ${a.answer}`).join("\n\n");
 }
 

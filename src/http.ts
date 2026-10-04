@@ -57,8 +57,8 @@ export interface HttpResponse {
  */
 function combinedSignal(timeoutMs: number, external?: AbortSignal): { signal: AbortSignal; cancel: () => void } {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(new TimeoutError()), timeoutMs);
-  const onAbort = () => controller.abort(external?.reason);
+  const timer = setTimeout(() => { controller.abort(new TimeoutError()); }, timeoutMs);
+  const onAbort = () => { controller.abort(external?.reason); };
   if (external) {
     if (external.aborted) onAbort();
     else external.addEventListener("abort", onAbort, { once: true });

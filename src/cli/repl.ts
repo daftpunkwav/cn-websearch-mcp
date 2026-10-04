@@ -70,7 +70,7 @@ export async function runRepl(deps: CliDeps, io: { input: NodeJS.ReadableStream 
     output: deps.output as NodeJS.WritableStream,
     prompt: PROMPT,
   });
-  const write = (text: string): void => writeLine(deps.output, text);
+  const write = (text: string): void => { writeLine(deps.output, text); };
   write(`cn-websearch-mcp interactive session — ${chainNames.length} provider(s) ready: ${chainNames.join(", ") || "(none)"}`);
   write("Type a query to search, or /help for commands.");
 
@@ -277,7 +277,7 @@ export async function runRepl(deps: CliDeps, io: { input: NodeJS.ReadableStream 
   return await new Promise<number>((resolve) => {
     rl.on("close", () => {
       closed = true;
-      void pending.then(() => resolve(0));
+      void pending.then(() => { resolve(0); });
     });
     rl.prompt();
   });
