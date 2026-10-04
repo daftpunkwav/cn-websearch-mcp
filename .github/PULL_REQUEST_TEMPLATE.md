@@ -33,6 +33,7 @@ One PR does one thing; merge requirements live in the branch ruleset
 - [ ] `npm run build`
 - [ ] `npm run typecheck`
 - [ ] `npm run test:coverage`
+- [ ] `node scripts/ci/check_npm_deps_policy.mjs` (dependency denylist)
 - [ ] Anything the tests cannot reach was verified manually (describe below)
 
 <!-- Manual steps, before/after output. Delete if empty. -->

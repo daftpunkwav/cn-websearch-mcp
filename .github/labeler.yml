@@ -16,5 +16,7 @@ typescript:
   - changed-files:
       - any-glob-to-any-file:
           - "**/*.ts"
+          - "**/*.tsx"
           - "**/*.mts"
           - "**/*.cts"
+          - "**/*.d.ts"
