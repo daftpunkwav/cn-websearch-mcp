@@ -18,7 +18,7 @@ import { createRuntime } from "../src/runtime.js";
 import { runSearch } from "../src/orchestrator.js";
 import { probeAll, type ProbeRow } from "../src/probe.js";
 
-const QUERY = process.env.SMOKE_QUERY || "最近一周国内发布的大模型";
+const QUERY = process.env.SMOKE_QUERY ?? "最近一周国内发布的大模型";
 
 /** Escapes vertical bars in table cells so the markdown table stays intact. */
 function cell(s: string): string {

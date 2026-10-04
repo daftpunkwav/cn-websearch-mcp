@@ -433,7 +433,7 @@ export interface LoadConfigOptions {
  * otherwise the same class of problem is reported under three different
  * prefixes, and the entry points have to know which default they landed on.
  */
-export const defaultWarn = (m: string): void => console.error(`[${SERVER_NAME}] ${m}`);
+export const defaultWarn = (m: string): void => { console.error(`[${SERVER_NAME}] ${m}`); };
 
 /**
  * Merge the three config layers into the final GatewayConfig.

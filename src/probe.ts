@@ -57,7 +57,7 @@ export async function probeProvider(
   opts: ProbeOptions,
 ): Promise<ProbeRow> {
   const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(new TimeoutError()), opts.timeoutMs);
+  const timer = setTimeout(() => { ac.abort(new TimeoutError()); }, opts.timeoutMs);
   const t0 = Date.now();
   try {
     const result = await p.search(req, {
