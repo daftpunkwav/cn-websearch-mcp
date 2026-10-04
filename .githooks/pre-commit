@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+# Fast pre-commit checks that mirror the CI's fast static gates (typecheck,
+# dependency policy). The full matrix - build/emit, vitest with coverage, the
+# Node 18/20/22 test jobs - stays in CI; this hook just keeps type errors and
+# banned dependencies from leaving the machine. `tsc -p tsconfig.check.json`
+# statically subsumes the build job's src/ analysis (same strict options, a
+# superset of paths), so only the emit itself is left to CI. Zero new
+# dependencies: uses whatever node/npm and the local node_modules provide.
+#
+# tsc and the policy checker read files from disk and cannot inspect git index
+# blobs, so these checks run against the WORKING TREE rather than piped staged
+# content. To keep the staged-only guarantee, the hook refuses to run when a
+# relevant file is staged while also carrying unstaged edits: otherwise it
+# would be checking a blob that is not what the commit contains. Stage or
+# stash such edits first.
+#
+# Docs-only diffs skip every check, mirroring the CI "changes" job
+# classification (fail closed: unrecognized paths count as code).
+#
+# Enable once per clone:
+#   git config core.hooksPath .githooks
+set -euo pipefail
+
+cd "$(git rev-parse --show-toplevel)"
+
+staged=$(git diff --cached --name-only --diff-filter=ACMR)
+[ -n "$staged" ] || exit 0
+
+type_files=()
+policy_files=()
+docs_only=true
+while IFS= read -r f; do
+  [ -n "$f" ] || continue
+  case "$f" in
+    *.md|LICENSE|.gitignore|.gitattributes|docs/*) ;;
+    *) docs_only=false ;;
+  esac
+  case "$f" in
+    # The include list of tsconfig.check.json (case patterns match "/" too).
+    src/*.ts|test/*.ts|scripts/*.ts|vitest.config.ts) type_files+=("$f") ;;
+    # What the deps-policy job reads (manifest, lockfile, denylist).
+    package.json|package-lock.json|scripts/ci/dependency-policy.json) policy_files+=("$f") ;;
+  esac
+done <<< "$staged"
+[ "$docs_only" = false ] || exit 0
+
+# Working-tree checks need a clean split: a file with both staged and
+# unstaged edits would be validated as something else than the commit's
+# content. Refuse instead of silently checking the wrong blob.
+if [ "${#type_files[@]}" -gt 0 ]; then
+  for f in "${type_files[@]}"; do
+    if ! git diff --quiet -- "$f"; then
+      echo "pre-commit: $f is staged but also has unstaged edits" >&2
+      echo "pre-commit: stage or stash them - these checks run on the working tree" >&2
+      exit 1
+    fi
+  done
+fi
+
+if [ "${#policy_files[@]}" -gt 0 ]; then
+  for f in "${policy_files[@]}"; do
+    if ! git diff --quiet -- "$f"; then
+      echo "pre-commit: $f is staged but also has unstaged edits" >&2
+      echo "pre-commit: stage or stash them - these checks run on the working tree" >&2
+      exit 1
+    fi
+  done
+fi
+
+if [ "${#type_files[@]}" -gt 0 ]; then
+  npm exec --no -- tsc -p tsconfig.check.json || {
+    echo "pre-commit: typecheck failed (mirrors the CI build-and-test job)" >&2
+    exit 1
+  }
+fi
+
+if [ "${#policy_files[@]}" -gt 0 ]; then
+  node scripts/ci/check_npm_deps_policy.mjs || {
+    echo "pre-commit: npm dependency policy failed (mirrors the CI deps-policy job)" >&2
+    exit 1
+  }
+fi
+
+exit 0
