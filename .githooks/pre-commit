@@ -9,18 +9,22 @@
 #
 # tsc and the policy checker read files from disk and cannot inspect git index
 # blobs, so these checks run against the WORKING TREE rather than piped staged
-# content. That has three consequences, each handled by refusing to commit:
+# content. That has four consequences, each handled by refusing to commit:
 #
 #   1. Any unstaged edit inside a check's input scope (the include list of
 #      tsconfig.check.json for tsc; the manifest, lockfile and denylist for
 #      the policy checker) would make the check validate something other
 #      than the commit's content. Stage or stash such edits first.
 #
-#   2. Staged deletions cannot be read from disk - they only TRIGGER checks.
+#   2. Untracked files are invisible to `git diff`, but the checks read them
+#      from disk all the same. Untracked files inside a check's input scope
+#      are refused too: commit them or move them out.
+#
+#   3. Staged deletions cannot be read from disk - they only TRIGGER checks.
 #      They stay in classification so that deleting a .ts file another staged
 #      file imports still runs tsc.
 #
-#   3. Rename detection would report only the destination path, so a code
+#   4. Rename detection would report only the destination path, so a code
 #      file renamed into docs/ would classify as docs-only. --no-renames
 #      (matching the CI "changes" classifier) lists both sides instead: a
 #      rename is a deletion plus an addition.
@@ -42,11 +46,25 @@ cd "$(git rev-parse --show-toplevel)"
 type_scope=(src test scripts vitest.config.ts tsconfig.json tsconfig.check.json)
 policy_scope=(package.json package-lock.json scripts/ci/dependency-policy.json)
 
+# True for everything under the include list of tsconfig.check.json that tsc
+# compiles, plus the two tsconfigs `tsc -p` itself reads. `*` matches "/" in
+# case patterns, so the directory patterns reach nested files.
+is_type_input() {
+  case "$1" in
+    src/*.ts|src/*.tsx|src/*.mts|src/*.cts) return 0 ;;
+    test/*.ts|test/*.tsx|test/*.mts|test/*.cts) return 0 ;;
+    scripts/*.ts|scripts/*.tsx|scripts/*.mts|scripts/*.cts) return 0 ;;
+    vitest.config.ts|tsconfig.json|tsconfig.check.json) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 # Classify staged paths. -z + `read -d ''` keeps file names intact regardless
 # of spaces or newlines; output goes through a temp file so a diff error can
 # abort the hook (fail closed) instead of silently skipping every check.
 staged=$(mktemp)
-trap 'rm -f "$staged"' EXIT
+untracked=$(mktemp)
+trap 'rm -f "$staged" "$untracked"' EXIT
 git diff --cached --name-only --no-renames -z >"$staged" || exit 1
 
 docs_only=true
@@ -57,9 +75,8 @@ while IFS= read -r -d '' f; do
     *.md|LICENSE|.gitignore|.gitattributes|docs/*) ;;
     *) docs_only=false ;;
   esac
+  is_type_input "$f" && type_changed=true
   case "$f" in
-    # The include list of tsconfig.check.json (case patterns match "/" too).
-    src/*.ts|test/*.ts|scripts/*.ts|vitest.config.ts) type_changed=true ;;
     # What the deps-policy job reads (manifest, lockfile, denylist).
     package.json|package-lock.json|scripts/ci/dependency-policy.json) policy_changed=true ;;
   esac
@@ -80,6 +97,34 @@ if [ "$policy_changed" = true ] && ! git diff --quiet -- "${policy_scope[@]}"; t
   echo "pre-commit: unstaged edits to dependency-policy inputs (package.json package-lock.json scripts/ci/dependency-policy.json)" >&2
   echo "pre-commit: stage or stash them - these checks run on the working tree" >&2
   exit 1
+fi
+
+# `git diff` cannot see untracked files, but both checks read them from disk
+# all the same: an untracked file inside an input scope changes what the
+# check validates.
+if [ "$type_changed" = true ]; then
+  git ls-files --others --exclude-standard -z -- "${type_scope[@]}" >"$untracked" || exit 1
+  while IFS= read -r -d '' f; do
+    case "$f" in
+      # Only files tsc compiles can change the typecheck's verdict.
+      *.ts|*.tsx|*.mts|*.cts)
+        echo "pre-commit: untracked file inside the typecheck scope: $f" >&2
+        echo "pre-commit: commit it or move it out - these checks run on the working tree" >&2
+        exit 1 ;;
+    esac
+  done <"$untracked"
+fi
+
+if [ "$policy_changed" = true ]; then
+  git ls-files --others --exclude-standard -z -- "${policy_scope[@]}" >"$untracked" || exit 1
+  while IFS= read -r -d '' f; do
+    case "$f" in
+      package.json|package-lock.json|scripts/ci/dependency-policy.json)
+        echo "pre-commit: untracked file among the dependency-policy inputs: $f" >&2
+        echo "pre-commit: commit it or move it out - these checks run on the working tree" >&2
+        exit 1 ;;
+    esac
+  done <"$untracked"
 fi
 
 if [ "$type_changed" = true ]; then
