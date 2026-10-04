@@ -1,0 +1,145 @@
+#!/usr/bin/env bash
+# Fast pre-commit checks that mirror the CI's fast static gates (typecheck,
+# dependency policy). The full matrix - build/emit, vitest with coverage, the
+# Node 18/20/22 test jobs - stays in CI; this hook just keeps type errors and
+# banned dependencies from leaving the machine. `tsc -p tsconfig.check.json`
+# statically subsumes the build job's src/ analysis (same strict options, a
+# superset of paths), so only the emit itself is left to CI. Zero new
+# dependencies: uses whatever node/npm and the local node_modules provide.
+#
+# tsc and the policy checker read files from disk and cannot inspect git index
+# blobs, so these checks run against the WORKING TREE rather than piped staged
+# content. That has four consequences, each handled by refusing to commit:
+#
+#   1. Any unstaged edit inside a check's input scope (the include list of
+#      tsconfig.check.json for tsc; the manifest, lockfile and denylist for
+#      the policy checker) would make the check validate something other
+#      than the commit's content. Stage or stash such edits first.
+#
+#   2. Untracked files are invisible to `git diff`, but the checks read them
+#      from disk all the same. Untracked files inside a check's input scope
+#      are refused too: commit them or move them out.
+#
+#   3. Staged deletions cannot be read from disk - they only TRIGGER checks.
+#      They stay in classification so that deleting a .ts file another staged
+#      file imports still runs tsc.
+#
+#   4. Rename detection would report only the destination path, so a code
+#      file renamed into docs/ would classify as docs-only. --no-renames
+#      (matching the CI "changes" classifier) lists both sides instead: a
+#      rename is a deletion plus an addition.
+#
+# Docs-only diffs skip every check, mirroring the CI "changes" job
+# classification (fail closed: unrecognized paths count as code, and a diff
+# error aborts instead of skipping every check).
+#
+# Enable once per clone:
+#   git config core.hooksPath .githooks
+set -euo pipefail
+
+cd "$(git rev-parse --show-toplevel)"
+
+# Input scope of each check, as git pathspecs (a directory pathspec covers it
+# recursively). Type scope: the include list of tsconfig.check.json plus the
+# two tsconfigs `tsc -p` itself reads. Policy scope: exactly the three files
+# scripts/ci/check_npm_deps_policy.mjs opens.
+type_scope=(src test scripts vitest.config.ts tsconfig.json tsconfig.check.json)
+policy_scope=(package.json package-lock.json scripts/ci/dependency-policy.json)
+
+# True for everything under the include list of tsconfig.check.json that tsc
+# compiles, plus the two tsconfigs `tsc -p` itself reads. `*` matches "/" in
+# case patterns, so the directory patterns reach nested files.
+is_type_input() {
+  case "$1" in
+    src/*.ts|src/*.tsx|src/*.mts|src/*.cts) return 0 ;;
+    test/*.ts|test/*.tsx|test/*.mts|test/*.cts) return 0 ;;
+    scripts/*.ts|scripts/*.tsx|scripts/*.mts|scripts/*.cts) return 0 ;;
+    vitest.config.ts|tsconfig.json|tsconfig.check.json) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# Classify staged paths. -z + `read -d ''` keeps file names intact regardless
+# of spaces or newlines; output goes through a temp file so a diff error can
+# abort the hook (fail closed) instead of silently skipping every check.
+staged=$(mktemp)
+untracked=$(mktemp)
+trap 'rm -f "$staged" "$untracked"' EXIT
+git diff --cached --name-only --no-renames -z >"$staged" || exit 1
+
+docs_only=true
+type_changed=false
+policy_changed=false
+while IFS= read -r -d '' f; do
+  case "$f" in
+    *.md|LICENSE|.gitignore|.gitattributes|docs/*) ;;
+    *) docs_only=false ;;
+  esac
+  is_type_input "$f" && type_changed=true
+  case "$f" in
+    # What the deps-policy job reads (manifest, lockfile, denylist).
+    package.json|package-lock.json|scripts/ci/dependency-policy.json) policy_changed=true ;;
+  esac
+done <"$staged"
+[ "$docs_only" = false ] || exit 0
+
+# Working-tree checks need the tree to match the index across each check's
+# whole input scope, not just the staged files: an unstaged edit to anything
+# tsc or the policy checker reads would be validated as content the commit
+# does not contain.
+if [ "$type_changed" = true ] && ! git diff --quiet -- "${type_scope[@]}"; then
+  echo "pre-commit: unstaged edits inside the typecheck scope (src/ test/ scripts/ vitest.config.ts tsconfig*.json)" >&2
+  echo "pre-commit: stage or stash them - these checks run on the working tree" >&2
+  exit 1
+fi
+
+if [ "$policy_changed" = true ] && ! git diff --quiet -- "${policy_scope[@]}"; then
+  echo "pre-commit: unstaged edits to dependency-policy inputs (package.json package-lock.json scripts/ci/dependency-policy.json)" >&2
+  echo "pre-commit: stage or stash them - these checks run on the working tree" >&2
+  exit 1
+fi
+
+# `git diff` cannot see untracked files, but both checks read them from disk
+# all the same: an untracked file inside an input scope changes what the
+# check validates. --others deliberately lists IGNORED files too - the
+# checks do not honor .gitignore (tsc happily compiles an ignored .d.ts).
+if [ "$type_changed" = true ]; then
+  git ls-files --others -z -- "${type_scope[@]}" >"$untracked" || exit 1
+  while IFS= read -r -d '' f; do
+    case "$f" in
+      # Only files tsc compiles can change the typecheck's verdict.
+      *.ts|*.tsx|*.mts|*.cts)
+        echo "pre-commit: untracked file inside the typecheck scope: $f" >&2
+        echo "pre-commit: commit it or move it out - these checks run on the working tree" >&2
+        exit 1 ;;
+    esac
+  done <"$untracked"
+fi
+
+if [ "$policy_changed" = true ]; then
+  git ls-files --others -z -- "${policy_scope[@]}" >"$untracked" || exit 1
+  while IFS= read -r -d '' f; do
+    case "$f" in
+      package.json|package-lock.json|scripts/ci/dependency-policy.json)
+        echo "pre-commit: untracked file among the dependency-policy inputs: $f" >&2
+        echo "pre-commit: commit it or move it out - these checks run on the working tree" >&2
+        exit 1 ;;
+    esac
+  done <"$untracked"
+fi
+
+if [ "$type_changed" = true ]; then
+  npm exec --no -- tsc -p tsconfig.check.json || {
+    echo "pre-commit: typecheck failed (mirrors the CI build-and-test job)" >&2
+    exit 1
+  }
+fi
+
+if [ "$policy_changed" = true ]; then
+  node scripts/ci/check_npm_deps_policy.mjs || {
+    echo "pre-commit: npm dependency policy failed (mirrors the CI deps-policy job)" >&2
+    exit 1
+  }
+fi
+
+exit 0
