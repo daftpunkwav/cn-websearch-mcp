@@ -9,13 +9,25 @@
 #
 # tsc and the policy checker read files from disk and cannot inspect git index
 # blobs, so these checks run against the WORKING TREE rather than piped staged
-# content. To keep the staged-only guarantee, the hook refuses to run when a
-# relevant file is staged while also carrying unstaged edits: otherwise it
-# would be checking a blob that is not what the commit contains. Stage or
-# stash such edits first.
+# content. That has three consequences, each handled by refusing to commit:
+#
+#   1. Any unstaged edit inside a check's input scope (the include list of
+#      tsconfig.check.json for tsc; the manifest, lockfile and denylist for
+#      the policy checker) would make the check validate something other
+#      than the commit's content. Stage or stash such edits first.
+#
+#   2. Staged deletions cannot be read from disk - they only TRIGGER checks.
+#      They stay in classification so that deleting a .ts file another staged
+#      file imports still runs tsc.
+#
+#   3. Rename detection would report only the destination path, so a code
+#      file renamed into docs/ would classify as docs-only. --no-renames
+#      (matching the CI "changes" classifier) lists both sides instead: a
+#      rename is a deletion plus an addition.
 #
 # Docs-only diffs skip every check, mirroring the CI "changes" job
-# classification (fail closed: unrecognized paths count as code).
+# classification (fail closed: unrecognized paths count as code, and a diff
+# error aborts instead of skipping every check).
 #
 # Enable once per clone:
 #   git config core.hooksPath .githooks
@@ -23,58 +35,61 @@ set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
 
-staged=$(git diff --cached --name-only --diff-filter=ACMR)
-[ -n "$staged" ] || exit 0
+# Input scope of each check, as git pathspecs (a directory pathspec covers it
+# recursively). Type scope: the include list of tsconfig.check.json plus the
+# two tsconfigs `tsc -p` itself reads. Policy scope: exactly the three files
+# scripts/ci/check_npm_deps_policy.mjs opens.
+type_scope=(src test scripts vitest.config.ts tsconfig.json tsconfig.check.json)
+policy_scope=(package.json package-lock.json scripts/ci/dependency-policy.json)
 
-type_files=()
-policy_files=()
+# Classify staged paths. -z + `read -d ''` keeps file names intact regardless
+# of spaces or newlines; output goes through a temp file so a diff error can
+# abort the hook (fail closed) instead of silently skipping every check.
+staged=$(mktemp)
+trap 'rm -f "$staged"' EXIT
+git diff --cached --name-only --no-renames -z >"$staged" || exit 1
+
 docs_only=true
-while IFS= read -r f; do
-  [ -n "$f" ] || continue
+type_changed=false
+policy_changed=false
+while IFS= read -r -d '' f; do
   case "$f" in
     *.md|LICENSE|.gitignore|.gitattributes|docs/*) ;;
     *) docs_only=false ;;
   esac
   case "$f" in
     # The include list of tsconfig.check.json (case patterns match "/" too).
-    src/*.ts|test/*.ts|scripts/*.ts|vitest.config.ts) type_files+=("$f") ;;
+    src/*.ts|test/*.ts|scripts/*.ts|vitest.config.ts) type_changed=true ;;
     # What the deps-policy job reads (manifest, lockfile, denylist).
-    package.json|package-lock.json|scripts/ci/dependency-policy.json) policy_files+=("$f") ;;
+    package.json|package-lock.json|scripts/ci/dependency-policy.json) policy_changed=true ;;
   esac
-done <<< "$staged"
+done <"$staged"
 [ "$docs_only" = false ] || exit 0
 
-# Working-tree checks need a clean split: a file with both staged and
-# unstaged edits would be validated as something else than the commit's
-# content. Refuse instead of silently checking the wrong blob.
-if [ "${#type_files[@]}" -gt 0 ]; then
-  for f in "${type_files[@]}"; do
-    if ! git diff --quiet -- "$f"; then
-      echo "pre-commit: $f is staged but also has unstaged edits" >&2
-      echo "pre-commit: stage or stash them - these checks run on the working tree" >&2
-      exit 1
-    fi
-  done
+# Working-tree checks need the tree to match the index across each check's
+# whole input scope, not just the staged files: an unstaged edit to anything
+# tsc or the policy checker reads would be validated as content the commit
+# does not contain.
+if [ "$type_changed" = true ] && ! git diff --quiet -- "${type_scope[@]}"; then
+  echo "pre-commit: unstaged edits inside the typecheck scope (src/ test/ scripts/ vitest.config.ts tsconfig*.json)" >&2
+  echo "pre-commit: stage or stash them - these checks run on the working tree" >&2
+  exit 1
 fi
 
-if [ "${#policy_files[@]}" -gt 0 ]; then
-  for f in "${policy_files[@]}"; do
-    if ! git diff --quiet -- "$f"; then
-      echo "pre-commit: $f is staged but also has unstaged edits" >&2
-      echo "pre-commit: stage or stash them - these checks run on the working tree" >&2
-      exit 1
-    fi
-  done
+if [ "$policy_changed" = true ] && ! git diff --quiet -- "${policy_scope[@]}"; then
+  echo "pre-commit: unstaged edits to dependency-policy inputs (package.json package-lock.json scripts/ci/dependency-policy.json)" >&2
+  echo "pre-commit: stage or stash them - these checks run on the working tree" >&2
+  exit 1
 fi
 
-if [ "${#type_files[@]}" -gt 0 ]; then
+if [ "$type_changed" = true ]; then
   npm exec --no -- tsc -p tsconfig.check.json || {
     echo "pre-commit: typecheck failed (mirrors the CI build-and-test job)" >&2
     exit 1
   }
 fi
 
-if [ "${#policy_files[@]}" -gt 0 ]; then
+if [ "$policy_changed" = true ]; then
   node scripts/ci/check_npm_deps_policy.mjs || {
     echo "pre-commit: npm dependency policy failed (mirrors the CI deps-policy job)" >&2
     exit 1
