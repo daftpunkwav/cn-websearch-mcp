@@ -11,6 +11,8 @@ dependencies:
       - any-glob-to-any-file:
           - "package-lock.json"
           - "package.json"
+          - ".github/workflows/**"
+          - ".github/dependabot.yml"
 
 typescript:
   - changed-files:
