@@ -101,9 +101,10 @@ fi
 
 # `git diff` cannot see untracked files, but both checks read them from disk
 # all the same: an untracked file inside an input scope changes what the
-# check validates.
+# check validates. --others deliberately lists IGNORED files too - the
+# checks do not honor .gitignore (tsc happily compiles an ignored .d.ts).
 if [ "$type_changed" = true ]; then
-  git ls-files --others --exclude-standard -z -- "${type_scope[@]}" >"$untracked" || exit 1
+  git ls-files --others -z -- "${type_scope[@]}" >"$untracked" || exit 1
   while IFS= read -r -d '' f; do
     case "$f" in
       # Only files tsc compiles can change the typecheck's verdict.
@@ -116,7 +117,7 @@ if [ "$type_changed" = true ]; then
 fi
 
 if [ "$policy_changed" = true ]; then
-  git ls-files --others --exclude-standard -z -- "${policy_scope[@]}" >"$untracked" || exit 1
+  git ls-files --others -z -- "${policy_scope[@]}" >"$untracked" || exit 1
   while IFS= read -r -d '' f; do
     case "$f" in
       package.json|package-lock.json|scripts/ci/dependency-policy.json)
