@@ -22,23 +22,34 @@ function jsonResponse(payload: unknown, status = 200): Response {
   return new Response(JSON.stringify(payload), { status, headers: { 'Content-Type': 'application/json' } });
 }
 
+/** MiMo chat-completions answer shape: one choice whose message carries the
+ * synthesized answer and annotations. */
+function chatAnswer(content = '', annotations: unknown[] = []): unknown {
+  return { choices: [{ message: { content, annotations } }] };
+}
+
+/** fetchImpl that answers a fixed chat answer and exposes the last request body it saw. */
+function captureBody(answer: unknown = chatAnswer('')): { fetchImpl: FetchLike; lastBody: () => any } {
+  let seen: any;
+  return {
+    fetchImpl: async (_url, init) => {
+      seen = JSON.parse(init!.body as string);
+      return jsonResponse(answer);
+    },
+    lastBody: () => seen,
+  };
+}
+
 describe('mimo provider', () => {
   it('builds the shim-verified request and merges citations with highlights', async () => {
     const calls: { url: string; init: RequestInit }[] = [];
     const fetchImpl: FetchLike = async (url, init) => {
       calls.push({ url, init: init! });
-      return jsonResponse({
-        choices: [{
-          message: {
-            content: '综合答案',
-            annotations: [
-              { type: 'url_citation', title: '新闻 A', url: 'https://a.example/1' },
-              { type: 'web_search_highlight', title: '高亮片段', url: 'https://a.example/1' },
-              { type: 'url_citation', title: '', url: 'b.example/2' },
-            ],
-          },
-        }],
-      });
+      return jsonResponse(chatAnswer('综合答案', [
+        { type: 'url_citation', title: '新闻 A', url: 'https://a.example/1' },
+        { type: 'web_search_highlight', title: '高亮片段', url: 'https://a.example/1' },
+        { type: 'url_citation', title: '', url: 'b.example/2' },
+      ]));
     };
     const out = await createMimoProvider(cfg).search({ query: 'q', count: 8 }, ctx(fetchImpl));
     const body = JSON.parse(calls[0]!.init.body as string);
@@ -59,7 +70,7 @@ describe('mimo provider', () => {
     const limits: number[] = [];
     const fetchImpl: FetchLike = async (_url, init) => {
       limits.push(JSON.parse(init!.body as string).tools[0].limit);
-      return jsonResponse({ choices: [{ message: { content: '', annotations: [] } }] });
+      return jsonResponse(chatAnswer());
     };
     const p = createMimoProvider(cfg);
     await p.search({ query: 'q', count: 50 }, ctx(fetchImpl));
@@ -68,22 +79,15 @@ describe('mimo provider', () => {
   });
 
   it('merges duplicate citations and highlight-only annotations by URL', async () => {
-    const fetchImpl: FetchLike = async () => jsonResponse({
-      choices: [{
-        message: {
-          content: '答案',
-          annotations: [
-            { type: 'url_citation', title: '第一标题', url: 'https://dup.example/1' },
-            { type: 'url_citation', title: '第二标题', url: 'https://dup.example/1' },
-            { type: 'url_citation', title: '有空格', url: '  https://space.example/2  ' },
-            { type: 'url_citation', title: 'no url', url: '' },
-            { type: 'web_search_highlight', title: '补充摘要', url: 'https://dup.example/1' },
-            { type: 'web_search_highlight', title: '仅高亮', url: 'https://only.example/3' },
-            { type: 'unknown_type', title: 't', url: 'https://x.example/4' },
-          ],
-        },
-      }],
-    });
+    const fetchImpl: FetchLike = async () => jsonResponse(chatAnswer('答案', [
+      { type: 'url_citation', title: '第一标题', url: 'https://dup.example/1' },
+      { type: 'url_citation', title: '第二标题', url: 'https://dup.example/1' },
+      { type: 'url_citation', title: '有空格', url: '  https://space.example/2  ' },
+      { type: 'url_citation', title: 'no url', url: '' },
+      { type: 'web_search_highlight', title: '补充摘要', url: 'https://dup.example/1' },
+      { type: 'web_search_highlight', title: '仅高亮', url: 'https://only.example/3' },
+      { type: 'unknown_type', title: 't', url: 'https://x.example/4' },
+    ]));
     const out = await createMimoProvider(cfg).search({ query: 'q', count: 8 }, ctx(fetchImpl));
     expect(out.results).toEqual([
       { title: '第一标题', url: 'https://dup.example/1', snippet: '补充摘要' },
@@ -94,7 +98,7 @@ describe('mimo provider', () => {
   });
 
   it('keeps answerless replies and empty annotations as a successful empty result', async () => {
-    const fetchImpl: FetchLike = async () => jsonResponse({ choices: [{ message: { content: '', annotations: [] } }] });
+    const fetchImpl: FetchLike = async () => jsonResponse(chatAnswer());
     const out = await createMimoProvider(cfg).search({ query: 'q', count: 8 }, ctx(fetchImpl));
     expect(out.results).toEqual([]);
     expect(out._meta.answer).toBeUndefined();
@@ -110,53 +114,32 @@ describe('mimo provider', () => {
   it('skips null and non-object annotations instead of throwing on them', async () => {
     // A null element has no fields at all; reading one off it used to raise a
     // TypeError that lost the whole citation list along with the answer.
-    const fetchImpl: FetchLike = async () => jsonResponse({
-      choices: [{
-        message: {
-          content: '答案',
-          annotations: [
-            null,
-            'text',
-            { type: 'url_citation', title: 'ok', url: 'https://a.example/1' },
-          ],
-        },
-      }],
-    });
+    const fetchImpl: FetchLike = async () => jsonResponse(chatAnswer('答案', [
+      null,
+      'text',
+      { type: 'url_citation', title: 'ok', url: 'https://a.example/1' },
+    ]));
     const out = await createMimoProvider(cfg).search({ query: 'q', count: 8 }, ctx(fetchImpl));
     expect(out.results).toEqual([{ title: 'ok', url: 'https://a.example/1', snippet: '' }]);
   });
 
   it('normalizes citation URLs with the same rule as the shared helper', async () => {
-    const fetchImpl: FetchLike = async () => jsonResponse({
-      choices: [{
-        message: {
-          content: '',
-          annotations: [
-            { type: 'url_citation', title: 'b', url: 'b.example/2' },
-            { type: 'url_citation', title: 'c', url: '//cdn.example/a.js' },
-          ],
-        },
-      }],
-    });
+    const fetchImpl: FetchLike = async () => jsonResponse(chatAnswer('', [
+      { type: 'url_citation', title: 'b', url: 'b.example/2' },
+      { type: 'url_citation', title: 'c', url: '//cdn.example/a.js' },
+    ]));
     const out = await createMimoProvider(cfg).search({ query: 'q', count: 8 }, ctx(fetchImpl));
     // A bare host used to be glued into "https://ftp://..." here, unlike every other adapter.
     expect(out.results.map((r) => r.url)).toEqual(['https://b.example/2', 'https://cdn.example/a.js']);
   });
 
   it('drops citations whose URL is not an http(s) link', async () => {
-    const fetchImpl: FetchLike = async () => jsonResponse({
-      choices: [{
-        message: {
-          content: '',
-          annotations: [
-            // Fixture simulates a script-executing scheme the provider must drop.
-            // eslint-disable-next-line no-script-url
-            { type: 'url_citation', title: 'x', url: 'javascript:alert(1)' },
-            { type: 'url_citation', title: 'y', url: 'https://ok.example/1' },
-          ],
-        },
-      }],
-    });
+    const fetchImpl: FetchLike = async () => jsonResponse(chatAnswer('', [
+      // Fixture simulates a script-executing scheme the provider must drop.
+      // eslint-disable-next-line no-script-url
+      { type: 'url_citation', title: 'x', url: 'javascript:alert(1)' },
+      { type: 'url_citation', title: 'y', url: 'https://ok.example/1' },
+    ]));
     const out = await createMimoProvider(cfg).search({ query: 'q', count: 8 }, ctx(fetchImpl));
     expect(out.results.map((r) => r.url)).toEqual(['https://ok.example/1']);
   });
@@ -169,18 +152,11 @@ describe('mimo provider', () => {
   });
 
   it('caps the citation list at the requested count', async () => {
-    const fetchImpl: FetchLike = async () => jsonResponse({
-      choices: [{
-        message: {
-          content: 'a',
-          annotations: [
-            { type: 'url_citation', title: '1', url: 'https://a.example/1' },
-            { type: 'url_citation', title: '2', url: 'https://a.example/2' },
-            { type: 'url_citation', title: '3', url: 'https://a.example/3' },
-          ],
-        },
-      }],
-    });
+    const fetchImpl: FetchLike = async () => jsonResponse(chatAnswer('a', [
+      { type: 'url_citation', title: '1', url: 'https://a.example/1' },
+      { type: 'url_citation', title: '2', url: 'https://a.example/2' },
+      { type: 'url_citation', title: '3', url: 'https://a.example/3' },
+    ]));
     const out = await createMimoProvider(cfg).search({ query: 'q', count: 2 }, ctx(fetchImpl));
     expect(out.results).toHaveLength(2);
   });
@@ -188,17 +164,10 @@ describe('mimo provider', () => {
   it('keeps a real title that arrives after a highlight placeholder', async () => {
     // Order matters: web_search_highlight can precede url_citation for the same
     // URL, and the hostname placeholder must not swallow the real title.
-    const fetchImpl: FetchLike = async () => jsonResponse({
-      choices: [{
-        message: {
-          content: '答案',
-          annotations: [
-            { type: 'web_search_highlight', title: '高亮片段', url: 'https://dup.example/1' },
-            { type: 'url_citation', title: '真实标题', url: 'https://dup.example/1' },
-          ],
-        },
-      }],
-    });
+    const fetchImpl: FetchLike = async () => jsonResponse(chatAnswer('答案', [
+      { type: 'web_search_highlight', title: '高亮片段', url: 'https://dup.example/1' },
+      { type: 'url_citation', title: '真实标题', url: 'https://dup.example/1' },
+    ]));
     const out = await createMimoProvider(cfg).search({ query: 'q', count: 8 }, ctx(fetchImpl));
     expect(out.results).toEqual([
       { title: '真实标题', url: 'https://dup.example/1', snippet: '高亮片段' },
@@ -206,34 +175,23 @@ describe('mimo provider', () => {
   });
 
   it('keeps the first real title when two citations follow a placeholder', async () => {
-    const fetchImpl: FetchLike = async () => jsonResponse({
-      choices: [{
-        message: {
-          content: '答案',
-          annotations: [
-            { type: 'web_search_highlight', title: '片段', url: 'https://dup.example/1' },
-            { type: 'url_citation', title: '标题一', url: 'https://dup.example/1' },
-            { type: 'url_citation', title: '标题二', url: 'https://dup.example/1' },
-            { type: 'url_citation', title: '', url: 'https://dup.example/1' },
-          ],
-        },
-      }],
-    });
+    const fetchImpl: FetchLike = async () => jsonResponse(chatAnswer('答案', [
+      { type: 'web_search_highlight', title: '片段', url: 'https://dup.example/1' },
+      { type: 'url_citation', title: '标题一', url: 'https://dup.example/1' },
+      { type: 'url_citation', title: '标题二', url: 'https://dup.example/1' },
+      { type: 'url_citation', title: '', url: 'https://dup.example/1' },
+    ]));
     const out = await createMimoProvider(cfg).search({ query: 'q', count: 8 }, ctx(fetchImpl));
     expect(out.results.map((r) => r.title)).toEqual(['标题一']);
   });
 
   it('falls back to the default model when config has none', async () => {
-    let seen: any;
-    const fetchImpl: FetchLike = async (_url, init) => {
-      seen = JSON.parse(init!.body as string);
-      return jsonResponse({ choices: [{ message: { content: '', annotations: [] } }] });
-    };
+    const { fetchImpl, lastBody } = captureBody();
     await createMimoProvider({ ...cfg, baseUrl: 'https://m.example/v1', model: undefined }).search(
       { query: 'q', count: 1 },
       ctx(fetchImpl),
     );
-    expect(seen.model).toBe('mimo-v2.5');
+    expect(lastBody().model).toBe('mimo-v2.5');
   });
 
   it('propagates HTTP errors (classified by http layer)', async () => {
@@ -259,43 +217,31 @@ describe('mimo provider', () => {
   });
 
   it('sends only the country by default and never a hardcoded city', async () => {
-    let seen: any;
-    const fetchImpl: FetchLike = async (_url, init) => {
-      seen = JSON.parse(init!.body as string);
-      return jsonResponse({ choices: [{ message: { content: '', annotations: [] } }] });
-    };
+    const { fetchImpl, lastBody } = captureBody();
     await createMimoProvider(cfg).search({ query: 'q', count: 1 }, ctx(fetchImpl));
-    expect(seen.tools[0].user_location).toEqual({ type: 'approximate', country: 'China' });
+    expect(lastBody().tools[0].user_location).toEqual({ type: 'approximate', country: 'China' });
   });
 
   it('honours configurable location, maxKeyword and forceSearch', async () => {
-    let seen: any;
-    const fetchImpl: FetchLike = async (_url, init) => {
-      seen = JSON.parse(init!.body as string);
-      return jsonResponse({ choices: [{ message: { content: '', annotations: [] } }] });
-    };
+    const { fetchImpl, lastBody } = captureBody();
     await createMimoProvider({
       ...cfg,
       options: { location: { country: 'US', region: 'CA', city: 'SF' }, maxKeyword: 5, forceSearch: false },
     }).search({ query: 'q', count: 1 }, ctx(fetchImpl));
-    expect(seen.tools[0].user_location).toEqual({
+    expect(lastBody().tools[0].user_location).toEqual({
       type: 'approximate', country: 'US', region: 'CA', city: 'SF',
     });
-    expect(seen.tools[0].max_keyword).toBe(5);
-    expect(seen.tools[0].force_search).toBe(false);
+    expect(lastBody().tools[0].max_keyword).toBe(5);
+    expect(lastBody().tools[0].force_search).toBe(false);
   });
 
   it('falls back to neutral defaults when location options are malformed', async () => {
-    let seen: any;
-    const fetchImpl: FetchLike = async (_url, init) => {
-      seen = JSON.parse(init!.body as string);
-      return jsonResponse({ choices: [{ message: { content: '', annotations: [] } }] });
-    };
+    const { fetchImpl, lastBody } = captureBody();
     await createMimoProvider({ ...cfg, options: { location: 'not-an-object' } }).search(
       { query: 'q', count: 1 },
       ctx(fetchImpl),
     );
-    expect(seen.tools[0].user_location).toEqual({ type: 'approximate', country: 'China' });
+    expect(lastBody().tools[0].user_location).toEqual({ type: 'approximate', country: 'China' });
   });
 
   it('exposes the configured per-provider timeout budget', () => {
