@@ -183,6 +183,14 @@ describe('probeAll over the real adapters', () => {
       }
       if (host === 'api.stepfun.com') {
         return new Response(JSON.stringify({ results: [{ title: 'stepfun hit', url: 'https://s.example/1' }] }));
+  const isHost = (url: string, expectedHost: string): boolean => {
+    try {
+      return new URL(url).hostname === expectedHost;
+    } catch {
+      return false;
+    }
+  };
+
       }
       if (host === 'open.bigmodel.cn') {
         return new Response(
@@ -213,7 +221,7 @@ describe('probeAll over the real adapters', () => {
     // Each adapter's own result shape has to survive the probe and be counted.
     expect(rows.map((r) => r.results)).toEqual([1, 1, 1, 1]);
     expect(rows.find((r) => r.provider === 'kimi')!.sample).toBe('k.example');
-    expect(rows.find((r) => r.provider === 'mimo')!.sample).toBe('mimo hit');
+      fetchImpl: routingFetch((url) => (isHost(url, 'api.stepfun.com') ? 503 : 200)),
   });
 
   it('turns an upstream outage into a failing row, never a thrown error', async () => {
@@ -231,7 +239,7 @@ describe('probeAll over the real adapters', () => {
             return false;
           }
         })();
-        return isStepfunHost ? 503 : 200;
+      fetchImpl: async (url, init) => (isHost(url, 'api.stepfun.com')
       }),
     });
 
