@@ -64,11 +64,23 @@ export default [
       // only after the previous one settles. Parallelizing with Promise.all
       // would change the traffic contract, and for..of over an array is the
       // readable shape for that loop. Upstream's ban exists for
-      // regenerator-runtime cost, which does not apply on Node >= 18.
-      'no-restricted-syntax': ['error', {
-        selector: 'ForInStatement',
-        message: 'for..in loops iterate over the entire prototype chain, which is never what you want. Use Object.{keys,values,entries}, and iterate over the resulting array.',
-      }],
+      // regenerator-runtime cost, which does not apply on Node >= 18. The
+      // other upstream selectors (ForIn, labeled statements, `with`) stay.
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'ForInStatement',
+          message: 'for..in loops iterate over the entire prototype chain, which is never what you want. Use Object.{keys,values,entries}, and iterate over the resulting array.',
+        },
+        {
+          selector: 'LabeledStatement',
+          message: 'Labels are a form of GOTO; using them makes code confusing and hard to maintain and understand.',
+        },
+        {
+          selector: 'WithStatement',
+          message: '`with` is disallowed in strict mode because it makes code impossible to predict and optimize.',
+        },
+      ],
       'no-await-in-loop': 'off',
       // Parser, dotenv and provider loops use `continue` to skip malformed
       // entries; inverting each site into nested ifs deepens nesting in the
@@ -81,8 +93,9 @@ export default [
       // print. Stray debug output is caught in review, not by this rule.
       'no-console': 'off',
       // `_meta` is the MCP protocol's own wire-format field name; renaming it
-      // would break the protocol surface.
-      'no-underscore-dangle': ['error', { allow: ['_meta'] }],
+      // would break the protocol surface. The other upstream options
+      // (enforceInMethodNames) are kept at their stock values.
+      'no-underscore-dangle': ['error', { allow: ['_meta'], enforceInMethodNames: true }],
       // Two deliberate colocated class families: the error taxonomy
       // (src/errors.ts) and the structured-failure classes next to the
       // orchestrator that throws them (src/orchestrator.ts). Each module is the
