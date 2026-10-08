@@ -74,6 +74,26 @@ jobs:
       # e2e tests in test/e2e/ exercise dist/, so build must precede tests
       - run: npm run test:coverage
 
+  # Style gate: Airbnb ESLint config over src/, test/, scripts/ and the root
+  # config files. Single job (lint result does not vary by Node version the
+  # way runtime behavior can); the devDependency toolchain requires Node >= 18.18,
+  # so it runs on the newest matrix version rather than the floor.
+  lint:
+    name: Lint (Airbnb)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The install and lint steps execute PR code; a persisted checkout
+          # token would be readable there.
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+
   # This workflow has no path filtering (single-package repo, every job runs
   # on every push/PR), so edits to dependency-policy.json or the checker
   # itself always re-trigger this job.
@@ -94,7 +114,7 @@ jobs:
     # Summary check: always runs, passes when every job that ran succeeded
     # (skipped is fine) and fails on any failure or cancellation, so a
     # cancelled run can never masquerade as green.
-    needs: [changes, build-and-test, deps-policy]
+    needs: [changes, build-and-test, deps-policy, lint]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -103,9 +123,10 @@ jobs:
           CHANGES: ${{ needs.changes.result }}
           BUILD_AND_TEST: ${{ needs.build-and-test.result }}
           DEPS_POLICY: ${{ needs.deps-policy.result }}
+          LINT: ${{ needs.lint.result }}
         run: |
           set -euo pipefail
-          results="changes=$CHANGES build_and_test=$BUILD_AND_TEST deps_policy=$DEPS_POLICY"
+          results="changes=$CHANGES build_and_test=$BUILD_AND_TEST deps_policy=$DEPS_POLICY lint=$LINT"
           echo "$results"
           if grep -qE '=(failure|cancelled)' <<< "$results"; then
             echo "::error::one or more gates failed or were cancelled"
