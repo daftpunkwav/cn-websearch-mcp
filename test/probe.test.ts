@@ -143,6 +143,18 @@ describe('probeAll over the real adapters', () => {
   };
 
   /**
+   * Exact host of a URL, or '' when unparseable: dispatching on substrings
+   * would let https://evil.example/api.stepfun.com pose as a trusted channel.
+   */
+  function hostOf(url: string): string {
+    try {
+      return new URL(url).host;
+    } catch {
+      return '';
+    }
+  }
+
+  /**
    * One frozen success body per channel host, dispatching on the host so an
    * unrouted URL is a loud routing bug rather than a silent empty answer.
    * `status` lets a test fail exactly one slot.
@@ -152,19 +164,10 @@ describe('probeAll over the real adapters', () => {
     return async (url) => {
       const code = status(url);
       if (code >= 400) return new Response('{"error":{"message":"synthetic failure"}}', { status: code });
-
-      let host = '';
-      let pathname = '';
-      try {
-        const parsed = new URL(url);
-        host = parsed.host;
-        pathname = parsed.pathname;
-      } catch {
-        // Keep defaults; unknown/invalid URLs should fall through to fixture miss.
-      }
+      const host = hostOf(url);
 
       if (host === 'api.moonshot.cn') {
-        if (pathname.includes('/formulas/')) {
+        if (url.includes('/formulas/')) {
           return new Response(JSON.stringify({ context: { encrypted_output: 'E', references: ['https://k.example/1'] } }));
         }
         // Kimi asks for a tool first and gets the answer on the next chat turn.
@@ -174,7 +177,7 @@ describe('probeAll over the real adapters', () => {
           : { role: 'assistant', content: 'kimi answer' };
         return new Response(JSON.stringify({ choices: [{ message }] }));
       }
-      if (host === 'xiaomimimo') {
+      if (host === 'token-plan-cn.xiaomimimo.com') {
         return new Response(
           JSON.stringify({
             choices: [{ message: { content: 'mimo answer', annotations: [{ type: 'url_citation', title: 'mimo hit', url: 'https://m.example/1' }] } }],
@@ -183,14 +186,6 @@ describe('probeAll over the real adapters', () => {
       }
       if (host === 'api.stepfun.com') {
         return new Response(JSON.stringify({ results: [{ title: 'stepfun hit', url: 'https://s.example/1' }] }));
-  const isHost = (url: string, expectedHost: string): boolean => {
-    try {
-      return new URL(url).hostname === expectedHost;
-    } catch {
-      return false;
-    }
-  };
-
       }
       if (host === 'open.bigmodel.cn') {
         return new Response(
@@ -221,7 +216,7 @@ describe('probeAll over the real adapters', () => {
     // Each adapter's own result shape has to survive the probe and be counted.
     expect(rows.map((r) => r.results)).toEqual([1, 1, 1, 1]);
     expect(rows.find((r) => r.provider === 'kimi')!.sample).toBe('k.example');
-      fetchImpl: routingFetch((url) => (isHost(url, 'api.stepfun.com') ? 503 : 200)),
+    expect(rows.find((r) => r.provider === 'mimo')!.sample).toBe('mimo hit');
   });
 
   it('turns an upstream outage into a failing row, never a thrown error', async () => {
@@ -231,16 +226,7 @@ describe('probeAll over the real adapters', () => {
     const runtime = createRuntime({ env: SYNTHETIC_ENV, warn: () => {}, fileExists: () => false });
     const rows = await probeAll(runtime.chain, { query: 'synthetic probe', count: 3 }, {
       timeoutMs: 1_000,
-      fetchImpl: routingFetch((url) => {
-        const isStepfunHost = (() => {
-          try {
-            return new URL(url).hostname === 'api.stepfun.com';
-          } catch {
-            return false;
-          }
-        })();
-      fetchImpl: async (url, init) => (isHost(url, 'api.stepfun.com')
-      }),
+      fetchImpl: routingFetch((url) => (hostOf(url) === 'api.stepfun.com' ? 503 : 200)),
     });
 
     const stepfun = rows.find((r) => r.provider === 'stepfun')!;
@@ -258,7 +244,7 @@ describe('probeAll over the real adapters', () => {
     const inner = routingFetch();
     const rows = await probeAll(runtime.chain, { query: 'synthetic probe', count: 3 }, {
       timeoutMs: 1_000,
-      fetchImpl: async (url, init) => (url.includes('api.stepfun.com')
+      fetchImpl: async (url, init) => (hostOf(url) === 'api.stepfun.com'
         ? new Response(JSON.stringify({ hits: [] }))
         : inner(url, init)),
     });
