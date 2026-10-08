@@ -91,7 +91,10 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      # Lint needs no lifecycle scripts: the toolchain's native pieces
+      # (unrs-resolver, esbuild) ship as prebuilt optionalDependencies, so
+      # installation never executes third-party postinstall code.
+      - run: npm ci --ignore-scripts
       - run: npm run lint
 
   # This workflow has no path filtering (single-package repo, every job runs
