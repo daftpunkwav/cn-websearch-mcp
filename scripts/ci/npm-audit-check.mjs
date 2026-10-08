@@ -95,10 +95,11 @@ for (const [name, v] of Object.entries(vulns)) {
   for (const id of ghsaIds) seenIds.add(id);
   seenPackages.add(name);
   // Fail closed: a finding blocks unless its advisory ids are all allowlisted
-  // or the package itself carries an explicit acceptance entry. Findings
-  // without an attributable advisory id can only be accepted by package.
+  // or the package carries an explicit acceptance entry. Package entries cover
+  // ONLY findings without advisory ids — a package entry must never silently
+  // accept a future, unrelated advisory on the same package.
   const unlisted = ghsaIds.filter((id) => !allowedIds.has(id));
-  const accepted = allowedPackages.has(name)
+  const accepted = (ghsaIds.length === 0 && allowedPackages.has(name))
     || (ghsaIds.length > 0 && unlisted.length === 0);
   if (!accepted) {
     blocking.push({
