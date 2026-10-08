@@ -22,9 +22,9 @@ import { probeAll, type ProbeRow } from '../src/probe.js';
 // An empty SMOKE_QUERY still means "use the default": a smoke run must exercise a real query.
 const QUERY = process.env.SMOKE_QUERY || '最近一周国内发布的大模型';
 
-/** Escapes vertical bars in table cells so the markdown table stays intact. */
+/** Escapes backslashes and vertical bars so markdown table cells stay intact. */
 function cell(s: string): string {
-  return s.replace(/\|/g, '\\|');
+  return s.replace(/\\/g, '\\\\').replace(/\|/g, '\\|');
 }
 
 async function main(): Promise<void> {
