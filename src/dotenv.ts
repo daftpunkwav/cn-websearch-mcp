@@ -15,10 +15,10 @@
 // The list of names it may export is owned by config.ts (gatewayEnvKeys), which
 // is also the module that decides what "a gateway setting" means.
 
-import { readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
-import { defaultWarn, gatewayEnvKeys, PROVIDER_ENV_SUFFIXES } from "./config.js";
-import { stripBom } from "./normalize.js";
+import { readFileSync, statSync } from 'node:fs';
+import { join } from 'node:path';
+import { defaultWarn, gatewayEnvKeys, PROVIDER_ENV_SUFFIXES } from './config.js';
+import { stripBom } from './normalize.js';
 
 /**
  * Largest `.env` this loader will read, checked before the read.
@@ -62,7 +62,7 @@ const GATEWAY_KEYS = gatewayEnvKeys();
  * SEARCH_ENGINE is spelled out because it is a legacy per-provider knob
  * (ZHIPU_SEARCH_ENGINE) rather than one of the uniform slot suffixes.
  */
-const GATEWAY_LIKE = new RegExp(`(?:^WEBSEARCH_|_(?:${PROVIDER_ENV_SUFFIXES.join("|")}|SEARCH_ENGINE)$)`);
+const GATEWAY_LIKE = new RegExp(`(?:^WEBSEARCH_|_(?:${PROVIDER_ENV_SUFFIXES.join('|')}|SEARCH_ENGINE)$)`);
 
 /**
  * Load KEY=VALUE pairs from the .env file in the given directory (cwd by
@@ -80,12 +80,12 @@ const GATEWAY_LIKE = new RegExp(`(?:^WEBSEARCH_|_(?:${PROVIDER_ENV_SUFFIXES.join
  * warning for the same reason: dropping it silently would look like a gateway
  * that had no keys configured.
  */
-export function loadDotEnv(
+export default function loadDotEnv(
   dir: string = process.cwd(),
   into: NodeJS.ProcessEnv = process.env,
   warn: (message: string) => void = defaultWarn,
 ): void {
-  const path = join(dir, ".env");
+  const path = join(dir, '.env');
   let size: number;
   try {
     size = statSync(path).size;
@@ -101,15 +101,15 @@ export function loadDotEnv(
   }
   let raw: string;
   try {
-    raw = readFileSync(path, "utf8");
+    raw = readFileSync(path, 'utf8');
   } catch {
     return;
   }
   raw = stripBom(raw);
   for (const line of raw.split(/\r?\n/)) {
     const t = line.trim();
-    if (t === "" || t.startsWith("#")) continue;
-    const eq = t.indexOf("=");
+    if (t === '' || t.startsWith('#')) continue;
+    const eq = t.indexOf('=');
     if (eq <= 0) continue;
     const key = t.slice(0, eq).trim();
     let value = t.slice(eq + 1).trim();
@@ -120,6 +120,9 @@ export function loadDotEnv(
       if (GATEWAY_LIKE.test(key)) warn(`ignoring unknown setting "${key}" in .env`);
       continue;
     }
+    // Writing into the caller-supplied record is this function's contract:
+    // `into` is the export target (normally process.env), not an owned object.
+    // eslint-disable-next-line no-param-reassign -- documented output parameter
     if (!Object.hasOwn(into, key)) into[key] = value;
   }
 }

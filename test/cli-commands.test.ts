@@ -1,22 +1,27 @@
 /**
  * @file test/cli-commands
- * @description CLI one-shot command tests: output, exit codes and error paths of search/status/test.
+ * @description CLI one-shot command tests: output, exit codes and error paths
+ * of search/status/test.
  */
 
-import { describe, expect, it, vi } from "vitest";
-import { PassThrough } from "node:stream";
-import { cmdSearch, cmdStatus, cmdTest, pickProviders, writeLine } from "../src/cli/commands.js";
-import { createRuntime } from "../src/runtime.js";
-import { loadConfig } from "../src/config.js";
-import { AllProvidersFailedError, CallCancelledError, NoProviderConfiguredError } from "../src/orchestrator.js";
-import { HttpError } from "../src/errors.js";
-import type { CliArgs } from "../src/cli/args.js";
-import type { CliDeps } from "../src/cli/commands.js";
-import type { NormalizedSearchResult, SearchProvider, SearchRequest } from "../src/types.js";
+import {
+  describe, expect, it, vi,
+} from 'vitest';
+import { PassThrough } from 'node:stream';
+import {
+  cmdSearch, cmdStatus, cmdTest, pickProviders, writeLine,
+} from '../src/cli/commands.js';
+import { createRuntime } from '../src/runtime.js';
+import { loadConfig } from '../src/config.js';
+import { AllProvidersFailedError, CallCancelledError, NoProviderConfiguredError } from '../src/orchestrator.js';
+import { HttpError } from '../src/errors.js';
+import type { CliArgs } from '../src/cli/args.js';
+import type { CliDeps } from '../src/cli/commands.js';
+import type { NormalizedSearchResult, SearchProvider, SearchRequest } from '../src/types.js';
 
 const searchArgs = (over: Partial<CliArgs> = {}): CliArgs => ({
-  command: "search",
-  query: "q",
+  command: 'search',
+  query: 'q',
   json: false,
   ...over,
 });
@@ -24,12 +29,12 @@ const searchArgs = (over: Partial<CliArgs> = {}): CliArgs => ({
 function makeDeps(
   over: {
     env?: Record<string, string>;
-    search?: CliDeps["search"];
-    probe?: CliDeps["probe"];
+    search?: CliDeps['search'];
+    probe?: CliDeps['probe'];
   } = {},
 ): { deps: CliDeps; out: string[]; err: string[] } {
   const runtime = createRuntime({
-    env: over.env ?? { STEPFUN_API_KEY: "s", KIMI_API_KEY: "k" },
+    env: over.env ?? { STEPFUN_API_KEY: 's', KIMI_API_KEY: 'k' },
     warn: () => {},
     configPath: undefined,
   });
@@ -37,88 +42,96 @@ function makeDeps(
   const err: string[] = [];
   const stream = (sink: string[]): NodeJS.WritableStream => {
     const s = new PassThrough();
-    s.on("data", (c) => sink.push(c.toString()));
+    s.on('data', (c) => sink.push(c.toString()));
     return s;
   };
   return {
-    deps: { runtime, output: stream(out), error: stream(err), search: over.search, probe: over.probe },
+    deps: {
+      runtime, output: stream(out), error: stream(err), search: over.search, probe: over.probe,
+    },
     out,
     err,
   };
 }
 
 const okResult = (provider: string): NormalizedSearchResult => ({
-  results: [{ title: "T", url: "https://a.example", snippet: "S", source: provider }],
-  _meta: { provider, providers: [provider], total_latency_ms: 10, attempts: [{ provider, status: "ok", latency_ms: 9 }] },
+  results: [{
+    title: 'T', url: 'https://a.example', snippet: 'S', source: provider,
+  }],
+  _meta: {
+    provider, providers: [provider], total_latency_ms: 10, attempts: [{ provider, status: 'ok', latency_ms: 9 }],
+  },
 });
 
-describe("pickProviders", () => {
+describe('pickProviders', () => {
   const chain: SearchProvider[] = [
-    { name: "kimi", search: async () => okResult("kimi") },
-    { name: "stepfun", search: async () => okResult("stepfun") },
+    { name: 'kimi', search: async () => okResult('kimi') },
+    { name: 'stepfun', search: async () => okResult('stepfun') },
   ];
 
-  it("defaults to the whole chain", () => {
+  it('defaults to the whole chain', () => {
     const picked = pickProviders(undefined, chain);
     expect(picked.ok && picked.providers).toHaveLength(2);
     expect(pickProviders([], chain)).toMatchObject({ ok: true });
   });
 
-  it("selects a subset in the requested order", () => {
-    const picked = pickProviders(["stepfun", "kimi"], chain);
-    expect(picked.ok && picked.providers.map((p) => p.name)).toEqual(["stepfun", "kimi"]);
+  it('selects a subset in the requested order', () => {
+    const picked = pickProviders(['stepfun', 'kimi'], chain);
+    expect(picked.ok && picked.providers.map((p) => p.name)).toEqual(['stepfun', 'kimi']);
   });
 
-  it("normalizes case and deduplicates names like the MCP tool layer", () => {
-    const picked = pickProviders(["StepFun", "STEPFUN", " kimi "], chain);
-    expect(picked.ok && picked.providers.map((p) => p.name)).toEqual(["stepfun", "kimi"]);
+  it('normalizes case and deduplicates names like the MCP tool layer', () => {
+    const picked = pickProviders(['StepFun', 'STEPFUN', ' kimi '], chain);
+    expect(picked.ok && picked.providers.map((p) => p.name)).toEqual(['stepfun', 'kimi']);
   });
 
-  it("reports unknown and unavailable names", () => {
-    expect(pickProviders(["openai"], chain)).toMatchObject({ ok: false });
-    expect((pickProviders(["openai"], chain) as { error: string }).error).toContain("unknown provider(s): openai");
-    const unavailable = pickProviders(["zhipu"], chain) as { error: string };
-    expect(unavailable.error).toContain("provider(s) unavailable: zhipu");
+  it('reports unknown and unavailable names', () => {
+    expect(pickProviders(['openai'], chain)).toMatchObject({ ok: false });
+    expect((pickProviders(['openai'], chain) as { error: string }).error).toContain('unknown provider(s): openai');
+    const unavailable = pickProviders(['zhipu'], chain) as { error: string };
+    expect(unavailable.error).toContain('provider(s) unavailable: zhipu');
   });
 });
 
-describe("cmdSearch", () => {
-  it("prints formatted results and returns 0", async () => {
-    const { deps, out, err } = makeDeps({ search: async () => okResult("stepfun") });
+describe('cmdSearch', () => {
+  it('prints formatted results and returns 0', async () => {
+    const { deps, out, err } = makeDeps({ search: async () => okResult('stepfun') });
     expect(await cmdSearch(deps, searchArgs())).toBe(0);
-    expect(out.join("")).toContain("answered by: stepfun");
+    expect(out.join('')).toContain('answered by: stepfun');
     expect(err).toEqual([]);
   });
 
-  it("prints raw JSON with --json", async () => {
-    const { deps, out } = makeDeps({ search: async () => okResult("stepfun") });
+  it('prints raw JSON with --json', async () => {
+    const { deps, out } = makeDeps({ search: async () => okResult('stepfun') });
     await cmdSearch(deps, searchArgs({ json: true }));
-    expect(JSON.parse(out.join(""))).toHaveProperty("_meta.provider", "stepfun");
+    expect(JSON.parse(out.join(''))).toHaveProperty('_meta.provider', 'stepfun');
   });
 
-  it("passes CLI overrides to the search function", async () => {
+  it('passes CLI overrides to the search function', async () => {
     let seen: any;
     const { deps } = makeDeps({
       search: async (_req, opts) => {
         seen = opts;
-        return okResult("kimi");
+        return okResult('kimi');
       },
     });
-    await cmdSearch(deps, searchArgs({ strategy: "aggregate", dedupe: false, providers: ["kimi"], count: 3 }));
-    expect(seen).toMatchObject({ strategy: "aggregate", dedupe: false });
-    expect(seen.providers.map((p: SearchProvider) => p.name)).toEqual(["kimi"]);
+    await cmdSearch(deps, searchArgs({
+      strategy: 'aggregate', dedupe: false, providers: ['kimi'], count: 3,
+    }));
+    expect(seen).toMatchObject({ strategy: 'aggregate', dedupe: false });
+    expect(seen.providers.map((p: SearchProvider) => p.name)).toEqual(['kimi']);
   });
 
-  it("applies the same argument bounds as the MCP tool layer", async () => {
+  it('applies the same argument bounds as the MCP tool layer', async () => {
     let seen: SearchRequest | undefined;
     const { deps } = makeDeps({
       search: async (req) => {
         seen = req;
-        return okResult("stepfun");
+        return okResult('stepfun');
       },
     });
     // Same bounds as the tool layer: count clamps to 1-50, query caps at 400.
-    await cmdSearch(deps, searchArgs({ count: 999, query: "  " + "q".repeat(500) + "  " }));
+    await cmdSearch(deps, searchArgs({ count: 999, query: `  ${'q'.repeat(500)}  ` }));
     expect(seen?.count).toBe(50);
     expect(seen?.query).toHaveLength(400);
     await cmdSearch(deps, searchArgs({ count: 0 }));
@@ -127,149 +140,161 @@ describe("cmdSearch", () => {
     expect(seen?.count).toBe(8);
   });
 
-  it("returns 1 and lists every attempt when a cancellation interrupts the search", async () => {
+  it('returns 1 and lists every attempt when a cancellation interrupts the search', async () => {
     const { deps, err } = makeDeps({
       search: async () => {
-        throw new CallCancelledError([{ provider: "kimi", status: "cancelled", latency_ms: 0 }]);
+        throw new CallCancelledError([{ provider: 'kimi', status: 'cancelled', latency_ms: 0 }]);
       },
     });
     expect(await cmdSearch(deps, searchArgs())).toBe(1);
-    expect(err.join("")).toContain("search cancelled by the caller");
-    expect(err.join("")).toContain("- kimi: cancelled (0ms)");
+    expect(err.join('')).toContain('search cancelled by the caller');
+    expect(err.join('')).toContain('- kimi: cancelled (0ms)');
   });
 
-  it("applies the same argument bounds to `test` as to `search`", async () => {
+  it('applies the same argument bounds to `test` as to `search`', async () => {
     const seen: SearchRequest[] = [];
     const { deps } = makeDeps({
       probe: async (providers, req) => {
         seen.push(req);
-        return providers.map((p) => ({ provider: p.name, ok: true, latency_ms: 1, results: 0, sample: "", error: "" }));
+        return providers.map((p) => ({
+          provider: p.name, ok: true, latency_ms: 1, results: 0, sample: '', error: '',
+        }));
       },
     });
-    await cmdTest(deps, { command: "test", query: "q".repeat(500), count: 999, json: false });
+    await cmdTest(deps, {
+      command: 'test', query: 'q'.repeat(500), count: 999, json: false,
+    });
     expect(seen[0]?.query).toHaveLength(400);
     expect(seen[0]?.count).toBe(50);
   });
 
-  it("falls back to the configured strategy when none is given", async () => {
+  it('falls back to the configured strategy when none is given', async () => {
     let seen: any;
     const { deps } = makeDeps({
       search: async (_req, opts) => {
         seen = opts;
-        return okResult("kimi");
+        return okResult('kimi');
       },
     });
     await cmdSearch(deps, searchArgs());
-    expect(seen.strategy).toBe("fallback");
+    expect(seen.strategy).toBe('fallback');
   });
 
-  it("returns 2 for a missing query and 2 for an unusable provider list", async () => {
+  it('returns 2 for a missing query and 2 for an unusable provider list', async () => {
     const { deps, err } = makeDeps();
-    expect(await cmdSearch(deps, searchArgs({ query: "  " }))).toBe(2);
-    expect(err.join("")).toContain("missing query");
-    expect(await cmdSearch(deps, searchArgs({ providers: ["openai"] }))).toBe(2);
+    expect(await cmdSearch(deps, searchArgs({ query: '  ' }))).toBe(2);
+    expect(err.join('')).toContain('missing query');
+    expect(await cmdSearch(deps, searchArgs({ providers: ['openai'] }))).toBe(2);
   });
 
-  it("returns 1 with a hint when no provider is ready", async () => {
+  it('returns 1 with a hint when no provider is ready', async () => {
     const { deps, err } = makeDeps({ env: {} });
     expect(await cmdSearch(deps, searchArgs())).toBe(1);
-    expect(err.join("")).toContain("no provider is ready");
+    expect(err.join('')).toContain('no provider is ready');
   });
 
-  it("returns 1 and lists every attempt when all providers fail", async () => {
+  it('returns 1 and lists every attempt when all providers fail', async () => {
     const { deps, err } = makeDeps({
       search: async () => {
         throw new AllProvidersFailedError([
-          { provider: "kimi", status: "transient_error", latency_ms: 3, error: "HTTP 429" },
+          {
+            provider: 'kimi', status: 'transient_error', latency_ms: 3, error: 'HTTP 429',
+          },
         ]);
       },
     });
     expect(await cmdSearch(deps, searchArgs())).toBe(1);
-    expect(err.join("")).toContain("all configured providers failed");
-    expect(err.join("")).toContain("- kimi: transient_error (3ms) HTTP 429");
+    expect(err.join('')).toContain('all configured providers failed');
+    expect(err.join('')).toContain('- kimi: transient_error (3ms) HTTP 429');
   });
 
-  it("returns 1 for NoProviderConfiguredError and for unexpected failures", async () => {
+  it('returns 1 for NoProviderConfiguredError and for unexpected failures', async () => {
     const noProvider = makeDeps({
       search: async () => {
         throw new NoProviderConfiguredError();
       },
     });
     expect(await cmdSearch(noProvider.deps, searchArgs())).toBe(1);
-    expect(noProvider.err.join("")).toContain("no provider is configured");
+    expect(noProvider.err.join('')).toContain('no provider is configured');
 
     const boom = makeDeps({
       search: async () => {
-        throw new Error("boom");
+        throw new Error('boom');
       },
     });
     expect(await cmdSearch(boom.deps, searchArgs())).toBe(1);
-    expect(boom.err.join("")).toContain("unexpected failure: Error: boom");
+    expect(boom.err.join('')).toContain('unexpected failure: Error: boom');
   });
 
-  it("stringifies non-Error failures", async () => {
+  it('stringifies non-Error failures', async () => {
     const { deps, err } = makeDeps({
       search: async () => {
-        throw "string failure";
+        // Deliberately rejects with a non-Error (cast to satisfy the throw
+        // rule) to exercise the stringification path in the CLI.
+        throw 'string failure' as unknown as Error;
       },
     });
     expect(await cmdSearch(deps, searchArgs())).toBe(1);
-    expect(err.join("")).toContain("string failure");
+    expect(err.join('')).toContain('string failure');
   });
 });
 
-describe("cmdStatus", () => {
-  it("prints the human-readable status", async () => {
+describe('cmdStatus', () => {
+  it('prints the human-readable status', async () => {
     const { deps, out } = makeDeps();
-    expect(await cmdStatus(deps, { command: "status", query: "", json: false })).toBe(0);
-    expect(out.join("")).toContain("in-chain");
+    expect(await cmdStatus(deps, { command: 'status', query: '', json: false })).toBe(0);
+    expect(out.join('')).toContain('in-chain');
   });
 
-  it("prints redacted JSON with --json and leaks no key", async () => {
-    const { deps, out } = makeDeps({ env: { KIMI_API_KEY: "very-secret" } });
-    await cmdStatus(deps, { command: "status", query: "", json: true });
-    const text = out.join("");
-    expect(text).not.toContain("very-secret");
-    expect(JSON.parse(text).providers.kimi.apiKey).toBe("(set)");
+  it('prints redacted JSON with --json and leaks no key', async () => {
+    const { deps, out } = makeDeps({ env: { KIMI_API_KEY: 'very-secret' } });
+    await cmdStatus(deps, { command: 'status', query: '', json: true });
+    const text = out.join('');
+    expect(text).not.toContain('very-secret');
+    expect(JSON.parse(text).providers.kimi.apiKey).toBe('(set)');
   });
 });
 
-describe("cmdTest", () => {
-  it("returns 0 when every probe succeeds", async () => {
+describe('cmdTest', () => {
+  it('returns 0 when every probe succeeds', async () => {
     const { deps, out } = makeDeps({
-      probe: async (providers) =>
-        providers.map((p) => ({ provider: p.name, ok: true, latency_ms: 1, results: 1, sample: "T", error: "" })),
+      probe: async (providers) => providers.map((p) => ({
+        provider: p.name, ok: true, latency_ms: 1, results: 1, sample: 'T', error: '',
+      })),
     });
-    expect(await cmdTest(deps, { command: "test", query: "", json: false })).toBe(0);
-    expect(out.join("")).toContain("provider   status");
+    expect(await cmdTest(deps, { command: 'test', query: '', json: false })).toBe(0);
+    expect(out.join('')).toContain('provider   status');
   });
 
-  it("returns 1 when any probe fails and prints raw JSON when asked", async () => {
+  it('returns 1 when any probe fails and prints raw JSON when asked', async () => {
     const { deps, out } = makeDeps({
-      probe: async (providers) =>
-        providers.map((p, i) => ({
-          provider: p.name,
-          ok: i === 0,
-          latency_ms: 1,
-          results: i === 0 ? 1 : 0,
-          sample: "",
-          error: i === 0 ? "" : "down",
-        })),
+      probe: async (providers) => providers.map((p, i) => ({
+        provider: p.name,
+        ok: i === 0,
+        latency_ms: 1,
+        results: i === 0 ? 1 : 0,
+        sample: '',
+        error: i === 0 ? '' : 'down',
+      })),
     });
-    expect(await cmdTest(deps, { command: "test", query: "", json: true })).toBe(1);
+    expect(await cmdTest(deps, { command: 'test', query: '', json: true })).toBe(1);
     // The rows must survive serialization verbatim, not just be *some* JSON:
     // the failing slot's diagnosis is the only thing the table would have
     // carried, so a dropped or renamed field loses it.
-    const rows = JSON.parse(out.join(""));
+    const rows = JSON.parse(out.join(''));
     expect(Array.isArray(rows)).toBe(true);
     expect(rows).toHaveLength(2);
-    expect(rows.map((r: { provider: string; ok: boolean; error: string }) => [r.provider, r.ok, r.error])).toEqual([
-      ["kimi", true, ""],
-      ["stepfun", false, "down"],
+    expect(
+      rows.map((r: { provider: string; ok: boolean; error: string }) => [
+        r.provider, r.ok, r.error,
+      ]),
+    ).toEqual([
+      ['kimi', true, ''],
+      ['stepfun', false, 'down'],
     ]);
   });
 
-  it("publishes the documented --json field names for every probe row", async () => {
+  it('publishes the documented --json field names for every probe row', async () => {
     // `test --json` is consumed by scripts, so the row's key set is an output
     // contract. `results` is a count and `sample` the first result's title —
     // names the JSDoc explains but the wire form cannot. Driven through the
@@ -280,8 +305,8 @@ describe("cmdTest", () => {
       name,
       search: async () => ({
         results: [
-          { title: "First title", url: `https://${name}.example/1`, snippet: "" },
-          { title: "Second", url: `https://${name}.example/2`, snippet: "" },
+          { title: 'First title', url: `https://${name}.example/1`, snippet: '' },
+          { title: 'Second', url: `https://${name}.example/2`, snippet: '' },
         ],
         _meta: { provider: name, total_latency_ms: 1, attempts: [] },
       }),
@@ -289,91 +314,97 @@ describe("cmdTest", () => {
     const out: string[] = [];
     const stream = (sink: string[]): NodeJS.WritableStream => {
       const s = new PassThrough();
-      s.on("data", (c) => sink.push(c.toString()));
+      s.on('data', (c) => sink.push(c.toString()));
       return s;
     };
-    const providers = [hits("stepfun")];
+    const providers = [hits('stepfun')];
     const deps: CliDeps = {
       runtime: {
-        config: loadConfig({ env: { STEPFUN_API_KEY: "s" }, warn: () => {} }),
+        config: loadConfig({ env: { STEPFUN_API_KEY: 's' }, warn: () => {} }),
         providers,
         chain: providers,
       },
       output: stream(out),
       error: stream([]),
     };
-    await cmdTest(deps, { command: "test", query: "", json: true });
-    const [row] = JSON.parse(out.join(""));
+    await cmdTest(deps, { command: 'test', query: '', json: true });
+    const [row] = JSON.parse(out.join(''));
     // The key set is pinned exactly, so a rename has to be made here on
     // purpose instead of silently breaking every script parsing this output.
-    expect(Object.keys(row).sort()).toEqual(["error", "latency_ms", "ok", "provider", "results", "sample"]);
+    expect(Object.keys(row).sort()).toEqual(['error', 'latency_ms', 'ok', 'provider', 'results', 'sample']);
     expect(row).toMatchObject({
-      provider: "stepfun",
+      provider: 'stepfun',
       ok: true,
       // A count, not the results themselves.
       results: 2,
       // The first result's title.
-      sample: "First title",
-      error: "",
+      sample: 'First title',
+      error: '',
     });
   });
 
-  it("uses the provided query, else the neutral default probe query", async () => {
+  it('uses the provided query, else the neutral default probe query', async () => {
     const seen: string[] = [];
     const { deps } = makeDeps({
       probe: async (providers, req) => {
         seen.push(req.query);
-        return providers.map((p) => ({ provider: p.name, ok: true, latency_ms: 1, results: 0, sample: "", error: "" }));
+        return providers.map((p) => ({
+          provider: p.name, ok: true, latency_ms: 1, results: 0, sample: '', error: '',
+        }));
       },
     });
-    await cmdTest(deps, { command: "test", query: "custom", json: false });
-    await cmdTest(deps, { command: "test", query: "", json: false });
-    expect(seen).toEqual(["custom", "今日新闻"]);
+    await cmdTest(deps, { command: 'test', query: 'custom', json: false });
+    await cmdTest(deps, { command: 'test', query: '', json: false });
+    expect(seen).toEqual(['custom', '今日新闻']);
   });
 
-  it("falls back to the default probe query for a whitespace-only one", async () => {
+  it('falls back to the default probe query for a whitespace-only one', async () => {
     // A blank query used to be sent upstream as-is: a real request that spends
     // the caller's quota on a query that is only spaces.
     const seen: string[] = [];
     const { deps } = makeDeps({
       probe: async (providers, req) => {
         seen.push(req.query);
-        return providers.map((p) => ({ provider: p.name, ok: true, latency_ms: 1, results: 0, sample: "", error: "" }));
+        return providers.map((p) => ({
+          provider: p.name, ok: true, latency_ms: 1, results: 0, sample: '', error: '',
+        }));
       },
     });
-    await cmdTest(deps, { command: "test", query: "   ", json: false });
-    await cmdTest(deps, { command: "test", query: "  padded  ", json: false });
-    expect(seen).toEqual(["今日新闻", "padded"]);
+    await cmdTest(deps, { command: 'test', query: '   ', json: false });
+    await cmdTest(deps, { command: 'test', query: '  padded  ', json: false });
+    expect(seen).toEqual(['今日新闻', 'padded']);
   });
 
-  it("returns 2 for an unusable provider list and 1 when nothing is ready", async () => {
+  it('returns 2 for an unusable provider list and 1 when nothing is ready', async () => {
     const { deps, err } = makeDeps();
-    expect(await cmdTest(deps, { command: "test", query: "", providers: ["openai"], json: false })).toBe(2);
+    expect(await cmdTest(deps, {
+      command: 'test', query: '', providers: ['openai'], json: false,
+    })).toBe(2);
     const empty = makeDeps({ env: {} });
-    expect(await cmdTest(empty.deps, { command: "test", query: "", json: false })).toBe(1);
-    expect(empty.err.join("")).toContain("no provider is ready");
-    expect(err.join("")).toContain("unknown provider");
+    expect(await cmdTest(empty.deps, { command: 'test', query: '', json: false })).toBe(1);
+    expect(empty.err.join('')).toContain('no provider is ready');
+    expect(err.join('')).toContain('unknown provider');
   });
 });
 
-describe("default (non-injected) code paths", () => {
+describe('default (non-injected) code paths', () => {
   // In production neither search nor probe is injected; use a non-network fake runtime here
   // to cover the default implementations (deps.search ?? runSearch / deps.probe ?? probeAll).
   const fake = (name: string): SearchProvider => ({
     name,
     search: async () => ({
-      results: [{ title: `${name} hit`, url: `https://${name}.example/1`, snippet: "s" }],
-      _meta: { provider: name, total_latency_ms: 1, attempts: [{ provider: name, status: "ok", latency_ms: 1 }] },
+      results: [{ title: `${name} hit`, url: `https://${name}.example/1`, snippet: 's' }],
+      _meta: { provider: name, total_latency_ms: 1, attempts: [{ provider: name, status: 'ok', latency_ms: 1 }] },
     }),
   });
 
   const sink = (target: string[]): NodeJS.WritableStream => {
     const s = new PassThrough();
-    s.on("data", (c) => target.push(c.toString()));
+    s.on('data', (c) => target.push(c.toString()));
     return s;
   };
 
-  function ioFor(providers: SearchProvider[] = [fake("stepfun")]): {
+  function ioFor(providers: SearchProvider[] = [fake('stepfun')]): {
     deps: CliDeps;
     out: () => string;
     err: () => string;
@@ -381,63 +412,63 @@ describe("default (non-injected) code paths", () => {
     const out: string[] = [];
     const err: string[] = [];
     const runtime = {
-      config: loadConfig({ env: { STEPFUN_API_KEY: "s" }, warn: () => {} }),
+      config: loadConfig({ env: { STEPFUN_API_KEY: 's' }, warn: () => {} }),
       providers,
       chain: providers,
     };
-    return { deps: { runtime, output: sink(out), error: sink(err) }, out: () => out.join(""), err: () => err.join("") };
+    return { deps: { runtime, output: sink(out), error: sink(err) }, out: () => out.join(''), err: () => err.join('') };
   }
 
-  it("searches through the real orchestrator when no search function is injected", async () => {
+  it('searches through the real orchestrator when no search function is injected', async () => {
     const { deps, out } = ioFor();
     expect(await cmdSearch(deps, searchArgs())).toBe(0);
-    expect(out()).toContain("answered by: stepfun");
+    expect(out()).toContain('answered by: stepfun');
   });
 
-  it("probes through the real probeAll when no probe function is injected", async () => {
+  it('probes through the real probeAll when no probe function is injected', async () => {
     const { deps, out } = ioFor();
-    expect(await cmdTest(deps, { command: "test", query: "q", json: false })).toBe(0);
-    expect(out()).toContain("stepfun hit");
+    expect(await cmdTest(deps, { command: 'test', query: 'q', json: false })).toBe(0);
+    expect(out()).toContain('stepfun hit');
   });
 
-  it("still formats an all-failed search when using the real orchestrator", async () => {
+  it('still formats an all-failed search when using the real orchestrator', async () => {
     const broken: SearchProvider = {
-      name: "stepfun",
+      name: 'stepfun',
       search: async () => {
-        throw new HttpError(401, "HTTP 401: bad key");
+        throw new HttpError(401, 'HTTP 401: bad key');
       },
     };
     const { deps, err } = ioFor([broken]);
     expect(await cmdSearch(deps, searchArgs())).toBe(1);
-    expect(err()).toContain("all configured providers failed");
+    expect(err()).toContain('all configured providers failed');
   });
 });
 
-describe("writeLine", () => {
+describe('writeLine', () => {
   /** Capture everything a single writeLine call puts on the stream. */
   function written(text: string): string {
     const out: string[] = [];
     const s = new PassThrough();
-    s.on("data", (c) => out.push(c.toString()));
+    s.on('data', (c) => out.push(c.toString()));
     writeLine(s, text);
-    return out.join("");
+    return out.join('');
   }
 
-  it("terminates a line exactly once, whatever the caller passed", () => {
+  it('terminates a line exactly once, whatever the caller passed', () => {
     // Every CLI module prints through this one helper precisely so a message
     // is never double-spaced; a caller that already ended its text with a
     // newline must not get a second one.
-    expect(written("hello")).toBe("hello\n");
-    expect(written("hello\n")).toBe("hello\n");
+    expect(written('hello')).toBe('hello\n');
+    expect(written('hello\n')).toBe('hello\n');
     // A blank line is still terminated, so output cannot run together.
-    expect(written("")).toBe("\n");
+    expect(written('')).toBe('\n');
   });
 });
 
-describe("CliDeps contract", () => {
-  it("does not write anything to the real process streams", async () => {
-    const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
-    const { deps } = makeDeps({ search: async () => okResult("stepfun") });
+describe('CliDeps contract', () => {
+  it('does not write anything to the real process streams', async () => {
+    const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    const { deps } = makeDeps({ search: async () => okResult('stepfun') });
     await cmdSearch(deps, searchArgs());
     expect(stdout).not.toHaveBeenCalled();
     stdout.mockRestore();

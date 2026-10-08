@@ -13,9 +13,11 @@
 // abort support, plus error classification. Credentials never reach logs or
 // error messages.
 
-import { HttpError, NetworkError, ParseError, redactForMessage, TimeoutError } from "./errors.js";
-import { stripBom } from "./normalize.js";
-import type { FetchLike } from "./types.js";
+import {
+  HttpError, NetworkError, ParseError, redactForMessage, TimeoutError,
+} from './errors.js';
+import { stripBom } from './normalize.js';
+import type { FetchLike } from './types.js';
 
 /**
  * Hard cap on a single response body. Upstream payloads are small JSON
@@ -55,107 +57,32 @@ export interface HttpResponse {
  * permits has no such method. This is what makes the whole declared range work,
  * not a workaround for a version that already has it.
  */
-function combinedSignal(timeoutMs: number, external?: AbortSignal): { signal: AbortSignal; cancel: () => void } {
+function combinedSignal(
+  timeoutMs: number,
+  external?: AbortSignal,
+): { signal: AbortSignal; cancel: () => void } {
   const controller = new AbortController();
-  const timer = setTimeout(() => { controller.abort(new TimeoutError()); }, timeoutMs);
-  const onAbort = () => { controller.abort(external?.reason); };
+  const timer = setTimeout(() => {
+    controller.abort(new TimeoutError());
+  }, timeoutMs);
+  const onAbort = () => {
+    controller.abort(external?.reason);
+  };
   if (external) {
     if (external.aborted) onAbort();
-    else external.addEventListener("abort", onAbort, { once: true });
+    else external.addEventListener('abort', onAbort, { once: true });
   }
   return {
     signal: controller.signal,
     cancel: () => {
       clearTimeout(timer);
-      external?.removeEventListener("abort", onAbort);
+      external?.removeEventListener('abort', onAbort);
     },
   };
 }
 
-/**
- * Send a JSON POST and read the response. Error semantics:
- * - Timeout (internal timer) → TimeoutError
- * - External abort → the abort reason propagates as-is; non-Error reasons fall back to TimeoutError
- * - A body that finishes reading after the signal aborted → the abort reason, never a late success
- * - Other fetch/body-read failures → NetworkError
- * - A body larger than the internal cap → ParseError (permanent: retrying it would just re-download)
- * - HTTP >= 400 → HttpError (message truncated to ERROR_MESSAGE_MAX chars, guarding against giant bodies)
- * - 2xx with a non-JSON body → json is null; the upper layer's asObject normalizes it to ParseError
- */
-export async function postJson(
-  url: string,
-  body: unknown,
-  headers: Record<string, string>,
-  opts: HttpOptions,
-): Promise<HttpResponse> {
-  const { signal, cancel } = combinedSignal(opts.timeoutMs, opts.signal);
-  let res: Response;
-  try {
-    res = await opts.fetchImpl(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...headers },
-      body: JSON.stringify(body),
-      signal,
-    });
-  } catch (err) {
-    cancel();
-    if (signal.aborted) {
-      throw signal.reason instanceof Error ? signal.reason : new TimeoutError();
-    }
-    throw new NetworkError(err instanceof Error ? err.message : String(err));
-  }
-  const text = await readBody(res, signal, cancel);
-  cancel();
-  // A body that only landed after the budget expired is not a result: without
-  // this check an injected fetch that ignores the signal, or a response that
-  // finishes streaming exactly on the boundary, would be reported as a success.
-  if (signal.aborted) {
-    throw signal.reason instanceof Error ? signal.reason : new TimeoutError();
-  }
-  let json: unknown = null;
-  try {
-    json = JSON.parse(text);
-  } catch {
-    json = null;
-  }
-  if (res.status >= 400) {
-    // Upstream error bodies may echo account/key identifiers; redact before they reach the message.
-    // redactForMessage keeps that order (redact first, truncate second: cutting first leaves the
-    // head of a credential that straddles the boundary in the message, and the fragment is too
-    // short to match any redaction pattern) and bounds how much of the body it looks at, so an
-    // error body at the 8 MB cap cannot make redaction itself fail.
-    throw new HttpError(res.status, `HTTP ${res.status}: ${redactForMessage(text)}`);
-  }
-  return { status: res.status, json };
-}
-
-/**
- * Read the response body as text, refusing to hand back more than
- * MAX_BODY_BYTES.
- *
- * Two paths, one guarantee for the caller: a body over the cap always fails with
- * a ParseError naming the limit, so no consumer can receive an oversized body.
- * What differs is only *when* it is caught — a real stream is counted chunk by
- * chunk and cut off mid-flight, while a Response-shaped object without a body
- * stream (test doubles) can only be measured after `text()` has already buffered
- * it. The second path is therefore best-effort against memory pressure: it fails
- * closed on the size, but it cannot fail early. Node's own fetch always exposes a
- * body stream, so the strong path is the one production traffic takes.
- */
-async function readBody(res: Response, signal: AbortSignal, cancel: () => void): Promise<string> {
-  try {
-    return await readText(res);
-  } catch (err) {
-    cancel();
-    if (signal.aborted) {
-      throw signal.reason instanceof Error ? signal.reason : new TimeoutError();
-    }
-    throw err instanceof ParseError ? err : new NetworkError(err instanceof Error ? err.message : String(err));
-  }
-}
-
 async function readText(res: Response): Promise<string> {
-  const declared = Number(res.headers?.get("content-length") ?? Number.NaN);
+  const declared = Number(res.headers?.get('content-length') ?? Number.NaN);
   if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) {
     // Release the connection: an unconsumed body keeps the socket busy.
     await res.body?.cancel().catch(() => undefined);
@@ -167,7 +94,7 @@ async function readText(res: Response): Promise<string> {
     // result so a body that passed the pre-check on a false promise still
     // fails closed instead of being handed on as a normal response.
     const text = await res.text();
-    if (Buffer.byteLength(text, "utf8") > MAX_BODY_BYTES) {
+    if (Buffer.byteLength(text, 'utf8') > MAX_BODY_BYTES) {
       throw new ParseError(`response body too large: over the ${MAX_BODY_BYTES} byte limit`);
     }
     return text;
@@ -208,5 +135,92 @@ async function readText(res: Response): Promise<string> {
     len += size;
   }
   // Match Response.text(): strip a leading UTF-8 BOM so a BOM'd JSON body still parses.
-  return stripBom(buf.toString("utf8", 0, len));
+  return stripBom(buf.toString('utf8', 0, len));
+}
+
+/**
+ * Read the response body as text, refusing to hand back more than
+ * MAX_BODY_BYTES.
+ *
+ * Two paths, one guarantee for the caller: a body over the cap always fails with
+ * a ParseError naming the limit, so no consumer can receive an oversized body.
+ * What differs is only *when* it is caught — a real stream is counted chunk by
+ * chunk and cut off mid-flight, while a Response-shaped object without a body
+ * stream (test doubles) can only be measured after `text()` has already buffered
+ * it. The second path is therefore best-effort against memory pressure: it fails
+ * closed on the size, but it cannot fail early. Node's own fetch always exposes a
+ * body stream, so the strong path is the one production traffic takes.
+ */
+async function readBody(res: Response, signal: AbortSignal, cancel: () => void): Promise<string> {
+  try {
+    return await readText(res);
+  } catch (err) {
+    cancel();
+    if (signal.aborted) {
+      throw signal.reason instanceof Error ? signal.reason : new TimeoutError();
+    }
+    throw err instanceof ParseError
+      ? err
+      : new NetworkError(err instanceof Error ? err.message : String(err));
+  }
+}
+
+/**
+ * Send a JSON POST and read the response. Error semantics:
+ * - Timeout (internal timer) → TimeoutError
+ * - External abort → the abort reason propagates as-is; non-Error reasons fall back to TimeoutError
+ * - A body that finishes reading after the signal aborted → the abort reason, never a late success
+ * - Other fetch/body-read failures → NetworkError
+ * - A body larger than the internal cap → ParseError (permanent: retrying it
+ *   would just re-download)
+ * - HTTP >= 400 → HttpError (message truncated to ERROR_MESSAGE_MAX chars,
+ *   guarding against giant bodies)
+ * - 2xx with a non-JSON body → json is null; the upper layer's asObject
+ *   normalizes it to ParseError
+ */
+export async function postJson(
+  url: string,
+  body: unknown,
+  headers: Record<string, string>,
+  opts: HttpOptions,
+): Promise<HttpResponse> {
+  const { signal, cancel } = combinedSignal(opts.timeoutMs, opts.signal);
+  let res: Response;
+  try {
+    res = await opts.fetchImpl(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...headers },
+      body: JSON.stringify(body),
+      signal,
+    });
+  } catch (err) {
+    cancel();
+    if (signal.aborted) {
+      throw signal.reason instanceof Error ? signal.reason : new TimeoutError();
+    }
+    throw new NetworkError(err instanceof Error ? err.message : String(err));
+  }
+  const text = await readBody(res, signal, cancel);
+  cancel();
+  // A body that only landed after the budget expired is not a result: without
+  // this check an injected fetch that ignores the signal, or a response that
+  // finishes streaming exactly on the boundary, would be reported as a success.
+  if (signal.aborted) {
+    throw signal.reason instanceof Error ? signal.reason : new TimeoutError();
+  }
+  let json: unknown = null;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    json = null;
+  }
+  if (res.status >= 400) {
+    // Upstream error bodies may echo account/key identifiers; redact before they reach the message.
+    // redactForMessage keeps that order (redact first, truncate second: cutting first leaves the
+    // head of a credential that straddles the boundary in the message, and the fragment is too
+    // short to match any redaction pattern) and bounds how much of the body it looks at, so an
+    // error body at the 8 MB cap cannot make redaction itself fail.
+    throw new HttpError(res.status, `HTTP ${res.status}: ${redactForMessage(text)}`);
+  }
+  return { status: res.status, json };
 }

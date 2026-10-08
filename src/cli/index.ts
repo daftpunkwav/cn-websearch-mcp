@@ -1,6 +1,7 @@
 /**
  * @file cli/index
- * @description CLI dispatch entry point: routes commands to serve or the one-shot commands, and unifies exit codes.
+ * @description CLI dispatch entry point: routes commands to serve or the one-shot commands,
+ *   and unifies exit codes.
  *
  * Responsibilities:
  * - Parse argv and dispatch to serve / search / status / test / repl / help / version
@@ -11,10 +12,12 @@
 // CLI dispatch layer. All dependencies (runtime, output streams, the serve implementation) are
 // injected by the caller, so it can be driven entirely in tests without spawning a subprocess.
 
-import { SERVER_NAME, SERVER_VERSION } from "../server-info.js";
-import { parseArgs, usage } from "./args.js";
-import { cmdSearch, cmdStatus, cmdTest, writeLine, type CliDeps } from "./commands.js";
-import { runRepl } from "./repl.js";
+import { SERVER_NAME, SERVER_VERSION } from '../server-info.js';
+import { parseArgs, usage } from './args.js';
+import {
+  cmdSearch, cmdStatus, cmdTest, writeLine, type CliDeps,
+} from './commands.js';
+import { runRepl } from './repl.js';
 
 /** Exit codes: 0 success, 1 runtime failure, 2 usage error. */
 export const EXIT = { ok: 0, failure: 1, usage: 2 } as const;
@@ -36,30 +39,30 @@ export async function runCli(argv: string[], deps: CliRunDeps): Promise<number> 
     writeLine(deps.error, usage());
     return EXIT.usage;
   }
-  const args = parsed.args;
+  const { args } = parsed;
 
   switch (args.command) {
-    case "help":
+    case 'help':
       writeLine(deps.output, usage());
       return EXIT.ok;
 
-    case "version":
+    case 'version':
       writeLine(deps.output, `${SERVER_NAME} ${SERVER_VERSION}`);
       return EXIT.ok;
 
-    case "status":
-      return await cmdStatus(deps, args);
+    case 'status':
+      return cmdStatus(deps, args);
 
-    case "search":
-      return await cmdSearch(deps, args);
+    case 'search':
+      return cmdSearch(deps, args);
 
-    case "test":
-      return await cmdTest(deps, args);
+    case 'test':
+      return cmdTest(deps, args);
 
-    case "repl":
-      return await runRepl(deps, deps);
+    case 'repl':
+      return runRepl(deps, deps);
 
-    case "serve":
+    case 'serve':
     default:
       try {
         await deps.serve();

@@ -19,10 +19,14 @@
 //
 // Location parameters always come from config; when unset, only the country level is given.
 
-import { hostnameOf, asObject, asArray, clampInt, maybeObject, normalizeUrl, str } from "../normalize.js";
-import { postJson } from "../http.js";
-import type { NormalizedItem, NormalizedSearchResult, SearchContext, SearchProvider, SearchRequest } from "../types.js";
-import type { ProviderConfig } from "../config.js";
+import {
+  hostnameOf, asObject, asArray, clampInt, maybeObject, normalizeUrl, str,
+} from '../normalize.js';
+import { postJson } from '../http.js';
+import type {
+  NormalizedItem, NormalizedSearchResult, SearchContext, SearchProvider, SearchRequest,
+} from '../types.js';
+import type { ProviderConfig } from '../config.js';
 
 interface Annotation {
   type?: unknown;
@@ -35,7 +39,7 @@ interface Annotation {
  * agree with it: the registry, the chain filter and every result label key on
  * this one value, so a second hand-written copy could drift silently.
  */
-const NAME = "mimo";
+const NAME = 'mimo';
 
 /**
  * Merges url_citation (title) and web_search_highlight (snippet) entries by URL.
@@ -61,14 +65,14 @@ function itemsFromAnnotations(annotations: unknown[]): NormalizedItem[] {
     const kind = str(annotation.type);
     const title = str(annotation.title).trim();
     const existing = byUrl.get(urlNorm);
-    if (kind === "url_citation") {
+    if (kind === 'url_citation') {
       if (existing) {
         if (title && placeholderTitles.delete(urlNorm)) existing.title = title;
       } else {
-        byUrl.set(urlNorm, { title: title || hostnameOf(urlNorm), url: urlNorm, snippet: "" });
+        byUrl.set(urlNorm, { title: title || hostnameOf(urlNorm), url: urlNorm, snippet: '' });
         if (!title) placeholderTitles.add(urlNorm);
       }
-    } else if (kind === "web_search_highlight") {
+    } else if (kind === 'web_search_highlight') {
       if (existing) {
         if (!existing.snippet && title) existing.snippet = title;
       } else if (title) {
@@ -86,42 +90,42 @@ function itemsFromAnnotations(annotations: unknown[]): NormalizedItem[] {
  */
 function userLocation(options: Record<string, unknown> | undefined): Record<string, unknown> {
   const loc = maybeObject(options?.location);
-  const location: Record<string, unknown> = { type: "approximate" };
-  const country = str(loc?.country).trim() || "China";
+  const location: Record<string, unknown> = { type: 'approximate' };
+  const country = str(loc?.country).trim() || 'China';
   location.country = country;
-  for (const key of ["region", "city"] as const) {
+  for (const key of ['region', 'city'] as const) {
     const value = str(loc?.[key]).trim();
     if (value) location[key] = value;
   }
   return location;
 }
 
-export function createMimoProvider(cfg: ProviderConfig): SearchProvider {
+export default function createMimoProvider(cfg: ProviderConfig): SearchProvider {
   return {
     name: NAME,
     timeoutMs: cfg.timeoutMs,
     async search(req: SearchRequest, ctx: SearchContext): Promise<NormalizedSearchResult> {
-      const options = cfg.options;
+      const { options } = cfg;
       // `limit` (max result pages) is the channel's closest knob to `count`. This
       // mapping is an assumption that should be revisited if the upstream
       // semantics change.
       const limit = clampInt(req.count, 1, 1, 10);
       const payload = {
-        model: cfg.model ?? "mimo-v2.5",
-        messages: [{ role: "user", content: req.query }],
+        model: cfg.model ?? 'mimo-v2.5',
+        messages: [{ role: 'user', content: req.query }],
         max_completion_tokens: 2048,
         stream: false,
-        extra_body: { thinking: { type: "disabled" } },
+        extra_body: { thinking: { type: 'disabled' } },
         tools: [
           {
-            type: "web_search",
+            type: 'web_search',
             max_keyword: clampInt(options?.maxKeyword, 3, 1, 10),
             force_search: options?.forceSearch !== false,
             limit,
             user_location: userLocation(options),
           },
         ],
-        tool_choice: "auto",
+        tool_choice: 'auto',
       };
       const res = await postJson(
         `${cfg.baseUrl}/chat/completions`,
@@ -129,17 +133,22 @@ export function createMimoProvider(cfg: ProviderConfig): SearchProvider {
         { Authorization: `Bearer ${cfg.apiKey}` },
         { timeoutMs: ctx.timeoutMs, signal: ctx.signal, fetchImpl: ctx.fetchImpl },
       );
-      const body = asObject(res.json, "mimo response");
-      const choices = asArray(body.choices, "mimo choices");
-      const choice = asObject(choices[0] ?? null, "mimo choice");
-      const message = asObject(choice.message ?? null, "mimo message");
+      const body = asObject(res.json, 'mimo response');
+      const choices = asArray(body.choices, 'mimo choices');
+      const choice = asObject(choices[0] ?? null, 'mimo choice');
+      const message = asObject(choice.message ?? null, 'mimo message');
       const answer = str(message.content).trim();
-      // Treat missing or non-array annotations as empty: the answer still works, just without references.
-      const annotations = Array.isArray(message.annotations) ? (message.annotations as unknown[]) : [];
+      // Treat missing or non-array annotations as empty: the answer still
+      // works, just without references.
+      const annotations = Array.isArray(message.annotations)
+        ? (message.annotations as unknown[])
+        : [];
       const results = itemsFromAnnotations(annotations).slice(0, req.count);
       return {
         results,
-        _meta: { provider: NAME, total_latency_ms: 0, attempts: [], answer: answer || undefined },
+        _meta: {
+          provider: NAME, total_latency_ms: 0, attempts: [], answer: answer || undefined,
+        },
       };
     },
   };

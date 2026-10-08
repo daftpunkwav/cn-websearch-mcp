@@ -10,12 +10,12 @@
 
 // Provider registry. Adding a provider = one adapter file + one registration line here.
 
-import type { GatewayConfig, ProviderConfig, ProviderName } from "../config.js";
-import type { SearchProvider } from "../types.js";
-import { createKimiProvider } from "./kimi.js";
-import { createMimoProvider } from "./mimo.js";
-import { createStepfunProvider } from "./stepfun.js";
-import { createZhipuProvider } from "./zhipu.js";
+import type { GatewayConfig, ProviderConfig, ProviderName } from '../config.js';
+import type { SearchProvider } from '../types.js';
+import createKimiProvider from './kimi.js';
+import createMimoProvider from './mimo.js';
+import createStepfunProvider from './stepfun.js';
+import createZhipuProvider from './zhipu.js';
 
 const FACTORIES: Record<ProviderName, (cfg: ProviderConfig) => SearchProvider> = {
   kimi: createKimiProvider,
@@ -25,6 +25,6 @@ const FACTORIES: Record<ProviderName, (cfg: ProviderConfig) => SearchProvider> =
 };
 
 /** Builds adapter instances in the configured order (enabled/key checks are left to the caller). */
-export function buildProviders(cfg: GatewayConfig): SearchProvider[] {
+export default function buildProviders(cfg: GatewayConfig): SearchProvider[] {
   return cfg.order.map((name) => FACTORIES[name](cfg.providers[name]));
 }

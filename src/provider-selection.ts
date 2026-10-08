@@ -1,38 +1,52 @@
 /**
  * @file provider-selection
- * @description The one rule for turning a requested provider list into usable adapters.
+ * @description The one rule for turning a requested provider list into usable
+ *   adapters.
  *
  * Responsibilities:
  * - Normalize requested names (trim, lowercase, drop blanks, dedupe, keep order)
- * - Reject unknown names and names that are not in the usable chain, with a message naming the problem
- * - Resolve an ordered subset of the chain for the MCP tool layer, the one-shot CLI and the REPL
+ * - Reject unknown names and names that are not in the usable chain, with a message
+ *   naming the problem
+ * - Resolve an ordered subset of the chain for the MCP tool layer, the one-shot CLI
+ *   and the REPL
  *
  * Design notes:
- * - This lives in its own module because three surfaces (MCP tools, one-shot CLI,
- *   REPL) must agree on the same rules; keeping one implementation means a new
- *   rule cannot be applied to two of them and forgotten on the third
+ * - This lives in its own module because three surfaces (MCP tools, one-shot
+ *   CLI, REPL) must agree on the same rules; keeping one implementation means a
+ *   new rule cannot be applied to two of them and forgotten on the third
  * - It only knows the chain it is handed, so the MCP tool layer stays free of
  *   any concrete provider adapter
  */
 
-import { KNOWN_PROVIDERS, type ProviderName } from "./config.js";
-import type { SearchProvider } from "./types.js";
+import { KNOWN_PROVIDERS, type ProviderName } from './config.js';
+import type { SearchProvider } from './types.js';
 
-/** Provider selection result: adapters on success, or an error ready to return to the caller on failure. */
-export type ProviderSelection = { ok: true; providers: SearchProvider[] } | { ok: false; error: string };
+/**
+ * Provider selection result: adapters on success, or an error ready to return
+ * to the caller on failure.
+ */
+export type ProviderSelection = (
+  | { ok: true; providers: SearchProvider[] }
+  | { ok: false; error: string }
+);
 
 /** Result of validating a bare list of names, before the chain is consulted. */
-export type ProviderNameSelection = { ok: true; names: ProviderName[] } | { ok: false; error: string };
+export type ProviderNameSelection = (
+  | { ok: true; names: ProviderName[] }
+  | { ok: false; error: string }
+);
 
 /** Trim, lowercase, drop blanks and dedupe while preserving first-occurrence order. */
 function normalizeNames(parts: unknown[]): string[] {
-  return [...new Set(parts.map((p) => (typeof p === "string" ? p : "").trim().toLowerCase()).filter((p) => p !== ""))];
+  return [...new Set(
+    parts.map((p) => (typeof p === 'string' ? p : '').trim().toLowerCase()).filter((p) => p !== ''),
+  )];
 }
 
 function unknownNamesError(names: string[]): string | undefined {
   const unknown = names.filter((n) => !(KNOWN_PROVIDERS as readonly string[]).includes(n));
   return unknown.length
-    ? `unknown provider(s): ${unknown.join(", ")} (known: ${KNOWN_PROVIDERS.join(", ")})`
+    ? `unknown provider(s): ${unknown.join(', ')} (known: ${KNOWN_PROVIDERS.join(', ')})`
     : undefined;
 }
 
@@ -42,8 +56,8 @@ function unknownNamesError(names: string[]): string | undefined {
  * looking like a filter, so callers handle "no filter" with an absent argument.
  */
 export function parseProviderNames(raw: string): ProviderNameSelection {
-  const names = normalizeNames(raw.split(","));
-  if (!names.length) return { ok: false, error: "provider list must not be empty" };
+  const names = normalizeNames(raw.split(','));
+  if (!names.length) return { ok: false, error: 'provider list must not be empty' };
   const error = unknownNamesError(names);
   return error ? { ok: false, error } : { ok: true, names: names as ProviderName[] };
 }
@@ -55,7 +69,7 @@ export function parseProviderNames(raw: string): ProviderNameSelection {
  */
 export function selectProviders(requested: unknown, chain: SearchProvider[]): ProviderSelection {
   if (requested === undefined) return { ok: true, providers: chain };
-  if (!Array.isArray(requested) || requested.some((x) => typeof x !== "string")) {
+  if (!Array.isArray(requested) || requested.some((x) => typeof x !== 'string')) {
     return { ok: false, error: "invalid arguments: 'providers' must be an array of provider names" };
   }
   const names = normalizeNames(requested);
@@ -69,7 +83,7 @@ export function selectProviders(requested: unknown, chain: SearchProvider[]): Pr
   if (unavailable.length) {
     return {
       ok: false,
-      error: `provider(s) unavailable: ${unavailable.join(", ")} (disabled or missing API key)`,
+      error: `provider(s) unavailable: ${unavailable.join(', ')} (disabled or missing API key)`,
     };
   }
   return { ok: true, providers: names.map((n) => byName.get(n)!) };

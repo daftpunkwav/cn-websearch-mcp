@@ -9,25 +9,26 @@
  */
 
 export class TimeoutError extends Error {
-  constructor(message = "request timed out") {
+  constructor(message = 'request timed out') {
     super(message);
-    this.name = "TimeoutError";
+    this.name = 'TimeoutError';
   }
 }
 
 export class NetworkError extends Error {
   constructor(message: string) {
     super(message);
-    this.name = "NetworkError";
+    this.name = 'NetworkError';
   }
 }
 
 /** Transport-layer failure carrying an HTTP status code. */
 export class HttpError extends Error {
   readonly status: number;
+
   constructor(status: number, message: string) {
     super(message);
-    this.name = "HttpError";
+    this.name = 'HttpError';
     this.status = status;
   }
 }
@@ -40,7 +41,7 @@ export class HttpError extends Error {
 export class ParseError extends Error {
   constructor(message: string) {
     super(message);
-    this.name = "ParseError";
+    this.name = 'ParseError';
   }
 }
 
@@ -108,7 +109,7 @@ const SECRET_PATTERNS: RegExp[] = [
  * one where we no longer know what the text contains, so passing it through is
  * the one option that cannot be defended.
  */
-const REDACTION_FAILED = "<redaction failed>";
+const REDACTION_FAILED = '<redaction failed>';
 
 /**
  * How far past the message it keeps, redactForMessage redacts.
@@ -158,7 +159,9 @@ export function redactSecrets(text: string): string {
  */
 export function redactForMessage(text: string): string {
   const window = ERROR_MESSAGE_MAX + REDACT_HEADROOM;
-  return redactSecrets(text.length > window ? text.slice(0, window) : text).slice(0, ERROR_MESSAGE_MAX);
+  // Redact the windowed head, then cut to the audit size.
+  return redactSecrets(text.length > window ? text.slice(0, window) : text)
+    .slice(0, ERROR_MESSAGE_MAX);
 }
 
 /**
@@ -170,16 +173,26 @@ export function redactForMessage(text: string): string {
  * before the text is shown. This is the single implementation: the result-item
  * chokepoint (normalize.str) and the error pipeline (summarizeError) both use it.
  */
+// The control characters are the subject of this pattern, not an accident.
+// eslint-disable-next-line no-control-regex -- stripping control chars is this constant's purpose
 const CONTROL_CHARS = /[\u0000-\u0009\u000B-\u001F\u007F-\u009F]/g;
 
 /** Remove control characters from untrusted text. */
 export function stripControlChars(s: string): string {
-  return s.replace(CONTROL_CHARS, "");
+  return s.replace(CONTROL_CHARS, '');
 }
 
-/** Collapse consecutive whitespace into single spaces, keeping the audit trail single-line readable. */
+/**
+ * Collapse consecutive whitespace into single spaces, keeping the audit trail
+ * single-line readable.
+ */
 function collapseWhitespace(text: string): string {
-  return text.replace(/\s+/g, " ").trim();
+  return text.replace(/\s+/g, ' ').trim();
+}
+
+/** Cut already-sanitized text at the shared audit-trail limit, marking the cut. */
+function truncateForAudit(text: string): string {
+  return text.length > ERROR_MESSAGE_MAX ? `${text.slice(0, ERROR_MESSAGE_MAX)}...` : text;
 }
 
 /**
@@ -196,9 +209,4 @@ export function summarizeError(err: unknown): string {
     return `${err.name}: ${truncateForAudit(message)}`;
   }
   return truncateForAudit(collapseWhitespace(redactSecrets(stripControlChars(String(err)))));
-}
-
-/** Cut already-sanitized text at the shared audit-trail limit, marking the cut. */
-function truncateForAudit(text: string): string {
-  return text.length > ERROR_MESSAGE_MAX ? text.slice(0, ERROR_MESSAGE_MAX) + "..." : text;
 }

@@ -22,31 +22,35 @@
 // no location knob. The standalone Web Search API above is the documented,
 // structured, model-independent path, and is what this adapter uses.
 
-import { asArray, asObject, clampInt, str, toItem, truncate } from "../normalize.js";
-import { postJson } from "../http.js";
-import type { NormalizedSearchResult, SearchContext, SearchProvider, SearchRequest } from "../types.js";
-import type { ProviderConfig } from "../config.js";
+import {
+  asArray, asObject, clampInt, str, toItem, truncate,
+} from '../normalize.js';
+import { postJson } from '../http.js';
+import type {
+  NormalizedSearchResult, SearchContext, SearchProvider, SearchRequest,
+} from '../types.js';
+import type { ProviderConfig } from '../config.js';
 
 /**
  * This adapter's name, and the config key / `_meta.provider` stamp that must
  * agree with it: the registry, the chain filter and every result label key on
  * this one value, so a second hand-written copy could drift silently.
  */
-const NAME = "zhipu";
+const NAME = 'zhipu';
 
-export function createZhipuProvider(cfg: ProviderConfig): SearchProvider {
+export default function createZhipuProvider(cfg: ProviderConfig): SearchProvider {
   return {
     name: NAME,
     timeoutMs: cfg.timeoutMs,
     async search(req: SearchRequest, ctx: SearchContext): Promise<NormalizedSearchResult> {
-      const options = cfg.options;
+      const { options } = cfg;
       const payload = {
         // Per the API docs, search_query is capped at 70 characters.
         search_query: truncate(req.query, 70),
-        search_engine: str(options?.searchEngine).trim() || "search_std",
+        search_engine: str(options?.searchEngine).trim() || 'search_std',
         search_intent: false,
         count: clampInt(req.count, 10, 1, 50),
-        content_size: str(options?.contentSize).trim() || "high",
+        content_size: str(options?.contentSize).trim() || 'high',
       };
       const res = await postJson(
         `${cfg.baseUrl}/api/paas/v4/web_search`,
@@ -54,12 +58,13 @@ export function createZhipuProvider(cfg: ProviderConfig): SearchProvider {
         { Authorization: `Bearer ${cfg.apiKey}` },
         { timeoutMs: ctx.timeoutMs, signal: ctx.signal, fetchImpl: ctx.fetchImpl },
       );
-      const body = asObject(res.json, "zhipu response");
-      const hits = asArray(body.search_result, "zhipu search_result");
-      // A malformed single hit affects only that hit: degrade to an empty object and let toItem decide.
+      const body = asObject(res.json, 'zhipu response');
+      const hits = asArray(body.search_result, 'zhipu search_result');
+      // A malformed single hit affects only that hit: degrade to an empty
+      // object and let toItem decide.
       const results = hits
         .map((hit) => {
-          const fields = (hit && typeof hit === "object" ? hit : {}) as Record<string, unknown>;
+          const fields = (hit && typeof hit === 'object' ? hit : {}) as Record<string, unknown>;
           const content = str(fields.content).trim();
           return toItem({
             title: fields.title,

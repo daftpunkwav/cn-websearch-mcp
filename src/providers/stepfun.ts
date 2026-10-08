@@ -24,19 +24,23 @@
 // and chat-embedded web_search are deliberately not used: the chat channel returns a text
 // placeholder, and fetch has a known 30-second timeout issue.
 
-import { asArray, asObject, clampInt, str, toItem } from "../normalize.js";
-import { postJson } from "../http.js";
-import type { NormalizedSearchResult, SearchContext, SearchProvider, SearchRequest } from "../types.js";
-import type { ProviderConfig } from "../config.js";
+import {
+  asArray, asObject, clampInt, str, toItem,
+} from '../normalize.js';
+import { postJson } from '../http.js';
+import type {
+  NormalizedSearchResult, SearchContext, SearchProvider, SearchRequest,
+} from '../types.js';
+import type { ProviderConfig } from '../config.js';
 
 /**
  * This adapter's name, and the config key / `_meta.provider` stamp that must
  * agree with it: the registry, the chain filter and every result label key on
  * this one value, so a second hand-written copy could drift silently.
  */
-const NAME = "stepfun";
+const NAME = 'stepfun';
 
-export function createStepfunProvider(cfg: ProviderConfig): SearchProvider {
+export default function createStepfunProvider(cfg: ProviderConfig): SearchProvider {
   return {
     name: NAME,
     timeoutMs: cfg.timeoutMs,
@@ -51,15 +55,16 @@ export function createStepfunProvider(cfg: ProviderConfig): SearchProvider {
         `${cfg.baseUrl}/v1/search`,
         payload,
         // The API docs require an explicit charset declaration.
-        { Authorization: `Bearer ${cfg.apiKey}`, "Content-Type": "application/json; charset=utf-8" },
+        { Authorization: `Bearer ${cfg.apiKey}`, 'Content-Type': 'application/json; charset=utf-8' },
         { timeoutMs: ctx.timeoutMs, signal: ctx.signal, fetchImpl: ctx.fetchImpl },
       );
-      const body = asObject(res.json, "stepfun response");
-      const hits = asArray(body.results, "stepfun results");
-      // A malformed single hit affects only that hit: degrade to an empty object and let toItem decide.
+      const body = asObject(res.json, 'stepfun response');
+      const hits = asArray(body.results, 'stepfun results');
+      // A malformed single hit affects only that hit: degrade to an empty object
+      // and let toItem decide.
       const results = hits
         .map((hit) => {
-          const fields = (hit && typeof hit === "object" ? hit : {}) as Record<string, unknown>;
+          const fields = (hit && typeof hit === 'object' ? hit : {}) as Record<string, unknown>;
           return toItem({
             title: fields.title,
             url: fields.url,

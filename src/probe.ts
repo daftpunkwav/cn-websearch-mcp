@@ -3,14 +3,15 @@
  * @description Single-provider probe: one live call plus a structured result row.
  *
  * Responsibilities:
- * - Call a single provider with an independent timeout, returning a data row on success or failure instead of throwing
+ * - Call a single provider with an independent timeout, returning a data row on success or
+ *   failure instead of throwing
  * - Provide one shared implementation for the CLI's `test` command and `npm run smoke`
  */
 
 // Probe logic lives in its own module so the CLI and the smoke script share one implementation.
 
-import { summarizeError, TimeoutError } from "./errors.js";
-import type { FetchLike, SearchProvider, SearchRequest } from "./types.js";
+import { summarizeError, TimeoutError } from './errors.js';
+import type { FetchLike, SearchProvider, SearchRequest } from './types.js';
 
 export interface ProbeOptions {
   timeoutMs: number;
@@ -57,7 +58,9 @@ export async function probeProvider(
   opts: ProbeOptions,
 ): Promise<ProbeRow> {
   const ac = new AbortController();
-  const timer = setTimeout(() => { ac.abort(new TimeoutError()); }, opts.timeoutMs);
+  const timer = setTimeout(() => {
+    ac.abort(new TimeoutError());
+  }, opts.timeoutMs);
   const t0 = Date.now();
   try {
     const result = await p.search(req, {
@@ -65,14 +68,16 @@ export async function probeProvider(
       signal: ac.signal,
       fetchImpl: opts.fetchImpl ?? fetch,
     });
-    if (ac.signal.aborted) throw ac.signal.reason instanceof Error ? ac.signal.reason : new TimeoutError();
+    if (ac.signal.aborted) {
+      throw ac.signal.reason instanceof Error ? ac.signal.reason : new TimeoutError();
+    }
     return {
       provider: p.name,
       ok: true,
       latency_ms: Date.now() - t0,
       results: result.results.length,
-      sample: result.results[0]?.title?.slice(0, SAMPLE_TITLE_MAX) ?? "(no results)",
-      error: "",
+      sample: result.results[0]?.title?.slice(0, SAMPLE_TITLE_MAX) ?? '(no results)',
+      error: '',
     };
   } catch (err) {
     return {
@@ -80,7 +85,7 @@ export async function probeProvider(
       ok: false,
       latency_ms: Date.now() - t0,
       results: 0,
-      sample: "",
+      sample: '',
       error: summarizeError(err),
     };
   } finally {
