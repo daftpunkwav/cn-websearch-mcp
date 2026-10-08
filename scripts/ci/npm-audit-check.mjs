@@ -35,7 +35,15 @@ try {
 } catch (err) {
   fail(`cannot read allowlist ${allowlistPath}: ${err.message}`);
 }
-const allowedIds = new Set((allowlist.allow ?? []).map((e) => e.id));
+// Two entry shapes: `{ id, package?, reason }` accepts one advisory id, and
+// `{ package, reason }` (no id) accepts a whole package whose finding carries
+// no advisory id at all - npm reports range-only dependents ("Depends on
+// vulnerable versions of X") with an empty via-object list, which no id could
+// ever match. Package entries accept the node either way; every accepted
+// finding is still enumerated in the output.
+const allowEntries = allowlist.allow ?? [];
+const allowedIds = new Set(allowEntries.filter((e) => e.id).map((e) => e.id));
+const allowedPackages = new Set(allowEntries.filter((e) => e.package).map((e) => e.package));
 
 let raw;
 try {
@@ -72,6 +80,7 @@ if (report.metadata != null) {
 const vulns = report.vulnerabilities;
 const metaCounts = report.metadata != null ? report.metadata.vulnerabilities : null;
 const seenIds = new Set();
+const seenPackages = new Set();
 const blocking = [];
 let countedHigh = 0;
 for (const [name, v] of Object.entries(vulns)) {
@@ -84,9 +93,14 @@ for (const [name, v] of Object.entries(vulns)) {
     .map((x) => x.url?.split('/').pop() ?? '')
     .filter(Boolean);
   for (const id of ghsaIds) seenIds.add(id);
-  // Fail closed: findings without an attributable advisory id always block.
+  seenPackages.add(name);
+  // Fail closed: a finding blocks unless its advisory ids are all allowlisted
+  // or the package itself carries an explicit acceptance entry. Findings
+  // without an attributable advisory id can only be accepted by package.
   const unlisted = ghsaIds.filter((id) => !allowedIds.has(id));
-  if (unlisted.length > 0 || ghsaIds.length === 0) {
+  const accepted = allowedPackages.has(name)
+    || (ghsaIds.length > 0 && unlisted.length === 0);
+  if (!accepted) {
     blocking.push({
       name, severity, range: v.range, advisory: unlisted,
     });
@@ -100,9 +114,10 @@ if (metaCounts != null) {
   }
 }
 
-for (const entry of allowlist.allow ?? []) {
-  if (!seenIds.has(entry.id)) {
-    console.log(`npm-audit-check: allowlist entry not observed (prune?): ${entry.id}`);
+for (const entry of allowEntries) {
+  const observed = entry.id ? seenIds.has(entry.id) : seenPackages.has(entry.package);
+  if (!observed) {
+    console.log(`npm-audit-check: allowlist entry not observed (prune?): ${entry.id ?? entry.package}`);
   }
 }
 
