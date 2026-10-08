@@ -44,10 +44,10 @@ layer — nothing else in `src/` imports it:
 
 | Touch point | What it uses |
 |---|---|
-| `src/index.ts:16-18` | `Server`, `StdioServerTransport`, `CallToolRequestSchema`, `ListToolsRequestSchema`, `CallToolResult` |
-| `src/index.ts:38-48` | the `extra` argument of a `setRequestHandler` callback — `extra.signal` carries MCP client cancellation |
-| `test/e2e/mcp-stdio.test.ts:21-22` | `Client` and `StdioClientTransport`, driving a real initialize → tools/list → tools/call round trip |
-| `test/index.test.ts:7` | the two request schemas, for handler-level assertions |
+| `src/index.ts:18-22` | `Server`, `StdioServerTransport`, `CallToolRequestSchema`, `ListToolsRequestSchema`, `CallToolResult` |
+| `src/index.ts:45-56` | the `extra` argument of a `setRequestHandler` callback — `extra.signal` carries MCP client cancellation |
+| `test/e2e/mcp-stdio.test.ts:23-24` | `Client` and `StdioClientTransport`, driving a real initialize → tools/list → tools/call round trip |
+| `test/index.test.ts:10` | the two request schemas, for handler-level assertions |
 
 Those three deep import specifiers (`server/index.js`, `server/stdio.js`,
 `types.js`) are the SDK's own documented entry points, not internal files, so a

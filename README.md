@@ -242,6 +242,7 @@ Two slots (`kimi`, `mimo`) return an LLM-synthesized answer plus citations rathe
 
 ```bash
 npm install
+npm run lint           # eslint (Airbnb style guide)
 npm run build          # tsc → dist/
 npm run typecheck      # tsc over src/, test/ and scripts/ (no emit)
 npm test               # vitest, all HTTP mocked (no keys needed)
