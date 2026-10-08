@@ -52,6 +52,36 @@ function okResult(provider: string, items = 1): NormalizedSearchResult {
   };
 }
 
+/** One-provider fallback search on the caller's signal, with the rejection captured. */
+function cancelledSearch(provider: SearchProvider, signal: AbortSignal): Promise<unknown> {
+  return searchWithFallback(req, { ...opts, providers: [provider], signal }).catch((e) => e);
+}
+
+/** Provider that answers 'a' only 5ms after `controller` aborts: the late answer. */
+function makeLateProvider(
+  controller: AbortController,
+): { provider: SearchProvider; calls: () => number } {
+  return makeProvider('a', (_r, ctx) => new Promise<NormalizedSearchResult>((resolve) => {
+    ctx.signal.addEventListener('abort', () => {
+      setTimeout(() => resolve(okResult('a')), 5);
+    });
+    controller.abort();
+  }));
+}
+
+/** Provider whose first call fails with a 429 after running `onFirstCall`. */
+function makeRateLimitedProvider(
+  onFirstCall: () => void,
+): { provider: SearchProvider; calls: () => number } {
+  return makeProvider('a', async (_r, _c, call) => {
+    if (call === 1) {
+      onFirstCall();
+      throw new HttpError(429, 'HTTP 429: slow down');
+    }
+    return okResult('a');
+  });
+}
+
 describe('errors', () => {
   it('AllProvidersFailedError renders an empty trail when nothing was attempted', () => {
     expect(new AllProvidersFailedError([]).message).toBe('all configured providers failed: ');
@@ -316,11 +346,7 @@ describe('caller cancellation', () => {
     const controller = new AbortController();
     controller.abort();
     const a = makeProvider('a', async () => okResult('a'));
-    const err = await searchWithFallback(req, {
-      ...opts, providers: [a.provider], signal: controller.signal,
-    }).catch(
-      (e) => e,
-    );
+    const err = await cancelledSearch(a.provider, controller.signal);
     expect(err).toBeInstanceOf(CallCancelledError);
     // The audit trail must survive the cancellation, otherwise the caller is
     // told "cancelled" with no record of what was in flight.
@@ -348,11 +374,7 @@ describe('caller cancellation', () => {
     const controller = new AbortController();
     controller.abort('client supplied \u001b[31m text');
     const a = makeProvider('a', async () => okResult('a'));
-    const err = await searchWithFallback(req, {
-      ...opts, providers: [a.provider], signal: controller.signal,
-    }).catch(
-      (e) => e,
-    );
+    const err = await cancelledSearch(a.provider, controller.signal);
     expect((err as Error).message).toBe('search cancelled by the caller');
   });
 
@@ -367,35 +389,15 @@ describe('caller cancellation', () => {
     // response landing on the budget boundary) must not turn a cancellation
     // into a success: fallback used to return the result, aggregate did not.
     const controller = new AbortController();
-    const late = makeProvider(
-      'a',
-      (_r, ctx) => new Promise<NormalizedSearchResult>((resolve) => {
-        ctx.signal.addEventListener('abort', () => {
-          setTimeout(() => resolve(okResult('a')), 5);
-        });
-        controller.abort();
-      }),
-    );
-    const err = await searchWithFallback(req, {
-      ...opts, providers: [late.provider], signal: controller.signal,
-    }).catch(
-      (e) => e,
-    );
+    const late = makeLateProvider(controller);
+    const err = await cancelledSearch(late.provider, controller.signal);
     expect(err).toBeInstanceOf(CallCancelledError);
     expect((err as CallCancelledError).attempts.map((x) => x.status)).toEqual(['cancelled']);
   });
 
   it('reports a late answer the same way under aggregate', async () => {
     const controller = new AbortController();
-    const late = makeProvider(
-      'a',
-      (_r, ctx) => new Promise<NormalizedSearchResult>((resolve) => {
-        ctx.signal.addEventListener('abort', () => {
-          setTimeout(() => resolve(okResult('a')), 5);
-        });
-        controller.abort();
-      }),
-    );
+    const late = makeLateProvider(controller);
     const err = await searchAggregate(req, {
       ...opts, providers: [late.provider], signal: controller.signal,
     }).catch(
@@ -455,19 +457,11 @@ describe('transient retry backoff', () => {
   it('is cut short when the caller cancels during the backoff', async () => {
     // A non-abortable wait would strand the whole call for the full 429 delay.
     const controller = new AbortController();
-    const a = makeProvider('a', async (_r, _c, call) => {
-      if (call === 1) {
-        setTimeout(() => controller.abort(), 10);
-        throw new HttpError(429, 'HTTP 429: slow down');
-      }
-      return okResult('a');
+    const a = makeRateLimitedProvider(() => {
+      setTimeout(() => controller.abort(), 10);
     });
     const t0 = Date.now();
-    const err = await searchWithFallback(req, {
-      ...opts, providers: [a.provider], signal: controller.signal,
-    }).catch(
-      (e) => e,
-    );
+    const err = await cancelledSearch(a.provider, controller.signal);
     const elapsed = Date.now() - t0;
     expect(err).toBeInstanceOf(CallCancelledError);
     // The 429 backoff is 1s; finishing far below that proves the wait was cut short.
@@ -481,19 +475,9 @@ describe('transient retry backoff', () => {
     // the retry: the attempt is already recorded as cancelled, so there is no
     // backoff to wait out and no second call to make against a peer that left.
     const controller = new AbortController();
-    const a = makeProvider('a', async (_r, _c, call) => {
-      if (call === 1) {
-        controller.abort();
-        throw new HttpError(429, 'HTTP 429: slow down');
-      }
-      return okResult('a');
-    });
+    const a = makeRateLimitedProvider(() => controller.abort());
     const t0 = Date.now();
-    const err = await searchWithFallback(req, {
-      ...opts, providers: [a.provider], signal: controller.signal,
-    }).catch(
-      (e) => e,
-    );
+    const err = await cancelledSearch(a.provider, controller.signal);
     expect(err).toBeInstanceOf(CallCancelledError);
     // Far below the 1s backoff a transient failure would have paid.
     expect(Date.now() - t0).toBeLessThan(500);

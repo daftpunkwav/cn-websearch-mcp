@@ -47,6 +47,33 @@ function parse(out: { content: { type: string; text: string }[] }): any {
   return JSON.parse(out.content[0]!.text);
 }
 
+/** Provider double that hands each request to `record` and answers with no results. */
+function recordingProvider(record: (req: SearchRequest) => void): SearchProvider {
+  return fakeProvider('stepfun', async (req) => {
+    record(req);
+    return { results: [], _meta: { provider: 'stepfun', total_latency_ms: 0, attempts: [] } };
+  });
+}
+
+/** Tool suite on a defaults-only config, backed by a request-recording provider. */
+function recordingTools(record: (req: SearchRequest) => void) {
+  return createGatewayTools({
+    ...deps([recordingProvider(record)]),
+    config: loadConfig({ env: {}, warn: () => {} }),
+  });
+}
+
+/** Tool suite whose search double reports the per-call signal it received. */
+function signalSpyTools(onSignal: (signal: unknown) => void) {
+  return createGatewayTools({
+    ...deps([alive()]),
+    searchFn: async (_req, opts) => {
+      onSignal(opts.signal);
+      return { results: [], _meta: { provider: 'stepfun', total_latency_ms: 0, attempts: [] } };
+    },
+  });
+}
+
 describe('buildToolDefinitions', () => {
   it('exposes exactly two tools and reflects the configured defaults', () => {
     const defs = buildToolDefinitions(12, 'aggregate');
@@ -125,9 +152,8 @@ describe('web_search argument validation', () => {
 
   it('trims and truncates an over-long query', async () => {
     let seen: SearchRequest | undefined;
-    const p = fakeProvider('stepfun', async (req) => {
+    const p = recordingProvider((req) => {
       seen = req;
-      return { results: [], _meta: { provider: 'stepfun', total_latency_ms: 0, attempts: [] } };
     });
     await createGatewayTools(deps([p])).call('web_search', { query: `  ${'x'.repeat(500)}  ` });
     expect(seen!.query).toHaveLength(400);
@@ -135,13 +161,8 @@ describe('web_search argument validation', () => {
 
   it('clamps an out-of-range count and defaults it from config', async () => {
     const seen: number[] = [];
-    const p = fakeProvider('stepfun', async (req) => {
+    const tools = recordingTools((req) => {
       seen.push(req.count);
-      return { results: [], _meta: { provider: 'stepfun', total_latency_ms: 0, attempts: [] } };
-    });
-    const tools = createGatewayTools({
-      ...deps([p]),
-      config: loadConfig({ env: {}, warn: () => {} }),
     });
     await tools.call('web_search', { query: 'q' });
     await tools.call('web_search', { query: 'q', count: 999 });
@@ -154,13 +175,8 @@ describe('web_search argument validation', () => {
     // Number("") is 0, which used to clamp a blank to 1 while null fell back to
     // the configured count: two spellings of "unset" produced different searches.
     const seen: number[] = [];
-    const p = fakeProvider('stepfun', async (req) => {
+    const tools = recordingTools((req) => {
       seen.push(req.count);
-      return { results: [], _meta: { provider: 'stepfun', total_latency_ms: 0, attempts: [] } };
-    });
-    const tools = createGatewayTools({
-      ...deps([p]),
-      config: loadConfig({ env: {}, warn: () => {} }),
     });
     await tools.call('web_search', { query: 'q', count: '' });
     await tools.call('web_search', { query: 'q', count: '   ' });
@@ -177,13 +193,8 @@ describe('web_search argument validation', () => {
     //    worse than failing. null is not in either published JSON Schema, so it is
     //    a caller bug and is reported as one.
     const seen: any[] = [];
-    const p = fakeProvider('stepfun', async (req) => {
+    const tools = recordingTools((req) => {
       seen.push(req);
-      return { results: [], _meta: { provider: 'stepfun', total_latency_ms: 0, attempts: [] } };
-    });
-    const tools = createGatewayTools({
-      ...deps([p]),
-      config: loadConfig({ env: {}, warn: () => {} }),
     });
 
     for (const count of [null, {}, true, 'abc', 0, 999]) {
@@ -241,12 +252,8 @@ describe('web_search dispatch', () => {
   it("forwards the caller's cancellation signal into the search options", async () => {
     let seen: unknown;
     const controller = new AbortController();
-    const tools = createGatewayTools({
-      ...deps([alive()]),
-      searchFn: async (_req, opts) => {
-        seen = opts.signal;
-        return { results: [], _meta: { provider: 'stepfun', total_latency_ms: 0, attempts: [] } };
-      },
+    const tools = signalSpyTools((signal) => {
+      seen = signal;
     });
     await tools.call('web_search', { query: 'q' }, controller.signal);
     expect(seen).toBe(controller.signal);
@@ -254,12 +261,8 @@ describe('web_search dispatch', () => {
 
   it('passes no signal when the caller supplies none', async () => {
     let seen: unknown = 'unset';
-    const tools = createGatewayTools({
-      ...deps([alive()]),
-      searchFn: async (_req, opts) => {
-        seen = opts.signal;
-        return { results: [], _meta: { provider: 'stepfun', total_latency_ms: 0, attempts: [] } };
-      },
+    const tools = signalSpyTools((signal) => {
+      seen = signal;
     });
     await tools.call('web_search', { query: 'q' });
     expect(seen).toBeUndefined();

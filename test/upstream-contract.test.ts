@@ -33,7 +33,7 @@ import createMimoProvider from '../src/providers/mimo.js';
 import createStepfunProvider from '../src/providers/stepfun.js';
 import createZhipuProvider from '../src/providers/zhipu.js';
 import type { ProviderConfig } from '../src/config.js';
-import type { FetchLike, SearchContext } from '../src/types.js';
+import type { FetchLike, SearchContext, SearchRequest } from '../src/types.js';
 
 /** Synthetic key material; never a real credential. */
 const SYNTHETIC_KEY = 'SYNTHETIC-CONTRACT-KEY-0000';
@@ -73,6 +73,16 @@ const sentBody = (
 const sentHeaders = (
   call: { init: RequestInit },
 ): Record<string, string> => call.init.headers as Record<string, string>;
+
+/** Asserts a renamed response container surfaces as ParseError, not an empty success. */
+const expectParseError = async (
+  search: (req: SearchRequest, ctx: SearchContext) => Promise<unknown>,
+  fetchImpl: FetchLike,
+): Promise<void> => {
+  await expect(search({ query: 'q', count: 8 }, ctx(fetchImpl))).rejects.toMatchObject({
+    name: 'ParseError',
+  });
+};
 
 // ---------------------------------------------------------------------------
 // kimi — POST /v1/chat/completions + POST /v1/formulas/.../fibers (multi-round)
@@ -221,9 +231,7 @@ describe('kimi upstream contract', () => {
     // to the caller as a healthy channel that simply found nothing.
     const { choices: dropped, ...rest } = KIMI_TOOL_CALL_TURN;
     const { fetchImpl } = scriptedFetch([{ ...rest, output: KIMI_TOOL_CALL_TURN.choices }]);
-    await expect(createKimiProvider(cfg).search({ query: 'q', count: 8 }, ctx(fetchImpl))).rejects.toMatchObject({
-      name: 'ParseError',
-    });
+    await expectParseError(createKimiProvider(cfg).search, fetchImpl);
   });
 
   it('caps results at the requested count', async () => {
@@ -318,9 +326,7 @@ describe('mimo upstream contract', () => {
   it('fails loudly when the response envelope is renamed', async () => {
     const { choices: dropped, ...rest } = MIMO_COMPLETION;
     const { fetchImpl } = scriptedFetch([{ ...rest, data: MIMO_COMPLETION.choices }]);
-    await expect(createMimoProvider(cfg).search({ query: 'q', count: 8 }, ctx(fetchImpl))).rejects.toMatchObject({
-      name: 'ParseError',
-    });
+    await expectParseError(createMimoProvider(cfg).search, fetchImpl);
   });
 });
 
@@ -403,9 +409,7 @@ describe('stepfun upstream contract', () => {
 
   it('fails loudly when the result container is renamed', async () => {
     const { fetchImpl } = scriptedFetch([{ query: 'q', hits: STEPFUN_RESULT.results }]);
-    await expect(createStepfunProvider(cfg).search({ query: 'q', count: 8 }, ctx(fetchImpl))).rejects.toMatchObject({
-      name: 'ParseError',
-    });
+    await expectParseError(createStepfunProvider(cfg).search, fetchImpl);
   });
 
   it('clamps n to the documented 1..20 range', async () => {
@@ -495,9 +499,7 @@ describe('zhipu upstream contract', () => {
   it('fails loudly when the result container is renamed', async () => {
     const { search_result: dropped, ...rest } = ZHIPU_RESULT;
     const { fetchImpl } = scriptedFetch([{ ...rest, search_results: ZHIPU_RESULT.search_result }]);
-    await expect(createZhipuProvider(cfg).search({ query: 'q', count: 8 }, ctx(fetchImpl))).rejects.toMatchObject({
-      name: 'ParseError',
-    });
+    await expectParseError(createZhipuProvider(cfg).search, fetchImpl);
   });
 
   it('truncates search_query to the documented 70 characters and clamps count to 50', async () => {

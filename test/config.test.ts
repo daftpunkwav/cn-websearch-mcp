@@ -237,33 +237,27 @@ describe('base URL transport security', () => {
 
 describe('config file layer', () => {
   it('reads provider settings and options from the file', () => {
+    // Settings planted in the file, expected back verbatim — baseUrl excepted:
+    // the fixture carries the trailing slash that the /v1 logic must not double.
+    const fileSettings = {
+      apiKey: 'z-key',
+      model: 'glm-custom',
+      enabled: false,
+      priority: 9,
+      timeoutMs: 12_000,
+      options: { searchEngine: 'search_pro' },
+    };
     const cfg = loadConfig({
       env: env(),
       warn: noWarn,
       configFile: 'cn-websearch.config.json',
       file: {
         providers: {
-          zhipu: {
-            apiKey: 'z-key',
-            baseUrl: 'https://z.example/',
-            model: 'glm-custom',
-            enabled: false,
-            priority: 9,
-            timeoutMs: 12_000,
-            options: { searchEngine: 'search_pro' },
-          },
+          zhipu: { ...fileSettings, baseUrl: 'https://z.example/' },
         },
       },
     });
-    expect(cfg.providers.zhipu).toMatchObject({
-      apiKey: 'z-key',
-      baseUrl: 'https://z.example',
-      model: 'glm-custom',
-      enabled: false,
-      priority: 9,
-      timeoutMs: 12_000,
-      options: { searchEngine: 'search_pro' },
-    });
+    expect(cfg.providers.zhipu).toMatchObject({ ...fileSettings, baseUrl: 'https://z.example' });
     expect(cfg.configFile).toBe('cn-websearch.config.json');
   });
 

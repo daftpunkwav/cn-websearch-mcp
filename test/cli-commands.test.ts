@@ -26,6 +26,13 @@ const searchArgs = (over: Partial<CliArgs> = {}): CliArgs => ({
   ...over,
 });
 
+/** In-memory writable stream appending everything it receives to `sink`. */
+const stream = (sink: string[]): NodeJS.WritableStream => {
+  const s = new PassThrough();
+  s.on('data', (c) => sink.push(c.toString()));
+  return s;
+};
+
 function makeDeps(
   over: {
     env?: Record<string, string>;
@@ -40,11 +47,6 @@ function makeDeps(
   });
   const out: string[] = [];
   const err: string[] = [];
-  const stream = (sink: string[]): NodeJS.WritableStream => {
-    const s = new PassThrough();
-    s.on('data', (c) => sink.push(c.toString()));
-    return s;
-  };
   return {
     deps: {
       runtime, output: stream(out), error: stream(err), search: over.search, probe: over.probe,
@@ -62,6 +64,26 @@ const okResult = (provider: string): NormalizedSearchResult => ({
     provider, providers: [provider], total_latency_ms: 10, attempts: [{ provider, status: 'ok', latency_ms: 9 }],
   },
 });
+
+/** Probe stub that records each probe query and answers ok with zero results. */
+const makeQueryProbe = (seen: string[]): CliDeps['probe'] => (providers, req) => {
+  seen.push(req.query);
+  return Promise.resolve(providers.map((p) => ({
+    provider: p.name, ok: true, latency_ms: 1, results: 0, sample: '', error: '',
+  })));
+};
+
+/** makeDeps whose search double records the DispatchOptions of every call. */
+function makeOptsCapturingDeps(): { deps: CliDeps; seen: { current: any } } {
+  const seen: { current: any } = { current: undefined };
+  const { deps } = makeDeps({
+    search: async (_req, opts) => {
+      seen.current = opts;
+      return okResult('kimi');
+    },
+  });
+  return { deps, seen };
+}
 
 describe('pickProviders', () => {
   const chain: SearchProvider[] = [
@@ -112,18 +134,12 @@ describe('cmdSearch', () => {
   });
 
   it('passes CLI overrides to the search function', async () => {
-    let seen: any;
-    const { deps } = makeDeps({
-      search: async (_req, opts) => {
-        seen = opts;
-        return okResult('kimi');
-      },
-    });
+    const { deps, seen } = makeOptsCapturingDeps();
     await cmdSearch(deps, searchArgs({
       strategy: 'aggregate', dedupe: false, providers: ['kimi'], count: 3,
     }));
-    expect(seen).toMatchObject({ strategy: 'aggregate', dedupe: false });
-    expect(seen.providers.map((p: SearchProvider) => p.name)).toEqual(['kimi']);
+    expect(seen.current).toMatchObject({ strategy: 'aggregate', dedupe: false });
+    expect(seen.current.providers.map((p: SearchProvider) => p.name)).toEqual(['kimi']);
   });
 
   it('applies the same argument bounds as the MCP tool layer', async () => {
@@ -173,15 +189,9 @@ describe('cmdSearch', () => {
   });
 
   it('falls back to the configured strategy when none is given', async () => {
-    let seen: any;
-    const { deps } = makeDeps({
-      search: async (_req, opts) => {
-        seen = opts;
-        return okResult('kimi');
-      },
-    });
+    const { deps, seen } = makeOptsCapturingDeps();
     await cmdSearch(deps, searchArgs());
-    expect(seen.strategy).toBe('fallback');
+    expect(seen.current.strategy).toBe('fallback');
   });
 
   it('returns 2 for a missing query and 2 for an unusable provider list', async () => {
@@ -312,11 +322,6 @@ describe('cmdTest', () => {
       }),
     });
     const out: string[] = [];
-    const stream = (sink: string[]): NodeJS.WritableStream => {
-      const s = new PassThrough();
-      s.on('data', (c) => sink.push(c.toString()));
-      return s;
-    };
     const providers = [hits('stepfun')];
     const deps: CliDeps = {
       runtime: {
@@ -345,14 +350,7 @@ describe('cmdTest', () => {
 
   it('uses the provided query, else the neutral default probe query', async () => {
     const seen: string[] = [];
-    const { deps } = makeDeps({
-      probe: (providers, req) => {
-        seen.push(req.query);
-        return Promise.resolve(providers.map((p) => ({
-          provider: p.name, ok: true, latency_ms: 1, results: 0, sample: '', error: '',
-        })));
-      },
-    });
+    const { deps } = makeDeps({ probe: makeQueryProbe(seen) });
     await cmdTest(deps, { command: 'test', query: 'custom', json: false });
     await cmdTest(deps, { command: 'test', query: '', json: false });
     expect(seen).toEqual(['custom', '今日新闻']);
@@ -362,14 +360,7 @@ describe('cmdTest', () => {
     // A blank query used to be sent upstream as-is: a real request that spends
     // the caller's quota on a query that is only spaces.
     const seen: string[] = [];
-    const { deps } = makeDeps({
-      probe: (providers, req) => {
-        seen.push(req.query);
-        return Promise.resolve(providers.map((p) => ({
-          provider: p.name, ok: true, latency_ms: 1, results: 0, sample: '', error: '',
-        })));
-      },
-    });
+    const { deps } = makeDeps({ probe: makeQueryProbe(seen) });
     await cmdTest(deps, { command: 'test', query: '   ', json: false });
     await cmdTest(deps, { command: 'test', query: '  padded  ', json: false });
     expect(seen).toEqual(['今日新闻', 'padded']);

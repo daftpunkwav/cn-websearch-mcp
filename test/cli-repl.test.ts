@@ -16,6 +16,31 @@ const okResult = (provider: string): NormalizedSearchResult => ({
   _meta: { provider, total_latency_ms: 1, attempts: [] },
 });
 
+/** CliDeps for one REPL session: injected doubles where given, ok-for-everyone defaults. */
+function makeReplDeps(
+  runtime: ReturnType<typeof createRuntime>,
+  output: NodeJS.WritableStream,
+  over: { search?: CliDeps['search']; probe?: CliDeps['probe'] },
+): CliDeps {
+  return {
+    runtime,
+    output,
+    error: output,
+    search: over.search ?? (async () => okResult('stepfun')),
+    probe:
+      over.probe
+      ?? ((providers: SearchProvider[]) => Promise.resolve(providers.map((p) => ({
+        provider: p.name, ok: true, latency_ms: 1, results: 1, sample: 'T', error: '',
+      })))),
+  };
+}
+
+/** Search double that records the strategy option of every session search. */
+const strategyRecordingSearch = (seen: string[]): CliDeps['search'] => async (_req, opts) => {
+  seen.push(opts.strategy);
+  return okResult('kimi');
+};
+
 /** Drives one session with scripted input and returns all output text. */
 async function session(
   lines: string[],
@@ -30,17 +55,7 @@ async function session(
     warn: () => {},
     configPath: undefined,
   });
-  const deps: CliDeps = {
-    runtime,
-    output,
-    error: output,
-    search: over.search ?? (async () => okResult('stepfun')),
-    probe:
-      over.probe
-      ?? ((providers: SearchProvider[]) => Promise.resolve(providers.map((p) => ({
-        provider: p.name, ok: true, latency_ms: 1, results: 1, sample: 'T', error: '',
-      })))),
-  };
+  const deps = makeReplDeps(runtime, output, over);
   const running = runRepl(deps, { input });
   for (const line of lines) input.write(`${line}\n`);
   input.end();
@@ -71,10 +86,7 @@ describe('runRepl', () => {
   it('supports /search and one-off /aggregate', async () => {
     const strategies: string[] = [];
     const { text } = await session(['/search explicit', '/aggregate multi source', '/quit'], {
-      search: async (_req, opts) => {
-        strategies.push(opts.strategy);
-        return okResult('kimi');
-      },
+      search: strategyRecordingSearch(strategies),
     });
     expect(strategies).toEqual(['fallback', 'aggregate']);
     expect(text).toContain('answered by: kimi');
@@ -103,10 +115,7 @@ describe('runRepl', () => {
   it('shows and updates the session strategy', async () => {
     const strategies: string[] = [];
     const { text } = await session(['/strategy', '/strategy aggregate', '/status', '/quit'], {
-      search: async (_req, opts) => {
-        strategies.push(opts.strategy);
-        return okResult('kimi');
-      },
+      search: strategyRecordingSearch(strategies),
     });
     expect(text).toContain('strategy: fallback');
     expect(text).toContain('strategy: aggregate');
@@ -247,17 +256,7 @@ describe('runRepl fault tolerance', () => {
       warn: () => {},
       configPath: undefined,
     });
-    const deps: CliDeps = {
-      runtime,
-      output,
-      error: output,
-      search: over.search ?? (async () => okResult('stepfun')),
-      probe:
-        over.probe
-        ?? ((providers: SearchProvider[]) => Promise.resolve(providers.map((p) => ({
-          provider: p.name, ok: true, latency_ms: 1, results: 1, sample: 'T', error: '',
-        })))),
-    };
+    const deps = makeReplDeps(runtime, output, over);
     const running = runRepl(deps, { input });
     write(input);
     return { done: running.then((code) => ({ text: chunks.join(''), code })) };
