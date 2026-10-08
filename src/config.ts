@@ -132,8 +132,13 @@ export interface GatewayConfig {
   configFile?: string;
 }
 
+// Scanning from the end instead of anchoring a regex at `$`: a greedy `/+`
+// before `$` backtracks across every split point of a long trailing-slash run
+// that fails to match (super-linear in the input), and the loop is O(n) plain.
 function trimSlash(s: string): string {
-  return s.replace(/\/+$/, '');
+  let end = s.length;
+  while (end > 0 && s[end - 1] === '/') end -= 1;
+  return s.slice(0, end);
 }
 
 /**
