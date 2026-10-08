@@ -48,7 +48,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: tools.lis
 // drops; it is forwarded so the search stops instead of running on.
 server.setRequestHandler(
   CallToolRequestSchema,
-  async (request, extra) => tools.call(
+  (request, extra) => tools.call(
     request.params.name,
     (request.params.arguments ?? {}),
     extra.signal,

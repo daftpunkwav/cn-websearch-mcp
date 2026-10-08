@@ -93,6 +93,10 @@ describe('pickProviders', () => {
   });
 });
 
+// Non-Error rejection fixture for the stringification path: the value is a
+// primitive at runtime, typed Error only to satisfy the reject rule.
+const STRING_FAILURE = 'string failure' as unknown as Error;
+
 describe('cmdSearch', () => {
   it('prints formatted results and returns 0', async () => {
     const { deps, out, err } = makeDeps({ search: async () => okResult('stepfun') });
@@ -154,11 +158,11 @@ describe('cmdSearch', () => {
   it('applies the same argument bounds to `test` as to `search`', async () => {
     const seen: SearchRequest[] = [];
     const { deps } = makeDeps({
-      probe: async (providers, req) => {
+      probe: (providers, req) => {
         seen.push(req);
-        return providers.map((p) => ({
+        return Promise.resolve(providers.map((p) => ({
           provider: p.name, ok: true, latency_ms: 1, results: 0, sample: '', error: '',
-        }));
+        })));
       },
     });
     await cmdTest(deps, {
@@ -195,13 +199,11 @@ describe('cmdSearch', () => {
 
   it('returns 1 and lists every attempt when all providers fail', async () => {
     const { deps, err } = makeDeps({
-      search: async () => {
-        throw new AllProvidersFailedError([
-          {
-            provider: 'kimi', status: 'transient_error', latency_ms: 3, error: 'HTTP 429',
-          },
-        ]);
-      },
+      search: () => Promise.reject(new AllProvidersFailedError([
+        {
+          provider: 'kimi', status: 'transient_error', latency_ms: 3, error: 'HTTP 429',
+        },
+      ])),
     });
     expect(await cmdSearch(deps, searchArgs())).toBe(1);
     expect(err.join('')).toContain('all configured providers failed');
@@ -228,11 +230,9 @@ describe('cmdSearch', () => {
 
   it('stringifies non-Error failures', async () => {
     const { deps, err } = makeDeps({
-      search: async () => {
-        // Deliberately rejects with a non-Error (cast to satisfy the throw
-        // rule) to exercise the stringification path in the CLI.
-        throw 'string failure' as unknown as Error;
-      },
+      // Deliberately rejects with a non-Error (cast to satisfy the reject
+      // rule) to exercise the stringification path in the CLI.
+      search: () => Promise.reject(STRING_FAILURE),
     });
     expect(await cmdSearch(deps, searchArgs())).toBe(1);
     expect(err.join('')).toContain('string failure');
@@ -258,9 +258,9 @@ describe('cmdStatus', () => {
 describe('cmdTest', () => {
   it('returns 0 when every probe succeeds', async () => {
     const { deps, out } = makeDeps({
-      probe: async (providers) => providers.map((p) => ({
+      probe: (providers) => Promise.resolve(providers.map((p) => ({
         provider: p.name, ok: true, latency_ms: 1, results: 1, sample: 'T', error: '',
-      })),
+      }))),
     });
     expect(await cmdTest(deps, { command: 'test', query: '', json: false })).toBe(0);
     expect(out.join('')).toContain('provider   status');
@@ -268,14 +268,14 @@ describe('cmdTest', () => {
 
   it('returns 1 when any probe fails and prints raw JSON when asked', async () => {
     const { deps, out } = makeDeps({
-      probe: async (providers) => providers.map((p, i) => ({
+      probe: (providers) => Promise.resolve(providers.map((p, i) => ({
         provider: p.name,
         ok: i === 0,
         latency_ms: 1,
         results: i === 0 ? 1 : 0,
         sample: '',
         error: i === 0 ? '' : 'down',
-      })),
+      }))),
     });
     expect(await cmdTest(deps, { command: 'test', query: '', json: true })).toBe(1);
     // The rows must survive serialization verbatim, not just be *some* JSON:
@@ -346,11 +346,11 @@ describe('cmdTest', () => {
   it('uses the provided query, else the neutral default probe query', async () => {
     const seen: string[] = [];
     const { deps } = makeDeps({
-      probe: async (providers, req) => {
+      probe: (providers, req) => {
         seen.push(req.query);
-        return providers.map((p) => ({
+        return Promise.resolve(providers.map((p) => ({
           provider: p.name, ok: true, latency_ms: 1, results: 0, sample: '', error: '',
-        }));
+        })));
       },
     });
     await cmdTest(deps, { command: 'test', query: 'custom', json: false });
@@ -363,11 +363,11 @@ describe('cmdTest', () => {
     // the caller's quota on a query that is only spaces.
     const seen: string[] = [];
     const { deps } = makeDeps({
-      probe: async (providers, req) => {
+      probe: (providers, req) => {
         seen.push(req.query);
-        return providers.map((p) => ({
+        return Promise.resolve(providers.map((p) => ({
           provider: p.name, ok: true, latency_ms: 1, results: 0, sample: '', error: '',
-        }));
+        })));
       },
     });
     await cmdTest(deps, { command: 'test', query: '   ', json: false });

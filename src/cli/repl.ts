@@ -63,7 +63,7 @@ function looksLikeCommand(line: string): boolean {
  * exit). All input/output goes through the injected io, so tests can
  * substitute streams for a real terminal.
  */
-export async function runRepl(
+export function runRepl(
   deps: CliDeps,
   io: { input: NodeJS.ReadableStream },
 ): Promise<number> {

@@ -377,7 +377,11 @@ export async function runSearch(
     signal: opts.signal,
     fetchImpl: opts.fetchImpl,
   };
-  return opts.strategy === 'aggregate'
-    ? searchAggregate(req, { ...scoped, dedupe: opts.dedupe })
-    : searchWithFallback(req, scoped);
+  // Awaited so the strategy dispatch reads sequentially and this function keeps
+  // its async contract: the no-provider throw above must surface as a rejection
+  // (runProvider's totality note below depends on callers catching promises).
+  const result = opts.strategy === 'aggregate'
+    ? await searchAggregate(req, { ...scoped, dedupe: opts.dedupe })
+    : await searchWithFallback(req, scoped);
+  return result;
 }

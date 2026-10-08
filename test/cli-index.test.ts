@@ -15,6 +15,10 @@ const okResult = (provider: string): NormalizedSearchResult => ({
   _meta: { provider, total_latency_ms: 1, attempts: [] },
 });
 
+// Non-Error rejection fixture for the stringification path: the value is a
+// primitive at runtime, typed Error only to satisfy the reject rule.
+const PLAIN_FAILURE = 'plain' as unknown as Error;
+
 function makeDeps(over: { serve?: () => Promise<void>; env?: Record<string, string> } = {}): {
   deps: CliRunDeps;
   out: () => string;
@@ -41,9 +45,9 @@ function makeDeps(over: { serve?: () => Promise<void>; env?: Record<string, stri
       serve: over.serve ?? (async () => {}),
       search: async () => okResult('stepfun'),
       // Injected probe implementation: tests never make real network requests.
-      probe: async (providers) => providers.map((p) => ({
+      probe: (providers) => Promise.resolve(providers.map((p) => ({
         provider: p.name, ok: true, latency_ms: 1, results: 1, sample: 'T', error: '',
-      })),
+      }))),
     },
     out: () => out.join(''),
     err: () => err.join(''),
@@ -87,11 +91,9 @@ describe('runCli', () => {
 
   it('stringifies non-Error startup failures', async () => {
     const { deps, err } = makeDeps({
-      serve: async () => {
-        // Deliberately throws a non-Error (cast to satisfy the throw rule) to
-        // exercise the stringification path in the CLI.
-        throw 'plain' as unknown as Error;
-      },
+      // Deliberately rejects with a non-Error (cast to satisfy the reject
+      // rule) to exercise the stringification path in the CLI.
+      serve: () => Promise.reject(PLAIN_FAILURE),
     });
     expect(await runCli(['serve'], deps)).toBe(EXIT.failure);
     expect(err()).toContain('fatal: plain');

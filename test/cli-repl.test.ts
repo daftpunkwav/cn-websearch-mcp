@@ -37,9 +37,9 @@ async function session(
     search: over.search ?? (async () => okResult('stepfun')),
     probe:
       over.probe
-      ?? (async (providers: SearchProvider[]) => providers.map((p) => ({
+      ?? ((providers: SearchProvider[]) => Promise.resolve(providers.map((p) => ({
         provider: p.name, ok: true, latency_ms: 1, results: 1, sample: 'T', error: '',
-      }))),
+      })))),
   };
   const running = runRepl(deps, { input });
   for (const line of lines) input.write(`${line}\n`);
@@ -163,12 +163,12 @@ describe('runRepl', () => {
     const probed: string[][] = [];
     const queries: string[] = [];
     const { text } = await session(['/test', '/test kimi', '/test stepfun kimi', '/quit'], {
-      probe: async (providers, req) => {
+      probe: (providers, req) => {
         probed.push(providers.map((p) => p.name));
         queries.push(req.query);
-        return providers.map((p) => ({
+        return Promise.resolve(providers.map((p) => ({
           provider: p.name, ok: true, latency_ms: 1, results: 1, sample: 'T', error: '',
-        }));
+        })));
       },
     });
     expect(probed[0]).toEqual(['kimi', 'stepfun']);
@@ -254,9 +254,9 @@ describe('runRepl fault tolerance', () => {
       search: over.search ?? (async () => okResult('stepfun')),
       probe:
         over.probe
-        ?? (async (providers: SearchProvider[]) => providers.map((p) => ({
+        ?? ((providers: SearchProvider[]) => Promise.resolve(providers.map((p) => ({
           provider: p.name, ok: true, latency_ms: 1, results: 1, sample: 'T', error: '',
-        }))),
+        })))),
     };
     const running = runRepl(deps, { input });
     write(input);
