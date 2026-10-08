@@ -223,7 +223,16 @@ describe('probeAll over the real adapters', () => {
     const runtime = createRuntime({ env: SYNTHETIC_ENV, warn: () => {}, fileExists: () => false });
     const rows = await probeAll(runtime.chain, { query: 'synthetic probe', count: 3 }, {
       timeoutMs: 1_000,
-      fetchImpl: routingFetch((url) => (url.includes('api.stepfun.com') ? 503 : 200)),
+      fetchImpl: routingFetch((url) => {
+        const isStepfunHost = (() => {
+          try {
+            return new URL(url).hostname === 'api.stepfun.com';
+          } catch {
+            return false;
+          }
+        })();
+        return isStepfunHost ? 503 : 200;
+      }),
     });
 
     const stepfun = rows.find((r) => r.provider === 'stepfun')!;
