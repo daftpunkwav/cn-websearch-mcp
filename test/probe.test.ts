@@ -153,8 +153,18 @@ describe('probeAll over the real adapters', () => {
       const code = status(url);
       if (code >= 400) return new Response('{"error":{"message":"synthetic failure"}}', { status: code });
 
-      if (url.includes('api.moonshot.cn')) {
-        if (url.includes('/formulas/')) {
+      let host = '';
+      let pathname = '';
+      try {
+        const parsed = new URL(url);
+        host = parsed.host;
+        pathname = parsed.pathname;
+      } catch {
+        // Keep defaults; unknown/invalid URLs should fall through to fixture miss.
+      }
+
+      if (host === 'api.moonshot.cn') {
+        if (pathname.includes('/formulas/')) {
           return new Response(JSON.stringify({ context: { encrypted_output: 'E', references: ['https://k.example/1'] } }));
         }
         // Kimi asks for a tool first and gets the answer on the next chat turn.
@@ -164,17 +174,17 @@ describe('probeAll over the real adapters', () => {
           : { role: 'assistant', content: 'kimi answer' };
         return new Response(JSON.stringify({ choices: [{ message }] }));
       }
-      if (url.includes('xiaomimimo')) {
+      if (host === 'xiaomimimo') {
         return new Response(
           JSON.stringify({
             choices: [{ message: { content: 'mimo answer', annotations: [{ type: 'url_citation', title: 'mimo hit', url: 'https://m.example/1' }] } }],
           }),
         );
       }
-      if (url.includes('api.stepfun.com')) {
+      if (host === 'api.stepfun.com') {
         return new Response(JSON.stringify({ results: [{ title: 'stepfun hit', url: 'https://s.example/1' }] }));
       }
-      if (url.includes('open.bigmodel.cn')) {
+      if (host === 'open.bigmodel.cn') {
         return new Response(
           JSON.stringify({ search_result: [{ title: 'zhipu hit', link: 'https://z.example/1', content: 'c' }] }),
         );
