@@ -1,0 +1,12 @@
+---
+# Codacy configuration. Once this file exists, Codacy stops applying the
+# "Ignored files" settings configured in the Codacy UI — file exclusions are
+# governed here from now on.
+#
+# Test files are excluded entirely: the suite's fixtures intentionally repeat
+# long literals (frozen wire payloads, mirrored fixture/assertion pairs) and
+# stub scaffolding, so clone detection and style tooling flag them without the
+# findings being actionable. Runtime code under src/, scripts/ and the workflow
+# definitions stay fully analyzed.
+exclude_paths:
+  - "test/**"
