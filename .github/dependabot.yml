@@ -41,6 +41,15 @@ updates:
         versions: [">=4"]
       - dependency-name: "@vitest/coverage-v8"
         versions: [">=4"]
+      # PR #22: a tinypool security alert generated a PR that dragged vitest
+      # to 5 despite the ignore above (the ignore covers the dependency's own
+      # updates, but tinypool was unlisted, and Dependabot pulls its
+      # "ancestor dependencies" along). tinypool 2.x only exists under vitest
+      # 5, so suppressing it here keeps the matrix floor intact; the finding
+      # itself is accepted in scripts/ci/npm-audit-allowlist.json. Drop this
+      # when the matrix leaves Node 18 and vitest 4 lands.
+      - dependency-name: "tinypool"
+        versions: [">=2"]
     labels:
       - "dependencies"
       - "javascript"
