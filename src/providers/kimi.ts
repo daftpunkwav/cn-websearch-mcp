@@ -25,13 +25,17 @@
 // K2.5/K2.6 thinking mode requires the assistant turn to pass reasoning_content back,
 // otherwise the server rejects subsequent requests.
 
-import { asObject, asArray, clampInt, str, toItem } from "../normalize.js";
-import { postJson } from "../http.js";
-import { ParseError } from "../errors.js";
-import type { NormalizedItem, NormalizedSearchResult, SearchContext, SearchProvider, SearchRequest } from "../types.js";
-import type { ProviderConfig } from "../config.js";
+import {
+  asObject, asArray, clampInt, str, toItem,
+} from '../normalize.js';
+import { postJson } from '../http.js';
+import { ParseError } from '../errors.js';
+import type {
+  NormalizedItem, NormalizedSearchResult, SearchContext, SearchProvider, SearchRequest,
+} from '../types.js';
+import type { ProviderConfig } from '../config.js';
 
-const WEB_SEARCH_URI = "moonshot/web-search:latest";
+const WEB_SEARCH_URI = 'moonshot/web-search:latest';
 const DEFAULT_MAX_ROUNDS = 2;
 const DEFAULT_MAX_TOKENS = 8192;
 
@@ -40,17 +44,17 @@ const DEFAULT_MAX_TOKENS = 8192;
  * agree with it: the registry, the chain filter and every result label key on
  * this one value, so a second hand-written copy could drift silently.
  */
-const NAME = "kimi";
+const NAME = 'kimi';
 
 const WEB_SEARCH_TOOL = {
-  type: "function",
+  type: 'function',
   function: {
-    name: "web_search",
-    description: "用于信息检索的网络搜索",
+    name: 'web_search',
+    description: '用于信息检索的网络搜索',
     parameters: {
-      type: "object",
-      properties: { query: { type: "string", description: "要搜索的内容" } },
-      required: ["query"],
+      type: 'object',
+      properties: { query: { type: 'string', description: '要搜索的内容' } },
+      required: ['query'],
     },
   },
 };
@@ -73,7 +77,7 @@ async function chat(
   const res = await postJson(
     `${cfg.baseUrl}/chat/completions`,
     {
-      model: cfg.model ?? "kimi-k3",
+      model: cfg.model ?? 'kimi-k3',
       messages,
       max_tokens: opts.maxTokens,
       ...(opts.withTools ? { tools: [WEB_SEARCH_TOOL] } : {}),
@@ -81,32 +85,40 @@ async function chat(
     { Authorization: `Bearer ${cfg.apiKey}` },
     { timeoutMs: ctx.timeoutMs, signal: ctx.signal, fetchImpl: ctx.fetchImpl },
   );
-  const body = asObject(res.json, "kimi chat response");
-  const choices = asArray(body.choices, "kimi choices");
-  const choice = asObject(choices[0] ?? null, "kimi choice");
-  return asObject(choice.message ?? null, "kimi message") as unknown as ChatMessage;
+  const body = asObject(res.json, 'kimi chat response');
+  const choices = asArray(body.choices, 'kimi choices');
+  const choice = asObject(choices[0] ?? null, 'kimi choice');
+  return asObject(choice.message ?? null, 'kimi message') as unknown as ChatMessage;
 }
 
 /** Executes a single tool_call server-side; returns the fiber context. */
-async function runFiber(cfg: ProviderConfig, name: string, args: string, ctx: SearchContext): Promise<Record<string, unknown>> {
+async function runFiber(
+  cfg: ProviderConfig,
+  name: string,
+  args: string,
+  ctx: SearchContext,
+): Promise<Record<string, unknown>> {
   const res = await postJson(
     `${cfg.baseUrl}/formulas/${WEB_SEARCH_URI}/fibers`,
     { name, arguments: args },
     { Authorization: `Bearer ${cfg.apiKey}` },
     { timeoutMs: ctx.timeoutMs, signal: ctx.signal, fetchImpl: ctx.fetchImpl },
   );
-  const body = asObject(res.json, "kimi fiber response");
-  return asObject(body.context ?? {}, "kimi fiber context");
+  const body = asObject(res.json, 'kimi fiber response');
+  return asObject(body.context ?? {}, 'kimi fiber context');
 }
 
-/** Extracts reference URLs from the fiber context; returns an empty array on malformed structure instead of throwing. */
+/**
+ * Extracts reference URLs from the fiber context; returns an empty array on
+ * malformed structure instead of throwing.
+ */
 function urlsFromFiber(fiberContext: Record<string, unknown>): string[] {
   const refs = fiberContext.references;
   if (!Array.isArray(refs)) return [];
   const urls: string[] = [];
   for (const ref of refs) {
-    if (typeof ref === "string") urls.push(ref);
-    else if (ref && typeof ref === "object" && typeof (ref as { url?: unknown }).url === "string") {
+    if (typeof ref === 'string') urls.push(ref);
+    else if (ref && typeof ref === 'object' && typeof (ref as { url?: unknown }).url === 'string') {
       urls.push((ref as { url: string }).url);
     }
   }
@@ -116,24 +128,24 @@ function urlsFromFiber(fiberContext: Record<string, unknown>): string[] {
 /** Checks for abort before each network call; if aborted, rethrows the abort reason as-is. */
 function throwIfAborted(ctx: SearchContext): void {
   if (ctx.signal.aborted) {
-    throw ctx.signal.reason instanceof Error ? ctx.signal.reason : new ParseError("aborted before completion");
+    throw ctx.signal.reason instanceof Error ? ctx.signal.reason : new ParseError('aborted before completion');
   }
 }
 
-export function createKimiProvider(cfg: ProviderConfig): SearchProvider {
+export default function createKimiProvider(cfg: ProviderConfig): SearchProvider {
   return {
     name: NAME,
     timeoutMs: cfg.timeoutMs,
     async search(req: SearchRequest, ctx: SearchContext): Promise<NormalizedSearchResult> {
       const maxRounds = clampInt(cfg.options?.maxRounds, DEFAULT_MAX_ROUNDS, 1, 5);
       const maxTokens = clampInt(cfg.options?.maxTokens, DEFAULT_MAX_TOKENS, 256, 32_768);
-      const messages: ChatMessage[] = [{ role: "user", content: req.query }];
+      const messages: ChatMessage[] = [{ role: 'user', content: req.query }];
       const urls: string[] = [];
-      let answer = "";
+      let answer = '';
 
       // Four-step loop: at most maxRounds rounds; if the last round still returns tool_calls,
       // drop tools and issue one more chat call to force a final answer.
-      for (let round = 0; round < maxRounds; round++) {
+      for (let round = 0; round < maxRounds; round += 1) {
         throwIfAborted(ctx);
         const message = await chat(cfg, messages, ctx, { withTools: true, maxTokens });
         const toolCalls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
@@ -141,13 +153,14 @@ export function createKimiProvider(cfg: ProviderConfig): SearchProvider {
           answer = str(message.content).trim();
           break;
         }
-        // In thinking mode the server requires the assistant turn to pass reasoning_content back verbatim.
-        const assistant: ChatMessage = { role: "assistant", content: message.content ?? null, tool_calls: toolCalls };
+        // In thinking mode the server requires the assistant turn to pass
+        // reasoning_content back verbatim.
+        const assistant: ChatMessage = { role: 'assistant', content: message.content ?? null, tool_calls: toolCalls };
         if (message.reasoning_content) assistant.reasoning_content = message.reasoning_content;
         messages.push(assistant);
         for (const rawCall of toolCalls) {
-          const call = asObject(rawCall, "kimi tool_call");
-          const fn = asObject(call.function ?? null, "kimi tool_call.function");
+          const call = asObject(rawCall, 'kimi tool_call');
+          const fn = asObject(call.function ?? null, 'kimi tool_call.function');
           throwIfAborted(ctx);
           const fiberContext = await runFiber(cfg, str(fn.name), str(fn.arguments), ctx);
           // Appended one at a time rather than with push(...refs): the spread
@@ -158,7 +171,7 @@ export function createKimiProvider(cfg: ProviderConfig): SearchProvider {
           // response into a RangeError instead of results.
           for (const url of urlsFromFiber(fiberContext)) urls.push(url);
           const output = str(fiberContext.encrypted_output) || str(fiberContext.output);
-          messages.push({ role: "tool", content: output, tool_call_id: str(call.id) });
+          messages.push({ role: 'tool', content: output, tool_call_id: str(call.id) });
         }
         if (round === maxRounds - 1) {
           throwIfAborted(ctx);
@@ -167,7 +180,8 @@ export function createKimiProvider(cfg: ProviderConfig): SearchProvider {
         }
       }
 
-      // Dedupe fiber reference URLs and cap at the requested count; the URL is the only trustworthy field.
+      // Dedupe fiber reference URLs and cap at the requested count; the URL is
+      // the only trustworthy field.
       const seen = new Set<string>();
       const results: NormalizedItem[] = [];
       for (const url of urls) {
@@ -181,7 +195,9 @@ export function createKimiProvider(cfg: ProviderConfig): SearchProvider {
       }
       return {
         results,
-        _meta: { provider: NAME, total_latency_ms: 0, attempts: [], answer: answer || undefined },
+        _meta: {
+          provider: NAME, total_latency_ms: 0, attempts: [], answer: answer || undefined,
+        },
       };
     },
   };

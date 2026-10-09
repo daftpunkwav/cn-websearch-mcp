@@ -6,7 +6,8 @@
  * - Expose two tools: web_search (with strategy and provider selection) and provider_status
  * - Validate and normalize tool arguments before the orchestrator runs
  * - Format successful results and structured failures as MCP text content
- * - All dependencies are injected via deps; this module never reads the environment or builds providers itself
+ * - All dependencies are injected via deps; this module never reads the environment or builds
+ *   providers itself
  */
 
 // MCP tool layer. Upward it depends only on the injected deps object; downward
@@ -16,12 +17,14 @@
 // decoupled. Provider-name rules live in provider-selection.ts, which the CLI
 // shares, so both surfaces accept exactly the same names.
 
-import { COUNT_MAX, COUNT_MIN, effectiveCount, KNOWN_PROVIDERS, QUERY_MAX, type GatewayConfig } from "./config.js";
-import { isStructuredFailure, runSearch, type DispatchOptions } from "./orchestrator.js";
-import { selectProviders } from "./provider-selection.js";
-import { summarizeError } from "./errors.js";
-import { truncate } from "./normalize.js";
-import { SERVER_NAME } from "./server-info.js";
+import {
+  COUNT_MAX, COUNT_MIN, effectiveCount, KNOWN_PROVIDERS, QUERY_MAX, type GatewayConfig,
+} from './config.js';
+import { isStructuredFailure, runSearch, type DispatchOptions } from './orchestrator.js';
+import { selectProviders } from './provider-selection.js';
+import { summarizeError } from './errors.js';
+import { truncate } from './normalize.js';
+import { SERVER_NAME } from './server-info.js';
 import {
   SEARCH_STRATEGIES,
   type AttemptRecord,
@@ -29,10 +32,10 @@ import {
   type SearchProvider,
   type SearchRequest,
   type SearchStrategy,
-} from "./types.js";
+} from './types.js';
 
 export interface ToolOutput {
-  content: Array<{ type: "text"; text: string }>;
+  content: { type: 'text'; text: string }[];
   isError?: boolean;
 }
 
@@ -43,15 +46,19 @@ export interface ToolOutput {
  * the tool listed but always answering "unknown tool", which is a confusing way
  * to discover the rename.
  */
-const WEB_SEARCH = "web_search";
-const PROVIDER_STATUS = "provider_status";
+const WEB_SEARCH = 'web_search';
+const PROVIDER_STATUS = 'provider_status';
 
 /** Search execution function signature (runSearch by default; injectable for tests). */
-export type SearchFn = (req: SearchRequest, opts: DispatchOptions) => Promise<NormalizedSearchResult>;
+export type SearchFn = (
+  req: SearchRequest,
+  opts: DispatchOptions,
+) => Promise<NormalizedSearchResult>;
 
 /** Dependencies injected by the entry (keeps this module independently testable). */
 export interface GatewayToolsDeps {
-  /** Effective config (strategy, timeout, default result count, provider switches and priorities). */
+  /** Effective config (strategy, timeout, default result count, provider switches and
+   *  priorities). */
   config: GatewayConfig;
   /** Adapters that can actually search, in priority order. */
   chain: SearchProvider[];
@@ -62,7 +69,7 @@ export interface GatewayToolsDeps {
 /** Wrap any payload as a single JSON text content (flagged when isError is true). */
 export function textContent(payload: unknown, isError = false): ToolOutput {
   return {
-    content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
+    content: [{ type: 'text', text: JSON.stringify(payload, null, 2) }],
     ...(isError ? { isError: true } : {}),
   };
 }
@@ -76,58 +83,58 @@ export function buildToolDefinitions(defaultCount: number, defaultStrategy: Sear
     {
       name: WEB_SEARCH,
       description:
-        "Search the web through any of the configured built-in search channels. " +
-        "Two strategies: 'fallback' tries slots in your configured priority order and returns the first success; " +
-        "'aggregate' queries several slots in parallel and merges the results (deduplicated by URL, each item tagged " +
-        "with its source slot). Per-attempt timeout, with one retry after a transient failure (network error, " +
-        "HTTP 5xx, 429); an attempt that times out is never retried. Returns normalized results " +
-        "{ title, url, snippet, content?, published_date?, source? } plus _meta with the answering slot(s), " +
-        "total latency, and a per-attempt audit trail.",
+        'Search the web through any of the configured built-in search channels. '
+        + "Two strategies: 'fallback' tries slots in your configured priority order and returns the first success; "
+        + "'aggregate' queries several slots in parallel and merges the results (deduplicated by URL, each item tagged "
+        + 'with its source slot). Per-attempt timeout, with one retry after a transient failure (network error, '
+        + 'HTTP 5xx, 429); an attempt that times out is never retried. Returns normalized results '
+        + '{ title, url, snippet, content?, published_date?, source? } plus _meta with the answering slot(s), '
+        + 'total latency, and a per-attempt audit trail.',
       inputSchema: {
-        type: "object",
+        type: 'object',
         properties: {
-          query: { type: "string", description: "The search query" },
+          query: { type: 'string', description: 'The search query' },
           count: {
-            type: "integer",
+            type: 'integer',
             minimum: COUNT_MIN,
             maximum: COUNT_MAX,
             default: defaultCount,
             description: `Desired number of results; a value outside ${COUNT_MIN}-${COUNT_MAX} is clamped to that range rather than rejected, and a value that is not a number falls back to the configured default`,
           },
           strategy: {
-            type: "string",
+            type: 'string',
             enum: SEARCH_STRATEGIES,
             default: defaultStrategy,
             description:
-              "'fallback' = first provider that answers wins; 'aggregate' = query several providers and merge. " +
-              "Defaults to the configured strategy.",
+              "'fallback' = first provider that answers wins; 'aggregate' = query several providers and merge. "
+              + 'Defaults to the configured strategy.',
           },
           providers: {
-            type: "array",
-            items: { type: "string", enum: KNOWN_PROVIDERS },
+            type: 'array',
+            items: { type: 'string', enum: KNOWN_PROVIDERS },
             description:
-              "Optional subset of providers to use for this call, in priority order. " +
-              "Only providers that are enabled and have an API key can be selected.",
+              'Optional subset of providers to use for this call, in priority order. '
+              + 'Only providers that are enabled and have an API key can be selected.',
           },
         },
-        required: ["query"],
+        required: ['query'],
       },
     },
     {
       name: PROVIDER_STATUS,
       description:
-        "Read-only status: effective strategy and settings, plus which providers are enabled, have API keys and " +
-        "are part of the active search chain.",
-      inputSchema: { type: "object", properties: {} },
+        'Read-only status: effective strategy and settings, plus which providers are enabled, have API keys and '
+        + 'are part of the active search chain.',
+      inputSchema: { type: 'object', properties: {} },
     },
   ] as const;
 }
 
 /** Validate the strategy argument: falls back to the configured default when not provided. */
-function selectStrategy(requested: unknown, fallback: SearchStrategy): SearchStrategy | "invalid" {
+function selectStrategy(requested: unknown, fallback: SearchStrategy): SearchStrategy | 'invalid' {
   if (requested === undefined) return fallback;
-  const value = typeof requested === "string" ? (requested.trim().toLowerCase() as SearchStrategy) : "invalid";
-  return (SEARCH_STRATEGIES as readonly string[]).includes(value) ? value : "invalid";
+  const value = typeof requested === 'string' ? (requested.trim().toLowerCase() as SearchStrategy) : 'invalid';
+  return (SEARCH_STRATEGIES as readonly string[]).includes(value) ? value : 'invalid';
 }
 
 export function createGatewayTools(deps: GatewayToolsDeps) {
@@ -135,7 +142,10 @@ export function createGatewayTools(deps: GatewayToolsDeps) {
   const chainNames = new Set(deps.chain.map((p) => p.name));
   const searchFn: SearchFn = deps.searchFn ?? runSearch;
 
-  /** Read-only status: config plus each provider's enabled/key/in-chain state (keys are never echoed). */
+  /**
+   * Read-only status: config plus each provider's enabled/key/in-chain state
+   * (keys are never echoed).
+   */
   function providerStatus() {
     return {
       strategy: config.strategy,
@@ -150,7 +160,7 @@ export function createGatewayTools(deps: GatewayToolsDeps) {
         return {
           name,
           enabled: p.enabled,
-          configured: p.apiKey.trim() !== "",
+          configured: p.apiKey.trim() !== '',
           in_chain: chainNames.has(name),
           priority: p.priority,
           model: p.model ?? null,
@@ -177,15 +187,15 @@ export function createGatewayTools(deps: GatewayToolsDeps) {
     }
 
     if (name === WEB_SEARCH) {
-      const query = typeof args.query === "string" ? args.query.trim() : "";
+      const query = typeof args.query === 'string' ? args.query.trim() : '';
       if (!query) {
         return textContent({ error: "invalid arguments: 'query' must be a non-empty string" }, true);
       }
       const count = effectiveCount(args.count, config.count);
       const strategy = selectStrategy(args.strategy, config.strategy);
-      if (strategy === "invalid") {
+      if (strategy === 'invalid') {
         return textContent(
-          { error: `invalid arguments: 'strategy' must be one of ${SEARCH_STRATEGIES.join(", ")}` },
+          { error: `invalid arguments: 'strategy' must be one of ${SEARCH_STRATEGIES.join(', ')}` },
           true,
         );
       }
@@ -218,8 +228,8 @@ export function createGatewayTools(deps: GatewayToolsDeps) {
         if (isStructuredFailure(err)) {
           return textContent({ error: err.message, attempts: err.attempts }, true);
         }
-        // Any other exception is unexpected: log the full error to stderr, return only a redacted summary,
-        // so no code path can echo credential-looking text back to a client.
+        // Any other exception is unexpected: log the full error to stderr, return only a
+        // redacted summary, so no code path can echo credential-looking text back to a client.
         console.error(`[${SERVER_NAME}] unexpected error:`, err);
         return textContent({ error: summarizeError(err), attempts: [] as AttemptRecord[] }, true);
       }

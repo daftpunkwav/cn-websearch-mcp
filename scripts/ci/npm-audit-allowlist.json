@@ -1,4 +1,41 @@
 {
-  "$comment": "Accepted npm advisories: unfixable upstream with unreachable entry points in our usage. Every entry must name the GHSA id, the affected package, and why it is accepted. npm audit has no --ignore flag, so scripts/ci/npm-audit-check.mjs enforces this list (CI pipes `npm audit --json` into it). Re-check entries when the dependency tree changes.",
-  "allow": []
+  "$comment": "Accepted npm advisories: unfixable upstream with unreachable entry points in our usage. Entry shapes: { id, package, reason } accepts one advisory id; { package, reason } (no id) accepts a whole package for findings npm reports without an advisory id (range-only dependents). Every entry must name the affected package (and GHSA id where one exists) and why it is accepted. npm audit has no --ignore flag, so scripts/ci/npm-audit-check.mjs enforces this list (CI pipes `npm audit --json` into it). Re-check entries when the dependency tree changes.",
+  "allow": [
+    {
+      "id": "GHSA-82fw-gwwq-j7x9",
+      "package": "vitest",
+      "reason": "Dev-only test runner; the @vitest/mocker redirect-mock path needs a test-served module graph we never point at untrusted input. Fix ships in vitest 5 (breaking: coverage-v8 peer and test API) - tracked as its own upgrade, not folded into unrelated PRs."
+    },
+    {
+      "id": "GHSA-5gmw-xhrv-c9v3",
+      "package": "tinypool",
+      "reason": "Dev-only test worker pool; RCE gadget requires attacker-controlled worker options and our suite builds them entirely in-repo. Patched only in tinypool 2.1.2+, which requires vitest 5 (see GHSA-82fw entry)."
+    },
+    {
+      "id": "GHSA-85c8-ppgw-ccpr",
+      "package": "tinypool",
+      "reason": "Same reachability as GHSA-5gmw-xhrv-c9v3: second prototype-pollution gadget, same vitest 5 upgrade path."
+    },
+    {
+      "id": "GHSA-vfj7-8cjw-p6xm",
+      "package": "braces",
+      "reason": "ReDoS in glob expansion; no patched braces release exists at audit time (fix suggested by npm is downgrading the Airbnb lint config, itself breaking). Transitive of @next/eslint-plugin-next inside the lint toolchain, which never expands untrusted patterns."
+    },
+    {
+      "package": "micromatch",
+      "reason": "Range-only dependent of the braces finding above (no advisory id to allowlist); dev-only lint toolchain."
+    },
+    {
+      "package": "fast-glob",
+      "reason": "Range-only dependent of the braces finding above; dev-only lint toolchain (@next/eslint-plugin-next file discovery)."
+    },
+    {
+      "package": "@next/eslint-plugin-next",
+      "reason": "Range-only dependent of the braces finding above; pulled unconditionally by eslint-config-airbnb-extended although this non-React package never loads the Next.js preset."
+    },
+    {
+      "package": "eslint-config-airbnb-extended",
+      "reason": "Range-only dependent of the braces finding above; the config package itself is unaffected - npm only flags its vulnerable-range declaration through the plugin chain."
+    }
+  ]
 }

@@ -17,13 +17,17 @@
  * real binary's JSON-RPC stack end-to-end via spawn + stdio frames.
  */
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { PassThrough } from "node:stream";
-import { cleanEnv, DIST_ENTRY, freshTempDir, removeDir } from "./_helpers.js";
+import {
+  afterEach, beforeEach, describe, expect, it,
+} from 'vitest';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { PassThrough } from 'node:stream';
+import {
+  cleanEnv, DIST_ENTRY, freshTempDir, removeDir,
+} from './_helpers.js';
 
-const CLIENT_INFO = { name: "e2e-test", version: "0.0.0" };
+const CLIENT_INFO = { name: 'e2e-test', version: '0.0.0' };
 
 interface ToolDef {
   name: string;
@@ -32,7 +36,7 @@ interface ToolDef {
 }
 
 interface CallResult {
-  content: Array<{ type: string; text: string }>;
+  content: { type: string; text: string }[];
   isError?: boolean;
 }
 
@@ -44,14 +48,14 @@ interface ServerInfo {
 
 let client: Client;
 let transport: StdioClientTransport;
-let readyStderr = "";
+let readyStderr = '';
 let tmpDir: string;
 
 beforeEach(async () => {
   // Run in an empty temp dir so the project's real .env file does not leak
   // provider keys into the server-side runtime.
   tmpDir = freshTempDir();
-  readyStderr = "";
+  readyStderr = '';
 
   // StdioClientTransport starts the child on demand; attaching the stderr
   // listener *before* start() guarantees we catch the ready banner even if it
@@ -61,11 +65,13 @@ beforeEach(async () => {
     args: [DIST_ENTRY],
     env: cleanEnv(),
     cwd: tmpDir,
-    stderr: "pipe",
+    stderr: 'pipe',
   });
   const errSink = new PassThrough();
-  errSink.setEncoding("utf8");
-  errSink.on("data", (chunk: string) => (readyStderr += chunk));
+  errSink.setEncoding('utf8');
+  errSink.on('data', (chunk: string) => {
+    readyStderr += chunk;
+  });
   transport.stderr!.pipe(errSink);
 
   client = new Client(CLIENT_INFO, { capabilities: {} });
@@ -77,44 +83,44 @@ afterEach(async () => {
   if (tmpDir) removeDir(tmpDir);
 });
 
-describe("MCP stdio protocol", () => {
-  it("initialize returns server identity and tools capability", () => {
+describe('MCP stdio protocol', () => {
+  it('initialize returns server identity and tools capability', () => {
     const info = client.getServerVersion() as unknown as ServerInfo;
-    expect(info.name).toBe("cn-websearch-mcp");
+    expect(info.name).toBe('cn-websearch-mcp');
     expect(info.version).toMatch(/^\d+\.\d+\.\d+/);
     const caps = client.getServerCapabilities() as { tools?: unknown };
-    expect(caps).toHaveProperty("tools");
+    expect(caps).toHaveProperty('tools');
   });
 
-  it("tools/list returns both advertised tools with valid schemas", async () => {
+  it('tools/list returns both advertised tools with valid schemas', async () => {
     const { tools } = (await client.listTools()) as { tools: ToolDef[] };
     expect(tools).toHaveLength(2);
 
-    const web = tools.find((t) => t.name === "web_search")!;
+    const web = tools.find((t) => t.name === 'web_search')!;
     expect(web).toBeDefined();
-    expect(web.inputSchema.type).toBe("object");
-    expect(web.inputSchema.properties).toHaveProperty("query");
-    expect(web.inputSchema.properties).toHaveProperty("count");
-    expect(web.inputSchema.properties).toHaveProperty("strategy");
-    expect(web.inputSchema.required).toEqual(["query"]);
+    expect(web.inputSchema.type).toBe('object');
+    expect(web.inputSchema.properties).toHaveProperty('query');
+    expect(web.inputSchema.properties).toHaveProperty('count');
+    expect(web.inputSchema.properties).toHaveProperty('strategy');
+    expect(web.inputSchema.required).toEqual(['query']);
 
-    const status = tools.find((t) => t.name === "provider_status")!;
+    const status = tools.find((t) => t.name === 'provider_status')!;
     expect(status).toBeDefined();
-    expect(status.inputSchema.type).toBe("object");
+    expect(status.inputSchema.type).toBe('object');
   });
 
-  it("tools/call provider_status returns a structured status payload", async () => {
-    const result = (await client.callTool({ name: "provider_status", arguments: {} })) as CallResult;
+  it('tools/call provider_status returns a structured status payload', async () => {
+    const result = (await client.callTool({ name: 'provider_status', arguments: {} })) as CallResult;
     expect(result.isError).toBeFalsy();
     expect(result.content).toHaveLength(1);
-    expect(result.content[0]!.type).toBe("text");
+    expect(result.content[0]!.type).toBe('text');
 
     const payload = JSON.parse(result.content[0]!.text);
-    expect(payload).toHaveProperty("strategy");
+    expect(payload).toHaveProperty('strategy');
     expect(Array.isArray(payload.providers)).toBe(true);
     const byName = new Map<string, { configured: boolean; in_chain: boolean }>();
     for (const p of payload.providers) byName.set(p.name, p);
-    for (const name of ["stepfun", "kimi", "zhipu", "mimo"]) {
+    for (const name of ['stepfun', 'kimi', 'zhipu', 'mimo']) {
       const entry = byName.get(name);
       expect(entry, `provider ${name} present`).toBeDefined();
       expect(entry!.configured).toBe(false);
@@ -124,39 +130,39 @@ describe("MCP stdio protocol", () => {
     expect(result.content[0]!.text).not.toMatch(/sk-[A-Za-z0-9._-]{12,}/);
   });
 
-  it("tools/call web_search without a query returns isError=true with a structured message", async () => {
+  it('tools/call web_search without a query returns isError=true with a structured message', async () => {
     const result = (await client.callTool({
-      name: "web_search",
-      arguments: { query: "" },
+      name: 'web_search',
+      arguments: { query: '' },
     })) as CallResult;
     expect(result.isError).toBe(true);
     const payload = JSON.parse(result.content[0]!.text);
     expect(payload.error).toMatch(/query/i);
   });
 
-  it("tools/call web_search with an unknown provider returns isError=true, not a crash", async () => {
+  it('tools/call web_search with an unknown provider returns isError=true, not a crash', async () => {
     const result = (await client.callTool({
-      name: "web_search",
-      arguments: { query: "hello", providers: ["openai"] },
+      name: 'web_search',
+      arguments: { query: 'hello', providers: ['openai'] },
     })) as CallResult;
     expect(result.isError).toBe(true);
     const payload = JSON.parse(result.content[0]!.text);
     expect(payload.error).toMatch(/unknown provider/i);
   });
 
-  it("tools/call web_search with an invalid strategy returns isError=true", async () => {
+  it('tools/call web_search with an invalid strategy returns isError=true', async () => {
     const result = (await client.callTool({
-      name: "web_search",
-      arguments: { query: "hello", strategy: "nonsense" },
+      name: 'web_search',
+      arguments: { query: 'hello', strategy: 'nonsense' },
     })) as CallResult;
     expect(result.isError).toBe(true);
     const payload = JSON.parse(result.content[0]!.text);
     expect(payload.error).toMatch(/strategy/);
   });
 
-  it("tools/call with an unknown tool name returns isError=true", async () => {
+  it('tools/call with an unknown tool name returns isError=true', async () => {
     const result = (await client.callTool({
-      name: "no_such_tool",
+      name: 'no_such_tool',
       arguments: {},
     })) as CallResult;
     expect(result.isError).toBe(true);
@@ -164,12 +170,12 @@ describe("MCP stdio protocol", () => {
     expect(payload.error).toMatch(/unknown tool/);
   });
 
-  it("server logs a ready line on stderr with chain summary", () => {
+  it('server logs a ready line on stderr with chain summary', () => {
     // The sink was attached before connect(), so the ready banner is already
     // captured. Assert it directly.
     expect(readyStderr).toMatch(/cn-websearch-mcp.*v\d+\.\d+\.\d+ ready/);
-    expect(readyStderr).toContain("strategy:");
+    expect(readyStderr).toContain('strategy:');
     // No keys configured in test env → the chain is empty and the banner must say so.
-    expect(readyStderr).toContain("(none configured)");
+    expect(readyStderr).toContain('(none configured)');
   });
 });

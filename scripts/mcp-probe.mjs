@@ -1,40 +1,45 @@
 // Manual stdio probe: spawn dist/index.js, send two MCP initialize frames, and
 // echo everything the child prints — proves whether the child process even
 // sees what we wrote.
-import { spawn } from "node:child_process";
-import process from "node:process";
+import { spawn } from 'node:child_process';
+import process from 'node:process';
 
-const proc = spawn(process.execPath, ["dist/index.js"], {
-  stdio: ["pipe", "pipe", "pipe"],
+const proc = spawn(process.execPath, ['dist/index.js'], {
+  stdio: ['pipe', 'pipe', 'pipe'],
 });
 
-proc.stderr.on("data", (c) => process.stderr.write("[STDERR] " + c));
-proc.stdout.on("data", (c) => process.stdout.write("[STDOUT] " + c));
-proc.on("exit", (c, s) => console.log("[EXIT]", c, s));
+proc.stderr.on('data', (c) => process.stderr.write(`[STDERR] ${c}`));
+proc.stdout.on('data', (c) => process.stdout.write(`[STDOUT] ${c}`));
+proc.on('exit', (c, s) => console.log('[EXIT]', c, s));
 
 // Burst 1: send immediately at t=0
 const init = JSON.stringify({
-  jsonrpc: "2.0",
+  jsonrpc: '2.0',
   id: 1,
-  method: "initialize",
+  method: 'initialize',
   params: {
-    protocolVersion: "2024-11-05",
+    protocolVersion: '2024-11-05',
     capabilities: {},
-    clientInfo: { name: "probe", version: "0.0.0" },
+    clientInfo: { name: 'probe', version: '0.0.0' },
   },
 });
-const frame = `Content-Length: ${Buffer.byteLength(init, "utf8")}\r\n\r\n${init}`;
+const frame = `Content-Length: ${Buffer.byteLength(init, 'utf8')}\r\n\r\n${init}`;
 
-console.log("[T+0] write");
+console.log('[T+0] write');
 proc.stdin.write(frame);
 
 // Burst 2: keep stdin open for 5 seconds
 setTimeout(() => {
-  console.log("[T+2] re-write");
+  console.log('[T+2] re-write');
   proc.stdin.write(frame);
 }, 2000);
 
 setTimeout(() => {
-  console.log("[T+5] end");
-  try { proc.kill(); } catch {}
+  console.log('[T+5] end');
+  try {
+    proc.kill();
+  } catch {
+    // Best-effort teardown: the probe is exiting anyway, so a dead-handle
+    // kill failure is harmless and must not crash the probe.
+  }
 }, 5000);

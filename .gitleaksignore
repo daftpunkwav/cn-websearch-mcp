@@ -11,3 +11,11 @@
 bb8541543f62aaa468bcf8656df630f1ef655dee:test/errors.test.ts:generic-api-key:95
 ff4ad8581160b1ec53cc3e7d8fad4612cc28c1bb:test/errors.test.ts:generic-api-key:165
 ff4ad8581160b1ec53cc3e7d8fad4612cc28c1bb:test/errors.test.ts:generic-api-key:190
+# The 2026-10-09 Airbnb reformat (fecef021) moved the fixtures below onto new
+# lines, so their fingerprints changed. Same synthetic values as the entries
+# above; original fingerprints kept for the full-history scan.
+fecef021d4c9a914f6194cf7f2416816878bd213:test/http.test.ts:generic-api-key:149
+fecef021d4c9a914f6194cf7f2416816878bd213:test/config-file.test.ts:generic-api-key:50
+fecef021d4c9a914f6194cf7f2416816878bd213:test/errors.test.ts:generic-api-key:122
+fecef021d4c9a914f6194cf7f2416816878bd213:test/errors.test.ts:generic-api-key:167
+fecef021d4c9a914f6194cf7f2416816878bd213:test/errors.test.ts:generic-api-key:192

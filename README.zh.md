@@ -240,6 +240,7 @@ STEPFUN_PRIORITY=10
 
 ```bash
 npm install
+npm run lint           # eslint(Airbnb 风格指南)
 npm run build          # tsc → dist/
 npm run typecheck      # 对 src/、test/、scripts/ 做类型检查(不产出)
 npm test               # vitest,全部 HTTP mock(无需 key)

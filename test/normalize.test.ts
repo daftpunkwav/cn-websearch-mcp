@@ -1,9 +1,11 @@
 /**
  * @file test/normalize
- * @description Normalization helper unit tests: clamping, truncation, date/URL normalization, control-character stripping, shape assertions, and multi-source merging (canonicalUrl / mergeItems / mergeSourceItems).
+ * @description Normalization helper unit tests: clamping, truncation, date/URL
+ * normalization, control-character stripping, shape assertions, and multi-source
+ * merging (canonicalUrl / mergeItems / mergeSourceItems).
  */
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from 'vitest';
 import {
   asArray,
   asObject,
@@ -18,252 +20,272 @@ import {
   str,
   toItem,
   truncate,
-} from "../src/normalize.js";
-import { ParseError, stripControlChars } from "../src/errors.js";
+} from '../src/normalize.js';
+import { ParseError, stripControlChars } from '../src/errors.js';
 
-describe("hostnameOf", () => {
-  it("extracts the hostname and tolerates garbage", () => {
-    expect(hostnameOf("https://example.com/a?b=1")).toBe("example.com");
-    expect(hostnameOf("not a url")).toBe("");
+describe('hostnameOf', () => {
+  it('extracts the hostname and tolerates garbage', () => {
+    expect(hostnameOf('https://example.com/a?b=1')).toBe('example.com');
+    expect(hostnameOf('not a url')).toBe('');
   });
 });
 
-describe("clampInt", () => {
-  it("clamps and falls back", () => {
+describe('clampInt', () => {
+  it('clamps and falls back', () => {
     expect(clampInt(12, 8, 1, 10)).toBe(10);
     expect(clampInt(0, 8, 1, 10)).toBe(1);
-    expect(clampInt("7", 8, 1, 10)).toBe(7);
+    expect(clampInt('7', 8, 1, 10)).toBe(7);
     expect(clampInt(undefined, 8, 1, 10)).toBe(8);
-    expect(clampInt("abc", 8, 1, 10)).toBe(8);
+    expect(clampInt('abc', 8, 1, 10)).toBe(8);
   });
 
-  it("treats a blank string as not supplied, like every other empty value", () => {
+  it('treats a blank string as not supplied, like every other empty value', () => {
     // Number("") is 0: reading a blank as zero clamped it to min instead of
     // falling back, so "" and null — both "no value given" — disagreed.
-    expect(clampInt("", 8, 1, 10)).toBe(8);
-    expect(clampInt("   ", 8, 1, 10)).toBe(8);
+    expect(clampInt('', 8, 1, 10)).toBe(8);
+    expect(clampInt('   ', 8, 1, 10)).toBe(8);
     expect(clampInt(null, 8, 1, 10)).toBe(8);
-    expect(clampInt("0", 8, 1, 10)).toBe(1);
+    expect(clampInt('0', 8, 1, 10)).toBe(1);
   });
 });
 
-describe("truncate / normalizeDate", () => {
-  it("truncates long strings", () => {
-    expect(truncate("abcdef", 3)).toBe("abc");
-    expect(truncate("ab", 3)).toBe("ab");
+describe('truncate / normalizeDate', () => {
+  it('truncates long strings', () => {
+    expect(truncate('abcdef', 3)).toBe('abc');
+    expect(truncate('ab', 3)).toBe('ab');
   });
-  it("normalizes dates", () => {
-    expect(normalizeDate(" 2024-05-01 ")).toBe("2024-05-01");
-    expect(normalizeDate(1700000000)).toBe("2023-11-14T22:13:20.000Z");
-    expect(normalizeDate("")).toBeUndefined();
+  it('normalizes dates', () => {
+    expect(normalizeDate(' 2024-05-01 ')).toBe('2024-05-01');
+    expect(normalizeDate(1700000000)).toBe('2023-11-14T22:13:20.000Z');
+    expect(normalizeDate('')).toBeUndefined();
     expect(normalizeDate(null)).toBeUndefined();
     expect(normalizeDate(Infinity)).toBeUndefined(); // non-finite number → falls through
-    expect(normalizeDate(42.5)).toBe("1970-01-01T00:00:42.500Z"); // fractional seconds are a valid date too
-    expect(normalizeDate(1e21)).toBeUndefined(); // finite but outside the Date range → toISOString throws
+    expect(normalizeDate(42.5)).toBe('1970-01-01T00:00:42.500Z'); // fractional seconds are a valid date too
+    // Finite but outside the Date range → toISOString throws.
+    expect(normalizeDate(1e21)).toBeUndefined();
     expect(normalizeDate(NaN)).toBeUndefined(); // fails the finiteness check
     expect(normalizeDate({ obj: true })).toBeUndefined(); // neither a string nor a number
   });
 
-  it("drops a date that is nothing but control characters", () => {
+  it('drops a date that is nothing but control characters', () => {
     // The string is non-blank, so it passes the emptiness check, but stripping
     // control characters leaves nothing. Emitting "" would put an empty
     // published_date on the item and render as a blank date in the CLI.
-    expect(normalizeDate("\u0001")).toBeUndefined();
-    expect(toItem({ url: "https://a.example/1", published_date: "\u0001" })?.published_date).toBeUndefined();
+    expect(normalizeDate('\u0001')).toBeUndefined();
+    expect(toItem({ url: 'https://a.example/1', published_date: '\u0001' })?.published_date).toBeUndefined();
   });
 });
 
-describe("untrusted upstream text is stripped of control characters", () => {
-  it("removes ANSI escapes and other C0/C1 controls but keeps newlines", () => {
+describe('untrusted upstream text is stripped of control characters', () => {
+  it('removes ANSI escapes and other C0/C1 controls but keeps newlines', () => {
     // A title carrying ESC sequences could repaint or forge CLI output lines.
-    expect(stripControlChars("\u001b[31mRED\u001b[0m")).toBe("[31mRED[0m");
-    expect(stripControlChars("a\u0000b\u0007c\u007fd\u009fe")).toBe("abcde");
-    expect(stripControlChars("line1\nline2")).toBe("line1\nline2");
-    expect(stripControlChars("plain text")).toBe("plain text");
+    expect(stripControlChars('\u001b[31mRED\u001b[0m')).toBe('[31mRED[0m');
+    expect(stripControlChars('a\u0000b\u0007c\u007fd\u009fe')).toBe('abcde');
+    expect(stripControlChars('line1\nline2')).toBe('line1\nline2');
+    expect(stripControlChars('plain text')).toBe('plain text');
   });
 
-  it("strips at the single chokepoint so every adapter is covered", () => {
-    expect(str("\u001b[2Jtitle")).toBe("[2Jtitle");
-    expect(str(42)).toBe("");
-    expect(normalizeDate(" 2026-01-02 \u001b[0m")).toBe("2026-01-02 [0m");
+  it('strips at the single chokepoint so every adapter is covered', () => {
+    expect(str('\u001b[2Jtitle')).toBe('[2Jtitle');
+    expect(str(42)).toBe('');
+    expect(normalizeDate(' 2026-01-02 \u001b[0m')).toBe('2026-01-02 [0m');
   });
 
-  it("leaves a result item free of escape sequences", () => {
-    const item = toItem({ title: "\u001b[31mEvil\u001b[0m", url: "https://a.example", snippet: "x\u001b]0;title\u0007y" });
-    expect(item?.title).toBe("[31mEvil[0m");
-    expect(item?.snippet).toBe("x]0;titley");
+  it('leaves a result item free of escape sequences', () => {
+    const item = toItem({ title: '\u001b[31mEvil\u001b[0m', url: 'https://a.example', snippet: 'x\u001b]0;title\u0007y' });
+    expect(item?.title).toBe('[31mEvil[0m');
+    expect(item?.snippet).toBe('x]0;titley');
   });
 });
 
-describe("toItem", () => {
-  it("fills title from hostname when missing and keeps optional fields", () => {
-    const item = toItem({ url: "example.com/x", content: "full text", published_date: "2024-05-01" });
+describe('toItem', () => {
+  it('fills title from hostname when missing and keeps optional fields', () => {
+    const item = toItem({ url: 'example.com/x', content: 'full text', published_date: '2024-05-01' });
     expect(item).toEqual({
-      title: "example.com",
-      url: "https://example.com/x",
-      snippet: "",
-      content: "full text",
-      published_date: "2024-05-01",
+      title: 'example.com',
+      url: 'https://example.com/x',
+      snippet: '',
+      content: 'full text',
+      published_date: '2024-05-01',
     });
   });
 
-  it("drops entries without a URL instead of fabricating one", () => {
-    expect(toItem({ title: "no url" })).toBeNull();
-    expect(toItem({ url: "  " })).toBeNull();
+  it('drops entries without a URL instead of fabricating one', () => {
+    expect(toItem({ title: 'no url' })).toBeNull();
+    expect(toItem({ url: '  ' })).toBeNull();
   });
 
-  it("drops entries whose URL is not an http(s) link instead of passing it through", () => {
+  it('drops entries whose URL is not an http(s) link instead of passing it through', () => {
     // Every provider returns ordinary web pages. A script-executing scheme would
     // be handed to the MCP client and rendered as a live link there.
-    expect(toItem({ url: "javascript:alert(1)" })).toBeNull();
-    expect(toItem({ url: "data:text/html,<script>alert(1)</script>" })).toBeNull();
-    expect(toItem({ url: "vbscript:msgbox(1)" })).toBeNull();
-    expect(toItem({ url: "file:///etc/passwd" })).toBeNull();
+    // Fixture simulates a script-executing scheme the normalizer must drop.
+    // eslint-disable-next-line no-script-url
+    expect(toItem({ url: 'javascript:alert(1)' })).toBeNull();
+    expect(toItem({ url: 'data:text/html,<script>alert(1)</script>' })).toBeNull();
+    expect(toItem({ url: 'vbscript:msgbox(1)' })).toBeNull();
+    expect(toItem({ url: 'file:///etc/passwd' })).toBeNull();
   });
 
-  it("drops entries whose scheme is only hidden behind a stripped control character", () => {
+  it('drops entries whose scheme is only hidden behind a stripped control character', () => {
     // The URL parser removes tab/newline before it reads the scheme, so
     // "java\tscript:alert(1)" is a javascript: URL even though the scheme
     // syntax test never sees one.
-    expect(toItem({ url: "java\tscript:alert(1)" })).toBeNull();
-    expect(toItem({ url: "java\nscript:alert(1)" })).toBeNull();
+    expect(toItem({ url: 'java\tscript:alert(1)' })).toBeNull();
+    expect(toItem({ url: 'java\nscript:alert(1)' })).toBeNull();
   });
 
-  it("resolves protocol-relative and host:port references", () => {
-    expect(toItem({ url: "//cdn.example/a.js" })).toMatchObject({ url: "https://cdn.example/a.js" });
-    expect(toItem({ url: "localhost:8080/x" })).toMatchObject({ url: "https://localhost:8080/x" });
+  it('resolves protocol-relative and host:port references', () => {
+    expect(toItem({ url: '//cdn.example/a.js' })).toMatchObject({ url: 'https://cdn.example/a.js' });
+    expect(toItem({ url: 'localhost:8080/x' })).toMatchObject({ url: 'https://localhost:8080/x' });
   });
 });
 
-describe("normalizeUrl", () => {
-  it("keeps an absolute URL and prefixes only a bare host", () => {
-    expect(normalizeUrl("https://a.example/x?y=1")).toBe("https://a.example/x?y=1");
-    expect(normalizeUrl("http://a.example")).toBe("http://a.example");
-    expect(normalizeUrl("example.com/x")).toBe("https://example.com/x");
+describe('normalizeUrl', () => {
+  it('keeps an absolute URL and prefixes only a bare host', () => {
+    expect(normalizeUrl('https://a.example/x?y=1')).toBe('https://a.example/x?y=1');
+    expect(normalizeUrl('http://a.example')).toBe('http://a.example');
+    expect(normalizeUrl('example.com/x')).toBe('https://example.com/x');
   });
 
-  it("refuses any scheme that is not http(s)", () => {
-    expect(normalizeUrl("javascript:alert(1)")).toBeNull();
-    expect(normalizeUrl("JavaScript:alert(1)")).toBeNull();
-    expect(normalizeUrl("data:text/html,<script>alert(1)</script>")).toBeNull();
-    expect(normalizeUrl("vbscript:msgbox(1)")).toBeNull();
-    expect(normalizeUrl("file:///etc/passwd")).toBeNull();
-    expect(normalizeUrl("blob:https://a.example/1234")).toBeNull();
+  it('refuses any scheme that is not http(s)', () => {
+    // Fixture simulates a script-executing scheme normalizeUrl must refuse.
+    // eslint-disable-next-line no-script-url
+    expect(normalizeUrl('javascript:alert(1)')).toBeNull();
+    // Case-variant fixture: the scheme check must be case-insensitive.
+    // eslint-disable-next-line no-script-url
+    expect(normalizeUrl('JavaScript:alert(1)')).toBeNull();
+    expect(normalizeUrl('data:text/html,<script>alert(1)</script>')).toBeNull();
+    expect(normalizeUrl('vbscript:msgbox(1)')).toBeNull();
+    expect(normalizeUrl('file:///etc/passwd')).toBeNull();
+    expect(normalizeUrl('blob:https://a.example/1234')).toBeNull();
     // Inert but useless as a search result: a web search returns web pages.
-    expect(normalizeUrl("ftp://files.example/f")).toBeNull();
-    expect(normalizeUrl("mailto:a@b.example")).toBeNull();
+    expect(normalizeUrl('ftp://files.example/f')).toBeNull();
+    expect(normalizeUrl('mailto:a@b.example')).toBeNull();
   });
 
-  it("refuses a scheme that only appears after control characters are stripped", () => {
-    expect(normalizeUrl("java\tscript:alert(1)")).toBeNull();
-    expect(normalizeUrl("java\nscript:alert(1)")).toBeNull();
-    expect(normalizeUrl(" javascript:alert(1) ")).toBeNull();
+  it('refuses a scheme that only appears after control characters are stripped', () => {
+    expect(normalizeUrl('java\tscript:alert(1)')).toBeNull();
+    expect(normalizeUrl('java\nscript:alert(1)')).toBeNull();
+    expect(normalizeUrl(' javascript:alert(1) ')).toBeNull();
   });
 
-  it("refuses values that are not parseable URLs at all", () => {
-    expect(normalizeUrl("")).toBeNull();
-    expect(normalizeUrl("https://")).toBeNull();
-  });
-});
-
-describe("asObject / asArray", () => {
-  it("throws ParseError with context on shape mismatch", () => {
-    expect(() => asObject(null, "response")).toThrow(ParseError);
-    expect(() => asObject([1], "response")).toThrow(ParseError);
-    expect(() => asArray({}, "results")).toThrow(ParseError);
-    expect(asArray([1, 2], "results")).toEqual([1, 2]);
+  it('refuses values that are not parseable URLs at all', () => {
+    expect(normalizeUrl('')).toBeNull();
+    expect(normalizeUrl('https://')).toBeNull();
   });
 });
 
-describe("maybeObject", () => {
-  it("returns objects and undefined for everything else", () => {
+describe('asObject / asArray', () => {
+  it('throws ParseError with context on shape mismatch', () => {
+    expect(() => asObject(null, 'response')).toThrow(ParseError);
+    expect(() => asObject([1], 'response')).toThrow(ParseError);
+    expect(() => asArray({}, 'results')).toThrow(ParseError);
+    expect(asArray([1, 2], 'results')).toEqual([1, 2]);
+  });
+});
+
+describe('maybeObject', () => {
+  it('returns objects and undefined for everything else', () => {
     expect(maybeObject({ a: 1 })).toEqual({ a: 1 });
     expect(maybeObject([1])).toBeUndefined();
     expect(maybeObject(null)).toBeUndefined();
-    expect(maybeObject("x")).toBeUndefined();
+    expect(maybeObject('x')).toBeUndefined();
     expect(maybeObject(undefined)).toBeUndefined();
   });
 });
 
-describe("canonicalUrl", () => {
-  it("strips fragments, tracking params and a bare root trailing slash", () => {
-    expect(canonicalUrl("https://a.example/x#frag")).toBe("https://a.example/x");
-    expect(canonicalUrl("https://a.example/x?utm_source=wx&id=1")).toBe("https://a.example/x?id=1");
-    expect(canonicalUrl("https://a.example/")).toBe("https://a.example");
-    expect(canonicalUrl("https://a.example")).toBe("https://a.example");
+describe('canonicalUrl', () => {
+  it('strips fragments, tracking params and a bare root trailing slash', () => {
+    expect(canonicalUrl('https://a.example/x#frag')).toBe('https://a.example/x');
+    expect(canonicalUrl('https://a.example/x?utm_source=wx&id=1')).toBe('https://a.example/x?id=1');
+    expect(canonicalUrl('https://a.example/')).toBe('https://a.example');
+    expect(canonicalUrl('https://a.example')).toBe('https://a.example');
   });
 
-  it("keeps meaningful params and path case", () => {
-    expect(canonicalUrl("https://a.example/Path?q=1")).toBe("https://a.example/Path?q=1");
+  it('keeps meaningful params and path case', () => {
+    expect(canonicalUrl('https://a.example/Path?q=1')).toBe('https://a.example/Path?q=1');
   });
 
-  it("returns the trimmed input when the URL cannot be parsed", () => {
-    expect(canonicalUrl("  not a url  ")).toBe("not a url");
+  it('returns the trimmed input when the URL cannot be parsed', () => {
+    expect(canonicalUrl('  not a url  ')).toBe('not a url');
   });
 });
 
-describe("mergeItems", () => {
-  it("keeps the first title/url/source and the richer snippet, content and date", () => {
+describe('mergeItems', () => {
+  it('keeps the first title/url/source and the richer snippet, content and date', () => {
     const merged = mergeItems(
-      { title: "first", url: "https://a.example/1", snippet: "short", source: "kimi" },
       {
-        title: "second",
-        url: "https://a.example/1",
-        snippet: "a much longer snippet",
-        content: "body",
-        published_date: "2026-01-01",
-        source: "zhipu",
+        title: 'first', url: 'https://a.example/1', snippet: 'short', source: 'kimi',
+      },
+      {
+        title: 'second',
+        url: 'https://a.example/1',
+        snippet: 'a much longer snippet',
+        content: 'body',
+        published_date: '2026-01-01',
+        source: 'zhipu',
       },
     );
     expect(merged).toEqual({
-      title: "first",
-      url: "https://a.example/1",
-      snippet: "a much longer snippet",
-      content: "body",
-      published_date: "2026-01-01",
-      source: "kimi",
+      title: 'first',
+      url: 'https://a.example/1',
+      snippet: 'a much longer snippet',
+      content: 'body',
+      published_date: '2026-01-01',
+      source: 'kimi',
     });
   });
 
-  it("falls back to the second entry when the first lacks a title or date", () => {
+  it('falls back to the second entry when the first lacks a title or date', () => {
     const merged = mergeItems(
-      { title: "", url: "https://a.example/1", snippet: "" },
-      { title: "second", url: "https://a.example/1", snippet: "", published_date: "2026-02-02" },
+      { title: '', url: 'https://a.example/1', snippet: '' },
+      {
+        title: 'second', url: 'https://a.example/1', snippet: '', published_date: '2026-02-02',
+      },
     );
-    expect(merged.title).toBe("second");
-    expect(merged.published_date).toBe("2026-02-02");
+    expect(merged.title).toBe('second');
+    expect(merged.published_date).toBe('2026-02-02');
     expect(merged.source).toBeUndefined();
   });
 });
 
-describe("mergeSourceItems", () => {
+describe('mergeSourceItems', () => {
   const sources = [
-    { provider: "kimi", items: [{ title: "k", url: "https://a.example/1?utm_source=x", snippet: "s" }] },
-    { provider: "zhipu", items: [{ title: "z", url: "https://a.example/1", snippet: "longer snippet" }] },
+    { provider: 'kimi', items: [{ title: 'k', url: 'https://a.example/1?utm_source=x', snippet: 's' }] },
+    { provider: 'zhipu', items: [{ title: 'z', url: 'https://a.example/1', snippet: 'longer snippet' }] },
   ];
 
-  it("attributes every item to its provider when dedupe is off", () => {
+  it('attributes every item to its provider when dedupe is off', () => {
     expect(mergeSourceItems(sources, false)).toEqual([
-      { title: "k", url: "https://a.example/1?utm_source=x", snippet: "s", source: "kimi" },
-      { title: "z", url: "https://a.example/1", snippet: "longer snippet", source: "zhipu" },
+      {
+        title: 'k', url: 'https://a.example/1?utm_source=x', snippet: 's', source: 'kimi',
+      },
+      {
+        title: 'z', url: 'https://a.example/1', snippet: 'longer snippet', source: 'zhipu',
+      },
     ]);
   });
 
-  it("merges the same resource across providers, keeping priority order", () => {
+  it('merges the same resource across providers, keeping priority order', () => {
     const merged = mergeSourceItems(sources, true);
     expect(merged).toHaveLength(1);
-    expect(merged[0]).toMatchObject({ title: "k", source: "kimi", snippet: "longer snippet" });
+    expect(merged[0]).toMatchObject({ title: 'k', source: 'kimi', snippet: 'longer snippet' });
   });
 
-  it("keeps distinct URLs separate and preserves an existing source tag", () => {
+  it('keeps distinct URLs separate and preserves an existing source tag', () => {
     const merged = mergeSourceItems([
-      { provider: "kimi", items: [{ title: "a", url: "https://a.example/1", snippet: "", source: "preset" }] },
-      { provider: "zhipu", items: [{ title: "b", url: "https://b.example/2", snippet: "" }] },
+      {
+        provider: 'kimi',
+        items: [{
+          title: 'a', url: 'https://a.example/1', snippet: '', source: 'preset',
+        }],
+      },
+      { provider: 'zhipu', items: [{ title: 'b', url: 'https://b.example/2', snippet: '' }] },
     ]);
-    expect(merged.map((i) => i.source)).toEqual(["preset", "zhipu"]);
+    expect(merged.map((i) => i.source)).toEqual(['preset', 'zhipu']);
   });
 
-  it("defaults to deduping (third argument omitted)", () => {
+  it('defaults to deduping (third argument omitted)', () => {
     expect(mergeSourceItems(sources)).toHaveLength(1);
   });
 });

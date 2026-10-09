@@ -17,12 +17,12 @@
  * so no nested npm process (and its environment) is involved.
  */
 
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const root = dirname(fileURLToPath(import.meta.url));
-const allowlistPath = join(root, "npm-audit-allowlist.json");
+const allowlistPath = join(root, 'npm-audit-allowlist.json');
 
 function fail(message) {
   console.error(`npm-audit-check: FAIL: ${message}`);
@@ -31,63 +31,80 @@ function fail(message) {
 
 let allowlist;
 try {
-  allowlist = JSON.parse(readFileSync(allowlistPath, "utf8"));
+  allowlist = JSON.parse(readFileSync(allowlistPath, 'utf8'));
 } catch (err) {
   fail(`cannot read allowlist ${allowlistPath}: ${err.message}`);
 }
-const allowedIds = new Set((allowlist.allow ?? []).map((e) => e.id));
+// Two entry shapes: `{ id, package?, reason }` accepts one advisory id, and
+// `{ package, reason }` (no id) accepts a whole package whose finding carries
+// no advisory id at all - npm reports range-only dependents ("Depends on
+// vulnerable versions of X") with an empty via-object list, which no id could
+// ever match. Package entries accept the node either way; every accepted
+// finding is still enumerated in the output.
+const allowEntries = allowlist.allow ?? [];
+const allowedIds = new Set(allowEntries.filter((e) => e.id).map((e) => e.id));
+const allowedPackages = new Set(allowEntries.filter((e) => e.package).map((e) => e.package));
 
 let raw;
 try {
-  raw = readFileSync(0, "utf8");
+  raw = readFileSync(0, 'utf8');
 } catch (err) {
   fail(`cannot read audit JSON from stdin: ${err.message}`);
 }
 let report;
 try {
-  report = JSON.parse(raw || "{}");
+  report = JSON.parse(raw || '{}');
 } catch {
-  fail("stdin is not parseable audit JSON (pipe `npm audit --json` into this checker)");
+  fail('stdin is not parseable audit JSON (pipe `npm audit --json` into this checker)');
 }
-if (report == null || typeof report !== "object" || report.vulnerabilities == null) {
-  fail("audit report has no vulnerabilities section");
+if (report == null || typeof report !== 'object' || report.vulnerabilities == null) {
+  fail('audit report has no vulnerabilities section');
 }
 
 // Fail closed on non-object sections: Object.entries over a string or an
 // array enumerates nothing reportable, so a doctored or corrupted report
 // would pass as "no findings".
 function isPlainObject(value) {
-  return value != null && typeof value === "object" && !Array.isArray(value);
+  return value != null && typeof value === 'object' && !Array.isArray(value);
 }
 
-if (report == null || typeof report !== "object" || !isPlainObject(report.vulnerabilities)) {
-  fail("audit report has no vulnerabilities section");
+if (report == null || typeof report !== 'object' || !isPlainObject(report.vulnerabilities)) {
+  fail('audit report has no vulnerabilities section');
 }
 if (report.metadata != null) {
   if (!isPlainObject(report.metadata) || !isPlainObject(report.metadata.vulnerabilities)) {
-    fail("audit report metadata is malformed");
+    fail('audit report metadata is malformed');
   }
 }
 
 const vulns = report.vulnerabilities;
 const metaCounts = report.metadata != null ? report.metadata.vulnerabilities : null;
 const seenIds = new Set();
+const seenPackages = new Set();
 const blocking = [];
 let countedHigh = 0;
 for (const [name, v] of Object.entries(vulns)) {
-  const severity = v?.severity ?? "";
-  if (severity !== "high" && severity !== "critical") continue;
+  const severity = v?.severity ?? '';
+  if (severity !== 'high' && severity !== 'critical') continue;
   countedHigh += 1;
   const vias = Array.isArray(v.via) ? v.via : [];
   const ghsaIds = vias
-    .filter((x) => typeof x !== "string")
-    .map((x) => x.url?.split("/").pop() ?? "")
+    .filter((x) => typeof x !== 'string')
+    .map((x) => x.url?.split('/').pop() ?? '')
     .filter(Boolean);
   for (const id of ghsaIds) seenIds.add(id);
-  // Fail closed: findings without an attributable advisory id always block.
+  seenPackages.add(name);
+  // Fail closed: a finding blocks unless its advisory ids are all allowlisted
+  // or the package carries an explicit acceptance entry. Package entries cover
+  // ONLY findings without advisory ids — a package entry must never silently
+  // accept a future, unrelated advisory on the same package.
   const unlisted = ghsaIds.filter((id) => !allowedIds.has(id));
-  if (unlisted.length > 0 || ghsaIds.length === 0) {
-    blocking.push({ name, severity, range: v.range, advisory: unlisted });
+  const accepted = (ghsaIds.length === 0 && allowedPackages.has(name))
+    || (ghsaIds.length > 0 && unlisted.length === 0);
+  if (!accepted) {
+    blocking.push({
+      name, severity, range: v.range, advisory: unlisted,
+    });
   }
 }
 
@@ -98,22 +115,23 @@ if (metaCounts != null) {
   }
 }
 
-for (const entry of allowlist.allow ?? []) {
-  if (!seenIds.has(entry.id)) {
-    console.log(`npm-audit-check: allowlist entry not observed (prune?): ${entry.id}`);
+for (const entry of allowEntries) {
+  const observed = entry.id ? seenIds.has(entry.id) : seenPackages.has(entry.package);
+  if (!observed) {
+    console.log(`npm-audit-check: allowlist entry not observed (prune?): ${entry.id ?? entry.package}`);
   }
 }
 
 if (blocking.length > 0) {
   for (const b of blocking) {
     console.error(
-      `npm-audit-check: blocking ${b.severity} in ${b.name} ${b.range ?? ""} advisories=${(b.advisory ?? []).join(",") || "n/a"}`,
+      `npm-audit-check: blocking ${b.severity} in ${b.name} ${b.range ?? ''} advisories=${(b.advisory ?? []).join(',') || 'n/a'}`,
     );
   }
   console.error(
-    "npm-audit-check: resolve the findings or document them in scripts/ci/npm-audit-allowlist.json",
+    'npm-audit-check: resolve the findings or document them in scripts/ci/npm-audit-allowlist.json',
   );
   process.exit(1);
 }
 
-console.log("npm-audit-check: OK (no unlisted high/critical findings)");
+console.log('npm-audit-check: OK (no unlisted high/critical findings)');

@@ -1,25 +1,29 @@
 /**
  * @file config-file
- * @description Locating and reading the JSON config file (I/O and syntax only; no semantic validation).
+ * @description Locating and reading the JSON config file (I/O and syntax only; no
+ *   semantic validation).
  *
  * Responsibilities:
- * - Locate the config file: explicit WEBSEARCH_CONFIG wins, otherwise the conventional file under cwd
- * - Read and parse JSON; any failure (missing, unreadable, invalid JSON, non-object) only warns and returns undefined
+ * - Locate the config file: explicit WEBSEARCH_CONFIG wins, otherwise the conventional
+ *   file under cwd
+ * - Read and parse JSON; any failure (missing, unreadable, invalid JSON, non-object) only
+ *   warns and returns undefined
  * - Refuse a file too large to be configuration, through that same warn-and-continue path
- * - Define the config file's field shape (loose types; semantic validation is the config module's job)
+ * - Define the config file's field shape (loose types; semantic validation is the config
+ *   module's job)
  */
 
 // Config file I/O layer. Deliberately dumb: it only turns on-disk JSON into
 // an object; field semantics and value validity are config.ts's job, so the
 // two layers can be tested independently.
 
-import { existsSync, readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
-import { redactSecrets } from "./errors.js";
-import { stripBom } from "./normalize.js";
+import { existsSync, readFileSync, statSync } from 'node:fs';
+import { join } from 'node:path';
+import { redactSecrets } from './errors.js';
+import { stripBom } from './normalize.js';
 
-/** Conventional file name looked up in the current working directory when no explicit path is set. */
-export const CONFIG_FILENAME = "cn-websearch.config.json";
+/** Conventional file name looked up under cwd when no explicit path is set. */
+export const CONFIG_FILENAME = 'cn-websearch.config.json';
 
 /**
  * Largest config file read from disk, measured before the read.
@@ -60,11 +64,11 @@ export type ReadFileFn = (path: string) => string;
  * returns undefined instead of blocking startup.
  */
 const readConfigText: ReadFileFn = (path) => {
-  const size = statSync(path).size;
+  const { size } = statSync(path);
   if (size > MAX_CONFIG_FILE_BYTES) {
     throw new Error(`config file is ${size} bytes, over the ${MAX_CONFIG_FILE_BYTES} byte limit`);
   }
-  return readFileSync(path, "utf8");
+  return readFileSync(path, 'utf8');
 };
 
 /** Injection point for file-existence checks (defaults to fs.existsSync). */
@@ -72,8 +76,10 @@ export type FileExistsFn = (path: string) => boolean;
 
 /**
  * Locate the config file path:
- * - When WEBSEARCH_CONFIG is set, it wins (returned even if the file doesn't exist; the read layer warns)
- * - Otherwise `cn-websearch.config.json` under cwd, returned only when the file actually exists
+ * - When WEBSEARCH_CONFIG is set, it wins (returned even if the file doesn't exist; the
+ *   read layer warns)
+ * - Otherwise `cn-websearch.config.json` under cwd, returned only when the file actually
+ *   exists
  * - Neither → undefined (pure environment-variable mode)
  */
 export function resolveConfigPath(
@@ -81,7 +87,7 @@ export function resolveConfigPath(
   cwd: string = process.cwd(),
   fileExists: FileExistsFn = existsSync,
 ): string | undefined {
-  const explicit = (env.WEBSEARCH_CONFIG ?? "").trim();
+  const explicit = (env.WEBSEARCH_CONFIG ?? '').trim();
   if (explicit) return explicit;
   const conventional = join(cwd, CONFIG_FILENAME);
   return fileExists(conventional) ? conventional : undefined;
@@ -118,9 +124,9 @@ export function readConfigFile(
     warn(`config file is not valid JSON (${path}): ${redactSecrets(detail)}`);
     return undefined;
   }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
     warn(`config file must contain a JSON object (${path})`);
     return undefined;
   }
-  return parsed as ConfigFileShape;
+  return parsed;
 }

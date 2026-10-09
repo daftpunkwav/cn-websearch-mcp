@@ -3,27 +3,37 @@
  * @description One-shot CLI command implementations: search / status / test.
  *
  * Responsibilities:
- * - Overlay parsed arguments onto the config and call the orchestration layer to run the search
- * - Print results or structured errors; express success/failure via exit codes (handy for scripts and CI)
- * - All output goes through the injected io, so tests can assert on it without polluting process globals
+ * - Overlay parsed arguments onto the config and call the orchestration layer to run the
+ *   search
+ * - Print results or structured errors; express success/failure via exit codes (handy for
+ *   scripts and CI)
+ * - All output goes through the injected io, so tests can assert on it without polluting
+ *   process globals
  */
 
 // One-shot commands. Exit code convention: 0 success; 1 runtime failure (search failed / no usable
 // provider); 2 usage error (returned by the entry point when parsing fails).
 
-import { effectiveCount, QUERY_MAX, type GatewayConfig } from "../config.js";
-import { isStructuredFailure, runSearch, type DispatchOptions } from "../orchestrator.js";
-import { probeAll, type ProbeOptions, type ProbeRow } from "../probe.js";
-import { selectProviders, type ProviderSelection } from "../provider-selection.js";
-import { summarizeError } from "../errors.js";
-import { truncate } from "../normalize.js";
-import { formatProbeTable, formatSearchResult, formatStatus, redactedConfig } from "./render.js";
-import type { CliArgs } from "./args.js";
-import type { NormalizedSearchResult, SearchProvider, SearchRequest, SearchStrategy } from "../types.js";
-import type { GatewayRuntime } from "../runtime.js";
+import { effectiveCount, QUERY_MAX, type GatewayConfig } from '../config.js';
+import { isStructuredFailure, runSearch, type DispatchOptions } from '../orchestrator.js';
+import { probeAll, type ProbeOptions, type ProbeRow } from '../probe.js';
+import { selectProviders, type ProviderSelection } from '../provider-selection.js';
+import { summarizeError } from '../errors.js';
+import { truncate } from '../normalize.js';
+import {
+  formatProbeTable, formatSearchResult, formatStatus, redactedConfig,
+} from './render.js';
+import type { CliArgs } from './args.js';
+import type {
+  NormalizedSearchResult, SearchProvider, SearchRequest, SearchStrategy,
+} from '../types.js';
+import type { GatewayRuntime } from '../runtime.js';
 
-/** Search implementation used by cmdSearch; injectable so tests never need the network. */
-export type CliSearchFn = (req: SearchRequest, opts: DispatchOptions) => Promise<NormalizedSearchResult>;
+/** Search implementation used by cmdSearch; injectable so tests never hit the network. */
+export type CliSearchFn = (
+  req: SearchRequest,
+  opts: DispatchOptions,
+) => Promise<NormalizedSearchResult>;
 
 /** Probe implementation used by cmdTest; injectable so tests never need the network. */
 export type CliProbeFn = (
@@ -32,7 +42,7 @@ export type CliProbeFn = (
   opts: ProbeOptions,
 ) => Promise<ProbeRow[]>;
 
-/** CLI dependencies: runtime + output streams + injectable search/probe implementations (for tests). */
+/** CLI dependencies: runtime + output streams + injectable search/probe impls (for tests). */
 export interface CliDeps {
   runtime: GatewayRuntime;
   output: NodeJS.WritableStream;
@@ -42,7 +52,7 @@ export interface CliDeps {
 }
 
 /** Default probe query for the `test` command: generic and non-personalized. */
-export const DEFAULT_PROBE_QUERY = "今日新闻";
+export const DEFAULT_PROBE_QUERY = '今日新闻';
 
 /**
  * Write one line, terminating it exactly once.
@@ -52,18 +62,21 @@ export const DEFAULT_PROBE_QUERY = "今日新闻";
  * them; it lives here because this is the module the other two already import.
  */
 export function writeLine(stream: NodeJS.WritableStream, text: string): void {
-  stream.write(text.endsWith("\n") ? text : text + "\n");
+  stream.write(text.endsWith('\n') ? text : `${text}\n`);
 }
 
 /** The hint printed by both commands that need a usable provider before they can run. */
-const NO_READY_PROVIDER = "error: no provider is ready — set an API key via env or a config file, then retry";
+const NO_READY_PROVIDER = 'error: no provider is ready — set an API key via env or a config file, then retry';
 
 /**
  * Restrict the call to the named providers, using the same name rules as the MCP
  * tool layer. An absent or empty list means "no filter": the CLI already rejects
  * an empty --providers at parse time, so this only covers a direct caller.
  */
-export function pickProviders(names: string[] | undefined, chain: SearchProvider[]): ProviderSelection {
+export function pickProviders(
+  names: string[] | undefined,
+  chain: SearchProvider[],
+): ProviderSelection {
   if (!names?.length) return { ok: true, providers: chain };
   return selectProviders(names, chain);
 }
@@ -76,7 +89,7 @@ export async function cmdSearch(deps: CliDeps, args: CliArgs): Promise<number> {
   const { runtime, output, error } = deps;
   const config: GatewayConfig = runtime.config;
   if (!args.query.trim()) {
-    writeLine(error, "error: missing query (usage: cn-websearch-mcp search <query>)");
+    writeLine(error, 'error: missing query (usage: cn-websearch-mcp search <query>)');
     return 2;
   }
   if (!runtime.chain.length) {
@@ -115,7 +128,7 @@ export async function cmdSearch(deps: CliDeps, args: CliArgs): Promise<number> {
     if (isStructuredFailure(err)) {
       writeLine(error, `error: ${err.message}`);
       for (const a of err.attempts) {
-        writeLine(error, `  - ${a.provider}: ${a.status} (${a.latency_ms}ms)${a.error ? ` ${a.error}` : ""}`);
+        writeLine(error, `  - ${a.provider}: ${a.status} (${a.latency_ms}ms)${a.error ? ` ${a.error}` : ''}`);
       }
       return 1;
     }

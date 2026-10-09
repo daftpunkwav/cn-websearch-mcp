@@ -14,15 +14,15 @@
 // garbage input: normalize what can be normalized, otherwise throw ParseError
 // or return a fallback — never an unexpected exception.
 
-import { ParseError, stripControlChars } from "./errors.js";
-import type { NormalizedItem } from "./types.js";
+import { ParseError, stripControlChars } from './errors.js';
+import type { NormalizedItem } from './types.js';
 
 /** Best-effort hostname extraction; returns an empty string on parse failure. */
 export function hostnameOf(url: string): string {
   try {
     return new URL(url).hostname;
   } catch {
-    return "";
+    return '';
   }
 }
 
@@ -41,7 +41,9 @@ export function hostnameOf(url: string): string {
  * must not become a 1 ms budget with no warning at all.
  */
 export function lenientInt(v: unknown): number {
-  return typeof v === "number" ? v : typeof v === "string" && v.trim() !== "" ? Number(v) : Number.NaN;
+  if (typeof v === 'number') return v;
+  if (typeof v === 'string' && v.trim() !== '') return Number(v);
+  return Number.NaN;
 }
 
 /**
@@ -51,7 +53,12 @@ export function lenientInt(v: unknown): number {
  * `Number("")` is 0, which would silently clamp such a value to `min` instead of
  * falling back, making "" and null — both meaning "no value given" — disagree.
  */
-export function clampInt(v: unknown, fallback: number, min: number, max: number): number {
+export function clampInt(
+  v: unknown,
+  fallback: number,
+  min: number,
+  max: number,
+): number {
   const n = lenientInt(v);
   if (!Number.isFinite(n)) return fallback;
   return Math.min(max, Math.max(min, Math.round(n)));
@@ -62,10 +69,13 @@ export function truncate(s: string, max: number): string {
   return s.length > max ? s.slice(0, max) : s;
 }
 
-/** Non-empty string dates pass through; numbers are treated as unix seconds and converted to ISO 8601. */
+/**
+ * Non-empty string dates pass through; numbers are treated as unix seconds and
+ * converted to ISO 8601.
+ */
 export function normalizeDate(d: unknown): string | undefined {
-  if (typeof d === "string" && d.trim() !== "") return stripControlChars(d).trim() || undefined;
-  if (typeof d === "number" && Number.isFinite(d)) {
+  if (typeof d === 'string' && d.trim() !== '') return stripControlChars(d).trim() || undefined;
+  if (typeof d === 'number' && Number.isFinite(d)) {
     try {
       return new Date(d * 1000).toISOString();
     } catch {
@@ -76,15 +86,21 @@ export function normalizeDate(d: unknown): string | undefined {
   return undefined;
 }
 
-/** Assert that an unknown parsed value is a plain object; throws a contextual ParseError on failure. */
+/**
+ * Assert that an unknown parsed value is a plain object; throws a contextual
+ * ParseError on failure.
+ */
 export function asObject(v: unknown, what: string): Record<string, unknown> {
-  if (v && typeof v === "object" && !Array.isArray(v)) return v as Record<string, unknown>;
+  if (v && typeof v === 'object' && !Array.isArray(v)) return v as Record<string, unknown>;
   throw new ParseError(`${what}: expected object`);
 }
 
-/** Lenient object getter: always returns undefined for non-objects, never throws (for optional config values). */
+/**
+ * Lenient object getter: always returns undefined for non-objects, never
+ * throws (for optional config values).
+ */
 export function maybeObject(v: unknown): Record<string, unknown> | undefined {
-  return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : undefined;
+  return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : undefined;
 }
 
 /** Assert that an unknown parsed value is an array; throws a contextual ParseError on failure. */
@@ -93,9 +109,12 @@ export function asArray(v: unknown, what: string): unknown[] {
   throw new ParseError(`${what}: expected array`);
 }
 
-/** Safe string getter: returns an empty string for anything that is not a string, control characters stripped. */
+/**
+ * Safe string getter: returns an empty string for anything that is not a
+ * string, control characters stripped.
+ */
 export function str(v: unknown): string {
-  return typeof v === "string" ? stripControlChars(v) : "";
+  return typeof v === 'string' ? stripControlChars(v) : '';
 }
 
 /**
@@ -128,7 +147,7 @@ const URL_SCHEME = /^[a-z][a-z0-9+.-]*:(?!\d)/i;
  * then run in that consumer's context. A web search returns web pages, so any
  * other scheme is data this tool has no business passing along.
  */
-const ALLOWED_PROTOCOLS: ReadonlySet<string> = new Set(["http:", "https:"]);
+const ALLOWED_PROTOCOLS: ReadonlySet<string> = new Set(['http:', 'https:']);
 
 /**
  * Canonicalize one upstream reference's URL, or return null when the value must
@@ -145,7 +164,10 @@ const ALLOWED_PROTOCOLS: ReadonlySet<string> = new Set(["http:", "https:"]);
 export function normalizeUrl(url: string): string | null {
   const raw = url.trim();
   if (!raw) return null;
-  const candidate = raw.startsWith("//") ? `https:${raw}` : URL_SCHEME.test(raw) ? raw : `https://${raw}`;
+  let candidate: string;
+  if (raw.startsWith('//')) candidate = `https:${raw}`;
+  else if (URL_SCHEME.test(raw)) candidate = raw;
+  else candidate = `https://${raw}`;
   try {
     return ALLOWED_PROTOCOLS.has(new URL(candidate).protocol) ? candidate : null;
   } catch {
@@ -199,13 +221,13 @@ export function canonicalUrl(url: string): string {
   const raw = url.trim();
   try {
     const u = new URL(raw);
-    u.hash = "";
+    u.hash = '';
     for (const key of [...u.searchParams.keys()]) {
       if (TRACKING_PARAM.test(key)) u.searchParams.delete(key);
     }
     const out = u.toString();
     // "https://a.com/" and "https://a.com" are the same resource.
-    return u.pathname === "/" && u.search === "" ? out.replace(/\/$/, "") : out;
+    return u.pathname === '/' && u.search === '' ? out.replace(/\/$/, '') : out;
   } catch {
     return raw;
   }
@@ -224,7 +246,7 @@ export function mergeItems(a: NormalizedItem, b: NormalizedItem): NormalizedItem
     url: a.url,
     snippet: longer(a.snippet, b.snippet),
   };
-  const content = longer(a.content ?? "", b.content ?? "");
+  const content = longer(a.content ?? '', b.content ?? '');
   if (content) merged.content = content;
   const date = a.published_date ?? b.published_date;
   if (date) merged.published_date = date;
@@ -239,11 +261,13 @@ export function mergeItems(a: NormalizedItem, b: NormalizedItem): NormalizedItem
  * disabled, only source tags are added, no merging.
  */
 export function mergeSourceItems(
-  sources: Array<{ provider: string; items: NormalizedItem[] }>,
+  sources: { provider: string; items: NormalizedItem[] }[],
   dedupe = true,
 ): NormalizedItem[] {
   if (!dedupe) {
-    return sources.flatMap((s) => s.items.map((item) => ({ ...item, source: item.source ?? s.provider })));
+    return sources.flatMap((s) => s.items.map(
+      (item) => ({ ...item, source: item.source ?? s.provider }),
+    ));
   }
   const seenAt = new Map<string, number>();
   const merged: NormalizedItem[] = [];

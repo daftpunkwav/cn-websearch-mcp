@@ -6,21 +6,32 @@ Requires Node >= 18.
 
 ```bash
 npm install
-npm run build          # tsc → dist/
-npm run typecheck      # tsc over src/, test/, scripts/ and vitest.config.ts (no emit)
-npm test               # vitest run, all HTTP mocked (no API keys needed)
-npm run test:coverage  # test run plus the coverage gate (95% minimum on src/)
+npm run lint          # eslint (Airbnb style guide) over src/, test/, scripts/ and config files
+npm run build         # tsc → dist/
+npm run typecheck     # tsc over src/, test/, scripts/ and vitest.config.ts (no emit)
+npm test              # vitest run, all HTTP mocked (no API keys needed)
+npm run test:coverage # test run plus the coverage gate (95% minimum on src/)
 ```
 
 The end-to-end tests in `test/e2e/` exercise the built `dist/index.js`, so run
 `npm run build` after changing `src/` and before `npm test`. Live-network
 checks (`npm run smoke`) need real API keys and are not part of the test suite.
 
+## Style guide
+
+The codebase follows the [Airbnb style guide](https://github.com/airbnb/javascript),
+enforced by ESLint (`eslint-config-airbnb-extended`, base + TypeScript presets).
+`npm run lint` must be clean before a PR; `npm run lint:fix` applies the
+auto-fixable subset. The deliberate deviations from the stock presets live in
+`eslint.config.mjs`, each with a comment stating why — read it before adding
+another one.
+
 ## Pull requests
 
 - One change per pull request, described in imperative mood.
-- The full gate (`npm run build` + `npm run typecheck` + `npm run test:coverage`)
-  must pass locally before opening a PR; CI runs the same steps.
+- The full gate (`npm run lint` + `npm run build` + `npm run typecheck` +
+  `npm run test:coverage`) must pass locally before opening a PR; CI runs the
+  same steps.
 - New runtime code needs tests; the coverage thresholds in `vitest.config.ts`
   are enforced, not advisory.
 - Comments and file headers are written in English, in the `@file` /
@@ -33,10 +44,10 @@ layer — nothing else in `src/` imports it:
 
 | Touch point | What it uses |
 |---|---|
-| `src/index.ts:16-18` | `Server`, `StdioServerTransport`, `CallToolRequestSchema`, `ListToolsRequestSchema`, `CallToolResult` |
-| `src/index.ts:38-48` | the `extra` argument of a `setRequestHandler` callback — `extra.signal` carries MCP client cancellation |
-| `test/e2e/mcp-stdio.test.ts:21-22` | `Client` and `StdioClientTransport`, driving a real initialize → tools/list → tools/call round trip |
-| `test/index.test.ts:7` | the two request schemas, for handler-level assertions |
+| `src/index.ts:18-22` | `Server`, `StdioServerTransport`, `CallToolRequestSchema`, `ListToolsRequestSchema`, `CallToolResult` |
+| `src/index.ts:45-56` | the `extra` argument of a `setRequestHandler` callback — `extra.signal` carries MCP client cancellation |
+| `test/e2e/mcp-stdio.test.ts:23-24` | `Client` and `StdioClientTransport`, driving a real initialize → tools/list → tools/call round trip |
+| `test/index.test.ts:10` | the two request schemas, for handler-level assertions |
 
 Those three deep import specifiers (`server/index.js`, `server/stdio.js`,
 `types.js`) are the SDK's own documented entry points, not internal files, so a

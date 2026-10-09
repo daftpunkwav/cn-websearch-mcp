@@ -11,12 +11,12 @@
 // Rendering layer: only "data -> text"; no network or config parsing. All output touching
 // secrets must go through redactedConfig or echo only "configured or not".
 
-import type { GatewayConfig, ProviderName } from "../config.js";
-import type { ProbeRow } from "../probe.js";
-import type { NormalizedSearchResult } from "../types.js";
-import { truncate } from "../normalize.js";
+import type { GatewayConfig, ProviderName } from '../config.js';
+import type { ProbeRow } from '../probe.js';
+import type { NormalizedSearchResult } from '../types.js';
+import { truncate } from '../normalize.js';
 
-/** Snippet length cap for rendering: terminal readability first; full content remains available via --json. */
+/** Snippet cap for rendering: terminal readability first; full content via --json. */
 const SNIPPET_MAX = 160;
 
 /** Failure-note cap in the probe table: one readable column; the full summary is in --json. */
@@ -31,7 +31,7 @@ export function redactedConfig(config: GatewayConfig): Record<string, unknown> {
       priority: p.priority,
       baseUrl: p.baseUrl,
       model: p.model ?? null,
-      apiKey: p.apiKey.trim() === "" ? "(unset)" : "(set)",
+      apiKey: p.apiKey.trim() === '' ? '(unset)' : '(set)',
       timeoutMs: p.timeoutMs ?? null,
       options: p.options ?? null,
     };
@@ -51,28 +51,28 @@ export function redactedConfig(config: GatewayConfig): Record<string, unknown> {
 /** Formats one search result as human-readable text. */
 export function formatSearchResult(result: NormalizedSearchResult): string {
   const meta = result._meta;
-  const sources = meta.providers?.length ? meta.providers.join(", ") : meta.provider;
+  const sources = meta.providers?.length ? meta.providers.join(', ') : meta.provider;
   const lines: string[] = [
     `answered by: ${sources}  (${meta.total_latency_ms}ms total, ${result.results.length} result(s))`,
-    "",
+    '',
   ];
   result.results.forEach((item, i) => {
-    const source = item.source && meta.providers && meta.providers.length > 1 ? `  [${item.source}]` : "";
-    lines.push(`${i + 1}. ${item.title || "(untitled)"}${source}`);
+    const source = item.source && meta.providers && meta.providers.length > 1 ? `  [${item.source}]` : '';
+    lines.push(`${i + 1}. ${item.title || '(untitled)'}${source}`);
     lines.push(`   ${item.url}`);
     if (item.snippet) lines.push(`   ${truncate(item.snippet, SNIPPET_MAX)}`);
     if (item.published_date) lines.push(`   published: ${item.published_date}`);
   });
   if (meta.answer) {
-    lines.push("", "synthesized answer:", meta.answer);
+    lines.push('', 'synthesized answer:', meta.answer);
   }
   if (meta.attempts.length) {
     const trail = meta.attempts
-      .map((a) => `${a.provider}:${a.status}(${a.latency_ms}ms)${a.error ? ` ${a.error}` : ""}`)
-      .join(" | ");
-    lines.push("", `attempts: ${trail}`);
+      .map((a) => `${a.provider}:${a.status}(${a.latency_ms}ms)${a.error ? ` ${a.error}` : ''}`)
+      .join(' | ');
+    lines.push('', `attempts: ${trail}`);
   }
-  return lines.join("\n");
+  return lines.join('\n');
 }
 
 /** Formats the effective config and provider status (redacted). */
@@ -80,46 +80,46 @@ export function formatStatus(config: GatewayConfig, chainNames: string[]): strin
   const inChain = new Set(chainNames);
   const lines: string[] = [
     `strategy      : ${config.strategy}`,
-    `order         : ${config.order.join(" -> ") || "(none)"}`,
+    `order         : ${config.order.join(' -> ') || '(none)'}`,
     `count (default): ${config.count}`,
     `timeout/attempt: ${config.timeoutMs}ms`,
     `max providers : ${config.maxProviders}`,
-    `dedupe        : ${config.dedupe ? "on" : "off"}`,
-    `config file   : ${config.configFile ?? "(none)"}`,
-    "",
-    "provider   enabled  configured  in-chain  priority  model",
+    `dedupe        : ${config.dedupe ? 'on' : 'off'}`,
+    `config file   : ${config.configFile ?? '(none)'}`,
+    '',
+    'provider   enabled  configured  in-chain  priority  model',
   ];
   for (const name of Object.keys(config.providers) as ProviderName[]) {
     const p = config.providers[name];
     const cells = [
       name.padEnd(10),
-      (p.enabled ? "yes" : "no").padEnd(8),
-      (p.apiKey.trim() !== "" ? "yes" : "no").padEnd(11),
-      (inChain.has(name) ? "yes" : "no").padEnd(9),
+      (p.enabled ? 'yes' : 'no').padEnd(8),
+      (p.apiKey.trim() !== '' ? 'yes' : 'no').padEnd(11),
+      (inChain.has(name) ? 'yes' : 'no').padEnd(9),
       String(p.priority).padEnd(9),
-      p.model ?? "-",
+      p.model ?? '-',
     ];
-    lines.push(cells.join(" "));
+    lines.push(cells.join(' '));
   }
   if (!chainNames.length) {
-    lines.push("", "no provider is ready: set an API key (env or config file) to enable searching");
+    lines.push('', 'no provider is ready: set an API key (env or config file) to enable searching');
   }
-  return lines.join("\n");
+  return lines.join('\n');
 }
 
 /** Formats the probe results table. */
 export function formatProbeTable(rows: ProbeRow[]): string {
-  const lines = ["provider   status  latency  results  note"];
+  const lines = ['provider   status  latency  results  note'];
   for (const r of rows) {
     lines.push(
       [
         r.provider.padEnd(10),
-        (r.ok ? "ok" : "failed").padEnd(7),
+        (r.ok ? 'ok' : 'failed').padEnd(7),
         `${r.latency_ms}ms`.padEnd(8),
         String(r.results).padEnd(8),
         r.ok ? r.sample : truncate(r.error, PROBE_NOTE_MAX),
-      ].join(" "),
+      ].join(' '),
     );
   }
-  return lines.join("\n");
+  return lines.join('\n');
 }

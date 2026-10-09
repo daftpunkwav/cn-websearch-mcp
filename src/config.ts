@@ -1,42 +1,48 @@
 /**
  * @file config
- * @description Gateway configuration resolution: built-in defaults → config file → environment variables, each layer overriding the last.
+ * @description Gateway configuration resolution: built-in defaults → config
+ *   file → environment variables, each layer overriding the last.
  *
  * Responsibilities:
  * - Provide neutral per-provider defaults (base URL, model) with nothing personal baked in
- * - Parse fallback order/priority, strategy, timeout, result count and other settings from the config file and environment variables
+ * - Parse fallback order/priority, strategy, timeout, result count and other settings
+ *   from the config file and environment variables
  * - Validate each layer's input leniently: invalid values warn and fall back, never throwing
  * - Treat a blank value at any layer as "unset", so template placeholders never mask a lower layer
- * - Own the search-argument bounds (COUNT_MIN/COUNT_MAX/QUERY_MAX) shared by the tool layer and the CLI,
- *   and the rule that turns a requested count into the effective one
+ * - Own the search-argument bounds (COUNT_MIN/COUNT_MAX/QUERY_MAX) shared by the tool layer and
+ *   the CLI, and the rule that turns a requested count into the effective one
  *
  * Design notes:
- * - The default order is alphabetical — not a "recommended order"; custom priority is always explicit user configuration
+ * - The default order is alphabetical — not a "recommended order"; custom priority is always
+ *   explicit user configuration
  * - A provider's environment variable names are derived from its name (`<NAME>_API_KEY` etc.),
  *   so adding a provider requires no changes to the parsing branches in this file
- * - This module is pure: it never reads the disk (config file content is passed in by the caller), which keeps it easy to test
+ * - This module is pure: it never reads the disk (config file content is passed in by the
+ *   caller), which keeps it easy to test
  */
 
-// Configuration resolution layer. Precedence: built-in defaults < config file < environment variables.
-// MCP clients can usually only pass environment variables, so env sits at the top layer.
+// Configuration resolution layer. Precedence: built-in defaults < config file
+// < environment variables. MCP clients can usually only pass environment
+// variables, so env sits at the top layer.
 
-import type { ConfigFileShape } from "./config-file.js";
-import { clampInt, lenientInt, maybeObject } from "./normalize.js";
-import { SERVER_NAME } from "./server-info.js";
-import { SEARCH_STRATEGIES, type SearchStrategy } from "./types.js";
+import type { ConfigFileShape } from './config-file.js';
+import { clampInt, lenientInt, maybeObject } from './normalize.js';
+import { SERVER_NAME } from './server-info.js';
+import { SEARCH_STRATEGIES, type SearchStrategy } from './types.js';
 
 /**
- * All supported providers, in alphabetical order.
- * This order doubles as the default priority order — deliberately neutral, with no vendor preference baked in.
+ * All supported providers, in alphabetical order. This order doubles as the
+ * default priority order — deliberately neutral, with no vendor preference
+ * baked in.
  */
-export const KNOWN_PROVIDERS = ["kimi", "mimo", "stepfun", "zhipu"] as const;
+export const KNOWN_PROVIDERS = ['kimi', 'mimo', 'stepfun', 'zhipu'] as const;
 export type ProviderName = (typeof KNOWN_PROVIDERS)[number];
 
 export const DEFAULT_ORDER: ProviderName[] = [...KNOWN_PROVIDERS];
 export const DEFAULT_TIMEOUT_MS = 30_000;
 export const DEFAULT_COUNT = 8;
 export const DEFAULT_MAX_PROVIDERS = KNOWN_PROVIDERS.length;
-export const DEFAULT_STRATEGY: SearchStrategy = "fallback";
+export const DEFAULT_STRATEGY: SearchStrategy = 'fallback';
 
 /**
  * Upper bound for any timeout budget, in ms. Beyond roughly 24.8 days a
@@ -83,10 +89,10 @@ interface ProviderDefaults {
 }
 
 const PROVIDER_DEFAULTS: Record<ProviderName, ProviderDefaults> = {
-  kimi: { baseUrl: "https://api.moonshot.cn", model: "kimi-k3", openAiCompatible: true },
-  mimo: { baseUrl: "https://token-plan-cn.xiaomimimo.com", model: "mimo-v2.5", openAiCompatible: true },
-  stepfun: { baseUrl: "https://api.stepfun.com" },
-  zhipu: { baseUrl: "https://open.bigmodel.cn" },
+  kimi: { baseUrl: 'https://api.moonshot.cn', model: 'kimi-k3', openAiCompatible: true },
+  mimo: { baseUrl: 'https://token-plan-cn.xiaomimimo.com', model: 'mimo-v2.5', openAiCompatible: true },
+  stepfun: { baseUrl: 'https://api.stepfun.com' },
+  zhipu: { baseUrl: 'https://open.bigmodel.cn' },
 };
 
 export interface ProviderConfig {
@@ -126,8 +132,13 @@ export interface GatewayConfig {
   configFile?: string;
 }
 
+// Scanning from the end instead of anchoring a regex at `$`: a greedy `/+`
+// before `$` backtracks across every split point of a long trailing-slash run
+// that fails to match (super-linear in the input), and the loop is O(n) plain.
 function trimSlash(s: string): string {
-  return s.replace(/\/+$/, "");
+  let end = s.length;
+  while (end > 0 && s[end - 1] === '/') end -= 1;
+  return s.slice(0, end);
 }
 
 /**
@@ -136,7 +147,7 @@ function trimSlash(s: string): string {
  */
 function ensureV1(baseUrl: string): string {
   const b = trimSlash(baseUrl);
-  return b.endsWith("/v1") ? b : b + "/v1";
+  return b.endsWith('/v1') ? b : `${b}/v1`;
 }
 
 /**
@@ -148,12 +159,12 @@ function ensureV1(baseUrl: string): string {
  * a slot setting therefore cannot drift out of the .env whitelist.
  */
 export const PROVIDER_ENV_SUFFIXES = [
-  "API_KEY",
-  "BASE_URL",
-  "ENABLED",
-  "MODEL",
-  "PRIORITY",
-  "TIMEOUT_MS",
+  'API_KEY',
+  'BASE_URL',
+  'ENABLED',
+  'MODEL',
+  'PRIORITY',
+  'TIMEOUT_MS',
 ] as const;
 export type ProviderEnvSuffix = (typeof PROVIDER_ENV_SUFFIXES)[number];
 
@@ -166,15 +177,20 @@ export type ProviderEnvSuffix = (typeof PROVIDER_ENV_SUFFIXES)[number];
  * resolved config, so a name added to this list but never read is caught.
  */
 export const GATEWAY_ENV_KEYS = [
-  "WEBSEARCH_CONFIG",
-  "WEBSEARCH_COUNT",
-  "WEBSEARCH_DEDUPE",
-  "WEBSEARCH_MAX_PROVIDERS",
-  "WEBSEARCH_ORDER",
-  "WEBSEARCH_STRATEGY",
-  "WEBSEARCH_TIMEOUT_MS",
-  "ZHIPU_SEARCH_ENGINE",
+  'WEBSEARCH_CONFIG',
+  'WEBSEARCH_COUNT',
+  'WEBSEARCH_DEDUPE',
+  'WEBSEARCH_MAX_PROVIDERS',
+  'WEBSEARCH_ORDER',
+  'WEBSEARCH_STRATEGY',
+  'WEBSEARCH_TIMEOUT_MS',
+  'ZHIPU_SEARCH_ENGINE',
 ] as const;
+
+/** Derive a provider's environment variable name, e.g. kimi + "API_KEY" -> KIMI_API_KEY. */
+export function providerEnvKey(name: ProviderName, suffix: ProviderEnvSuffix): string {
+  return `${name.toUpperCase()}_${suffix}`;
+}
 
 /**
  * Every environment variable name this gateway reads.
@@ -193,11 +209,6 @@ export function gatewayEnvKeys(): ReadonlySet<string> {
   return keys;
 }
 
-/** Derive a provider's environment variable name, e.g. kimi + "API_KEY" -> KIMI_API_KEY. */
-export function providerEnvKey(name: ProviderName, suffix: ProviderEnvSuffix): string {
-  return `${name.toUpperCase()}_${suffix}`;
-}
-
 /**
  * Lenient string getter: returns the trimmed value, or undefined for a
  * non-string, an empty string, or a whitespace-only string.
@@ -208,18 +219,18 @@ export function providerEnvKey(name: ProviderName, suffix: ProviderEnvSuffix): s
  * the file — the failure mode the `model` field already avoids.
  */
 function asString(v: unknown): string | undefined {
-  if (typeof v !== "string") return undefined;
+  if (typeof v !== 'string') return undefined;
   const trimmed = v.trim();
-  return trimmed === "" ? undefined : trimmed;
+  return trimmed === '' ? undefined : trimmed;
 }
 
 /** Lenient boolean getter: accepts booleans and on/off/yes/no/true/false/1/0 strings. */
 function asBool(v: unknown): boolean | undefined {
-  if (typeof v === "boolean") return v;
-  if (typeof v === "string") {
+  if (typeof v === 'boolean') return v;
+  if (typeof v === 'string') {
     const s = v.trim().toLowerCase();
-    if (s === "1" || s === "true" || s === "yes" || s === "on") return true;
-    if (s === "0" || s === "false" || s === "no" || s === "off") return false;
+    if (s === '1' || s === 'true' || s === 'yes' || s === 'on') return true;
+    if (s === '0' || s === 'false' || s === 'no' || s === 'off') return false;
   }
   return undefined;
 }
@@ -259,7 +270,7 @@ function optionalPositiveInt(
   source: string,
 ): number | undefined {
   const raw = obj?.[key];
-  if (raw === undefined || raw === null || raw === "") return undefined;
+  if (raw === undefined || raw === null || raw === '') return undefined;
   const n = lenientInt(raw);
   if (Number.isInteger(n) && n > 0) return n;
   warn(`${source}="${String(raw)}" is not a positive integer, ignoring it`);
@@ -267,7 +278,10 @@ function optionalPositiveInt(
 }
 
 /** Read the providers.<name> sub-object from the config file; undefined on type mismatch. */
-function providerEntry(file: ConfigFileShape | undefined, name: ProviderName): Record<string, unknown> | undefined {
+function providerEntry(
+  file: ConfigFileShape | undefined,
+  name: ProviderName,
+): Record<string, unknown> | undefined {
   const providers = maybeObject(file?.providers);
   return providers ? maybeObject(providers[name]) : undefined;
 }
@@ -292,11 +306,12 @@ export function parseProviderList(
   warn: (m: string) => void,
   source: string,
 ): ProviderName[] {
-  const parts: unknown[] = Array.isArray(raw) ? raw : typeof raw === "string" ? raw.split(",") : [];
+  const parts: unknown[] = Array.isArray(raw) ? raw : [];
+  if (typeof raw === 'string') parts.push(...raw.split(','));
   const seen = new Set<ProviderName>();
   for (const part of parts) {
-    const name = (typeof part === "string" ? part : "").trim().toLowerCase();
-    if (name === "") continue;
+    const name = (typeof part === 'string' ? part : '').trim().toLowerCase();
+    if (name === '') continue;
     if ((KNOWN_PROVIDERS as readonly string[]).includes(name)) seen.add(name as ProviderName);
     else warn(`${source}: unknown provider "${name}" ignored`);
   }
@@ -304,20 +319,25 @@ export function parseProviderList(
 }
 
 /** Parse a strategy name; undefined when missing, warn-and-return-undefined when invalid. */
-export function parseStrategy(raw: unknown, warn: (m: string) => void, source: string): SearchStrategy | undefined {
-  if (raw === undefined || raw === null || raw === "") return undefined;
-  const s = typeof raw === "string" ? raw.trim().toLowerCase() : "";
+export function parseStrategy(
+  raw: unknown,
+  warn: (m: string) => void,
+  source: string,
+): SearchStrategy | undefined {
+  if (raw === undefined || raw === null || raw === '') return undefined;
+  const s = typeof raw === 'string' ? raw.trim().toLowerCase() : '';
   if ((SEARCH_STRATEGIES as readonly string[]).includes(s)) return s as SearchStrategy;
-  warn(`${source}: unknown strategy "${String(raw)}", expected ${SEARCH_STRATEGIES.join("|")}`);
+  warn(`${source}: unknown strategy "${String(raw)}", expected ${SEARCH_STRATEGIES.join('|')}`);
   return undefined;
 }
 
 /**
- * Parse a positive integer; return the fallback when missing, unparseable or out of range (with a warning).
+ * Parse a positive integer; return the fallback when missing, unparseable or
+ * out of range (with a warning).
  *
- * Only a number or a non-blank numeric string counts (see lenientInt), so a stray boolean in a
- * config file warns and falls back instead of silently becoming a 1 ms budget that makes every
- * search time out instantly.
+ * Only a number or a non-blank numeric string counts (see lenientInt), so a
+ * stray boolean in a config file warns and falls back instead of silently
+ * becoming a 1 ms budget that makes every search time out instantly.
  */
 function positiveInt(
   raw: unknown,
@@ -326,7 +346,7 @@ function positiveInt(
   warn: (m: string) => void,
   max = Number.POSITIVE_INFINITY,
 ): number {
-  if (raw === undefined || raw === null || raw === "") return fallback;
+  if (raw === undefined || raw === null || raw === '') return fallback;
   const n = lenientInt(raw);
   if (!Number.isInteger(n) || n <= 0) {
     warn(`${source}="${String(raw)}" is not a positive integer, using ${fallback}`);
@@ -362,10 +382,13 @@ function perProviderTimeout(
   return undefined;
 }
 
-/** Whether a base URL is safe to send an Authorization header to. Non-https endpoints leak the key in cleartext. */
+/**
+ * Whether a base URL is safe to send an Authorization header to. Non-https
+ * endpoints leak the key in cleartext.
+ */
 function isHttpsUrl(url: string): boolean {
   try {
-    return new URL(url).protocol === "https:";
+    return new URL(url).protocol === 'https:';
   } catch {
     return false;
   }
@@ -388,7 +411,7 @@ function layer(
   envSource: string,
   fileSource: string,
 ): { raw: unknown; source: string } {
-  return envValue !== undefined && envValue.trim() !== ""
+  return envValue !== undefined && envValue.trim() !== ''
     ? { raw: envValue, source: envSource }
     : { raw: fileValue, source: fileSource };
 }
@@ -405,9 +428,9 @@ function resolveOrder(
   providers: Record<ProviderName, ProviderConfig>,
   warn: (m: string) => void,
 ): ProviderName[] {
-  const envOrder = parseProviderList(env.WEBSEARCH_ORDER, warn, "WEBSEARCH_ORDER");
+  const envOrder = parseProviderList(env.WEBSEARCH_ORDER, warn, 'WEBSEARCH_ORDER');
   if (envOrder.length) return envOrder;
-  const fileOrder = parseProviderList(file?.order, warn, "config order");
+  const fileOrder = parseProviderList(file?.order, warn, 'config order');
   if (fileOrder.length) return fileOrder;
   if (KNOWN_PROVIDERS.some((name) => providers[name].priority > 0)) {
     return [...KNOWN_PROVIDERS].sort(
@@ -433,16 +456,19 @@ export interface LoadConfigOptions {
  * otherwise the same class of problem is reported under three different
  * prefixes, and the entry points have to know which default they landed on.
  */
-export const defaultWarn = (m: string): void => { console.error(`[${SERVER_NAME}] ${m}`); };
+export const defaultWarn = (m: string): void => {
+  console.error(`[${SERVER_NAME}] ${m}`);
+};
 
 /**
- * Merge the three config layers into the final GatewayConfig.
- * Invalid values at any layer only warn and fall back, so this function never throws in any environment.
+ * Merge the three config layers into the final GatewayConfig. Invalid values
+ * at any layer only warn and fall back, so this function never throws in any
+ * environment.
  */
 export function loadConfig(options: LoadConfigOptions = {}): GatewayConfig {
   const env = options.env ?? process.env;
   const warn = options.warn ?? defaultWarn;
-  const file = options.file;
+  const { file } = options;
 
   // Warn about unknown provider names in the config file (usually typos).
   const entries = providerEntries(file);
@@ -459,32 +485,32 @@ export function loadConfig(options: LoadConfigOptions = {}): GatewayConfig {
 
     // A blank value at either layer means "not set", so a template file's empty
     // placeholder can never mask a real value from the layer below it.
-    const rawBase = asString(env[providerEnvKey(name, "BASE_URL")]) ?? strField(entry, "baseUrl") ?? defaults.baseUrl;
+    const rawBase = asString(env[providerEnvKey(name, 'BASE_URL')]) ?? strField(entry, 'baseUrl') ?? defaults.baseUrl;
     const baseUrl = defaults.openAiCompatible ? ensureV1(rawBase) : trimSlash(rawBase);
-    const apiKey = asString(env[providerEnvKey(name, "API_KEY")]) ?? strField(entry, "apiKey") ?? "";
+    const apiKey = asString(env[providerEnvKey(name, 'API_KEY')]) ?? strField(entry, 'apiKey') ?? '';
     if (apiKey && !isHttpsUrl(baseUrl)) {
       warn(`${name}: baseUrl is not an https URL, so a configured key would be sent in cleartext — use https, or keep http only for a proxy you trust`);
     }
 
-    // ZHIPU_SEARCH_ENGINE is a legacy knob kept for backward compatibility; the option normally comes from the config file.
+    // ZHIPU_SEARCH_ENGINE is a legacy knob kept for backward compatibility;
+    // the option normally comes from the config file.
     const providerOptions: Record<string, unknown> = { ...maybeObject(entry?.options) };
-    if (name === "zhipu") {
-      const envEngine = (env.ZHIPU_SEARCH_ENGINE ?? "").trim();
+    if (name === 'zhipu') {
+      const envEngine = (env.ZHIPU_SEARCH_ENGINE ?? '').trim();
       if (envEngine) providerOptions.searchEngine = envEngine;
     }
 
     const fileTimeoutSource = `config providers.${name}.timeoutMs`;
-    const envTimeout = asNonNegativeInt(env[providerEnvKey(name, "TIMEOUT_MS")]);
-    const fileTimeout = optionalPositiveInt(entry, "timeoutMs", warn, fileTimeoutSource);
-    const timeoutSource =
-      envTimeout !== undefined ? providerEnvKey(name, "TIMEOUT_MS") : fileTimeoutSource;
+    const envTimeout = asNonNegativeInt(env[providerEnvKey(name, 'TIMEOUT_MS')]);
+    const fileTimeout = optionalPositiveInt(entry, 'timeoutMs', warn, fileTimeoutSource);
+    const timeoutSource = envTimeout !== undefined ? providerEnvKey(name, 'TIMEOUT_MS') : fileTimeoutSource;
 
     providers[name] = {
       apiKey,
       baseUrl,
-      model: asString(env[providerEnvKey(name, "MODEL")]) ?? strField(entry, "model") ?? defaults.model,
-      enabled: asBool(env[providerEnvKey(name, "ENABLED")]) ?? boolField(entry, "enabled") ?? true,
-      priority: asNonNegativeInt(env[providerEnvKey(name, "PRIORITY")]) ?? intField(entry, "priority") ?? 0,
+      model: asString(env[providerEnvKey(name, 'MODEL')]) ?? strField(entry, 'model') ?? defaults.model,
+      enabled: asBool(env[providerEnvKey(name, 'ENABLED')]) ?? boolField(entry, 'enabled') ?? true,
+      priority: asNonNegativeInt(env[providerEnvKey(name, 'PRIORITY')]) ?? intField(entry, 'priority') ?? 0,
       timeoutMs: perProviderTimeout(envTimeout ?? fileTimeout, timeoutSource, warn),
       options: Object.keys(providerOptions).length ? providerOptions : undefined,
     };
@@ -492,15 +518,29 @@ export function loadConfig(options: LoadConfigOptions = {}): GatewayConfig {
 
   // Read each layer separately so a warning names the variable or the file
   // field the value actually came from, not whichever one happens to win.
-  const budget = layer(env.WEBSEARCH_TIMEOUT_MS, file?.timeoutMs, "WEBSEARCH_TIMEOUT_MS", "config timeoutMs");
-  const timeoutMs = positiveInt(budget.raw, DEFAULT_TIMEOUT_MS, budget.source, warn, TIMEOUT_MAX_MS);
-  const resultCount = layer(env.WEBSEARCH_COUNT, file?.count, "WEBSEARCH_COUNT", "config count");
-  const count = Math.min(COUNT_MAX, positiveInt(resultCount.raw, DEFAULT_COUNT, resultCount.source, warn));
+  const budget = layer(
+    env.WEBSEARCH_TIMEOUT_MS,
+    file?.timeoutMs,
+    'WEBSEARCH_TIMEOUT_MS',
+    'config timeoutMs',
+  );
+  const timeoutMs = positiveInt(
+    budget.raw,
+    DEFAULT_TIMEOUT_MS,
+    budget.source,
+    warn,
+    TIMEOUT_MAX_MS,
+  );
+  const resultCount = layer(env.WEBSEARCH_COUNT, file?.count, 'WEBSEARCH_COUNT', 'config count');
+  const count = Math.min(
+    COUNT_MAX,
+    positiveInt(resultCount.raw, DEFAULT_COUNT, resultCount.source, warn),
+  );
   const fanOut = layer(
     env.WEBSEARCH_MAX_PROVIDERS,
     file?.maxProviders,
-    "WEBSEARCH_MAX_PROVIDERS",
-    "config maxProviders",
+    'WEBSEARCH_MAX_PROVIDERS',
+    'config maxProviders',
   );
   const maxProviders = Math.max(
     MAX_PROVIDERS_MIN,
@@ -510,9 +550,9 @@ export function loadConfig(options: LoadConfigOptions = {}): GatewayConfig {
   return {
     order: resolveOrder(env, file, providers, warn),
     strategy:
-      parseStrategy(env.WEBSEARCH_STRATEGY, warn, "WEBSEARCH_STRATEGY") ??
-      parseStrategy(file?.strategy, warn, "config strategy") ??
-      DEFAULT_STRATEGY,
+      parseStrategy(env.WEBSEARCH_STRATEGY, warn, 'WEBSEARCH_STRATEGY')
+      ?? parseStrategy(file?.strategy, warn, 'config strategy')
+      ?? DEFAULT_STRATEGY,
     timeoutMs,
     count,
     maxProviders,

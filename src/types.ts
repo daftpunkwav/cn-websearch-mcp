@@ -3,9 +3,11 @@
  * @description Shared type contracts and vocabulary for the gateway (no imports, no I/O).
  *
  * Responsibilities:
- * - Define the normalized search result shape, per-attempt audit records, and merged multi-source metadata
+ * - Define the normalized search result shape, per-attempt audit records, and merged
+ *   multi-source metadata
  * - Define the search strategies, the search adapter interface, and the injectable search context
- * - Depend on no internal module itself; shared by the HTTP, normalization, orchestration, adapter and tool layers
+ * - Depend on no internal module itself; shared by the HTTP, normalization, orchestration,
+ *   adapter and tool layers
  *
  * Design notes:
  * - It carries no logic, but it does own vocabulary: a name that more than one surface has to
@@ -17,7 +19,8 @@ export type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
 
 /**
  * Search strategies:
- * - `fallback`: try providers in priority order, return on the first success (fewer calls, lower latency)
+ * - `fallback`: try providers in priority order, return on the first success
+ *   (fewer calls, lower latency)
  * - `aggregate`: query several providers in parallel, merge and dedupe for broader coverage
  *
  * This list is the single source of the vocabulary. The type below is derived from it, so the
@@ -26,7 +29,7 @@ export type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
  * one array instead of restating the names. It lives here rather than in the config layer so
  * that the argument parser, which must stay a dependency-free leaf, reaches the rule directly.
  */
-export const SEARCH_STRATEGIES = ["fallback", "aggregate"] as const;
+export const SEARCH_STRATEGIES = ['fallback', 'aggregate'] as const;
 
 export type SearchStrategy = (typeof SEARCH_STRATEGIES)[number];
 
@@ -54,7 +57,7 @@ export interface NormalizedItem {
   source?: string;
 }
 
-export type AttemptStatus = "ok" | "timeout" | "transient_error" | "permanent_error" | "cancelled";
+export type AttemptStatus = 'ok' | 'timeout' | 'transient_error' | 'permanent_error' | 'cancelled';
 
 /**
  * One row of the audit trail of a web_search call.
@@ -75,7 +78,10 @@ export interface AttemptRecord {
 export interface ResultMeta {
   /** The first (highest-priority) provider that answered successfully. */
   provider: string;
-  /** All providers that answered successfully; one item for single-source, several under aggregate. */
+  /**
+   * All providers that answered successfully; one item for single-source,
+   * several under aggregate.
+   */
   providers?: string[];
   total_latency_ms: number;
   attempts: AttemptRecord[];
