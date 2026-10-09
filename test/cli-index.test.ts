@@ -19,7 +19,11 @@ const okResult = (provider: string): NormalizedSearchResult => ({
 // primitive at runtime, typed Error only to satisfy the reject rule.
 const PLAIN_FAILURE = 'plain' as unknown as Error;
 
-function makeDeps(over: { serve?: () => Promise<void>; env?: Record<string, string> } = {}): {
+function makeDeps(over: {
+  serve?: () => Promise<void>;
+  probe?: () => Promise<never>;
+  env?: Record<string, string>;
+} = {}): {
   deps: CliRunDeps;
   out: () => string;
   err: () => string;
@@ -45,9 +49,12 @@ function makeDeps(over: { serve?: () => Promise<void>; env?: Record<string, stri
       serve: over.serve ?? (async () => {}),
       search: async () => okResult('stepfun'),
       // Injected probe implementation: tests never make real network requests.
-      probe: (providers) => Promise.resolve(providers.map((p) => ({
-        provider: p.name, ok: true, latency_ms: 1, results: 1, sample: 'T', error: '',
-      }))),
+      probe:
+        over.probe
+        ?? ((providers) =>
+          Promise.resolve(providers.map((p) => ({
+            provider: p.name, ok: true, latency_ms: 1, results: 1, sample: 'T', error: '',
+          })))),
     },
     out: () => out.join(''),
     err: () => err.join(''),
@@ -97,6 +104,17 @@ describe('runCli', () => {
     });
     expect(await runCli(['serve'], deps)).toBe(EXIT.failure);
     expect(err()).toContain('fatal: plain');
+  });
+
+  it('routes an unexpected command rejection through the same fatal boundary as serve', async () => {
+    // cmdTest has no internal catch (expected probe failures already arrive as
+    // rows), so a rejecting injected probe is the way a bug would reach the
+    // dispatcher's fatal boundary instead of becoming an exit code.
+    const { deps, err } = makeDeps({
+      probe: () => Promise.reject(new Error('exploding probe')),
+    });
+    expect(await runCli(['test'], deps)).toBe(EXIT.failure);
+    expect(err()).toContain('fatal: exploding probe');
   });
 
   it('routes search, status and test to their commands', async () => {
