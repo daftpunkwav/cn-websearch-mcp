@@ -62,8 +62,7 @@ export async function runCli(argv: string[], deps: CliRunDeps): Promise<number> 
     case 'repl':
       return runRepl(deps, deps);
 
-    // 'serve' lands here via parseArgs's own default, so the label would be
-    // redundant; the fallback also absorbs unknown commands defensively.
+    // Parsed commands without a dedicated case, including 'serve', land here.
     default:
       try {
         await deps.serve();
