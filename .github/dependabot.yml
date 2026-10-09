@@ -50,6 +50,13 @@ updates:
       # when the matrix leaves Node 18 and vitest 4 lands.
       - dependency-name: "tinypool"
         versions: [">=2"]
+      # PR #26: TypeScript 7 is the native-port (Go) rewrite. The lint
+      # toolchain (@typescript-eslint/typescript-estree 8.x, ts-api-utils 2.x)
+      # crashes on load against it ("Cannot read properties of undefined
+      # (reading 'Intrinsic')"), and typescript-estree's supported range stops
+      # at <6.1.0. Block the major until @typescript-eslint ships TS 7 support.
+      - dependency-name: "typescript"
+        versions: [">=7"]
     labels:
       - "dependencies"
       - "javascript"
