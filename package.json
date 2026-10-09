@@ -48,6 +48,9 @@
     "typescript": "^6.0.3",
     "vitest": "^3.2.7"
   },
+  "overrides": {
+    "vite": "^6.4.4"
+  },
   "allowScripts": {
     "esbuild@0.28.2": true,
     "unrs-resolver@1.12.2": true
