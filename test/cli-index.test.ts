@@ -51,10 +51,9 @@ function makeDeps(over: {
       // Injected probe implementation: tests never make real network requests.
       probe:
         over.probe
-        ?? ((providers) =>
-          Promise.resolve(providers.map((p) => ({
-            provider: p.name, ok: true, latency_ms: 1, results: 1, sample: 'T', error: '',
-          })))),
+        ?? ((providers) => Promise.resolve(providers.map((p) => ({
+          provider: p.name, ok: true, latency_ms: 1, results: 1, sample: 'T', error: '',
+        })))),
     },
     out: () => out.join(''),
     err: () => err.join(''),
