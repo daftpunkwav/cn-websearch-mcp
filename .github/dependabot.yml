@@ -57,6 +57,16 @@ updates:
       # at <6.1.0. Block the major until @typescript-eslint ships TS 7 support.
       - dependency-name: "typescript"
         versions: [">=7"]
+      # PRs #27 and #29: eslint 10 cannot be installed. eslint-config-airbnb-
+      # extended 3.3.0 is the latest release and declares peer eslint@"^9.0.0",
+      # so npm ci aborts with ERESOLVE and every install-dependent CI job
+      # (lint plus the whole node 18/20/22 matrix) fails. #27 reached the same
+      # wall and was merged back down to 9.39.5, which leaves the range at ^9
+      # and makes Dependabot re-propose the bump weekly. Block the major here
+      # rather than in the lockfile. Drop this when eslint-config-airbnb-
+      # extended declares support for eslint 10.
+      - dependency-name: "eslint"
+        versions: [">=10"]
     labels:
       - "dependencies"
       - "javascript"
