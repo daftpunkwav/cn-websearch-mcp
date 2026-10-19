@@ -82,6 +82,30 @@ was exercised against **18.20.8, 20.19.5, 22.21.1 and 24.15.0**; the global
 by the matrix rather than by measurement — see the `combinedSignal` comment in
 `src/http.ts` for the one API that is genuinely unavailable there.
 
+The floor constrains the development tree too. `vitest` accepts `vite` `^5 ||
+^6 || ^7`, and every vite 7 release declares `engines.node: ^20.19.0 ||
+>=22.12.0`, so the `overrides.vite` pin in `package.json` is the only thing
+stopping a fresh `npm install` from resolving a dev toolchain the Node 18 matrix
+row cannot run.
+
+## Install scripts
+
+`allowScripts` in `package.json` records, by exact version, which install
+scripts in the tree have been read. npm runs a script the policy does not list
+— with a warning — so an entry is an acknowledgement, not a switch; a version
+outside a listed pin is unreviewed again.
+
+Two esbuild versions are listed because two incompatible ranges require them:
+`tsx` asks for `~0.28.0` and `vite` for `^0.25.0`, so npm cannot hoist one copy
+for both. A single bare `esbuild` entry would claim review of every version the
+tree ever resolves, which is exactly what the per-version pinning avoids.
+`unrs-resolver` is the native binding of `eslint-import-resolver-typescript`.
+
+After changing the dependency tree, `npm install-scripts ls` lists every
+package whose scripts the policy does not cover. `fsevents` is the one entry it
+reports on macOS: it is optional and platform-gated (`os: [darwin]`), so it is
+inert everywhere else and never surfaces in CI.
+
 ## Commits
 
 Conventional Commits, one commit does one thing:
