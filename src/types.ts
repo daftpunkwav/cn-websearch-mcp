@@ -33,6 +33,19 @@ export const SEARCH_STRATEGIES = ['fallback', 'aggregate'] as const;
 
 export type SearchStrategy = (typeof SEARCH_STRATEGIES)[number];
 
+/**
+ * Search-argument bounds shared by every entry surface.
+ *
+ * Vocabulary rather than logic, and it lives here for the reason above: the
+ * argument parser must stay a dependency-free leaf, yet it prints this range in
+ * its help text, so the numbers it shows have to be the same ones the MCP tool
+ * schema declares instead of a second hand-typed copy that drifts. The rule
+ * that applies them (effectiveCount) stays in the config layer.
+ */
+export const COUNT_MIN = 1;
+export const COUNT_MAX = 50;
+export const QUERY_MAX = 400;
+
 export interface SearchRequest {
   query: string;
   /** Desired result count, normalized by the tool layer; defaults from configuration. */

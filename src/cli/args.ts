@@ -11,7 +11,9 @@
 // CLI argument layer. Pure functions: input is the argv array, output is a
 // structured command or an error message.
 
-import { SEARCH_STRATEGIES, type SearchStrategy } from '../types.js';
+import {
+  COUNT_MAX, COUNT_MIN, QUERY_MAX, SEARCH_STRATEGIES, type SearchStrategy,
+} from '../types.js';
 
 /** Supported command names (including aliases). */
 const COMMAND_ALIASES: Record<string, CliCommandName> = {
@@ -62,7 +64,7 @@ export function usage(): string {
     '  cn-websearch-mcp version                Show version',
     '',
     'Options:',
-    '  -n, --count <1-50>         Desired number of results',
+    `  -n, --count <${COUNT_MIN}-${COUNT_MAX}>         Desired number of results`,
     '      --strategy <s>         fallback | aggregate (multi-source merge)',
     '      --providers <a,b>      Restrict this call to the given providers',
     '      --no-dedupe            Keep duplicate URLs when aggregating',
@@ -77,7 +79,7 @@ export function usage(): string {
     '  cn-websearch-mcp test stepfun zhipu',
     '  WEBSEARCH_STRATEGY=aggregate cn-websearch-mcp search hello',
     '',
-    'A query longer than 400 characters is truncated; --count is clamped to 1-50.',
+    `A query longer than ${QUERY_MAX} characters is truncated; --count is clamped to ${COUNT_MIN}-${COUNT_MAX}.`,
   ].join('\n');
 }
 

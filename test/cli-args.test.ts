@@ -6,6 +6,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { parseArgs, usage } from '../src/cli/args.js';
+import { COUNT_MAX, COUNT_MIN, QUERY_MAX } from '../src/types.js';
 
 function ok(argv: string[]) {
   const res = parseArgs(argv);
@@ -133,5 +134,15 @@ describe('usage', () => {
       expect(text).toContain(token);
     }
     expect(text).toContain('stdio');
+  });
+
+  it('prints the search bounds the tool schema declares', () => {
+    // The help text is the only place a CLI user learns the accepted range, so
+    // it has to be the shared constants rather than a hand-typed copy that
+    // silently keeps advertising the old range after a bound changes.
+    const text = usage();
+    expect(text).toContain(`-n, --count <${COUNT_MIN}-${COUNT_MAX}>`);
+    expect(text).toContain(`longer than ${QUERY_MAX} characters`);
+    expect(text).toContain(`--count is clamped to ${COUNT_MIN}-${COUNT_MAX}`);
   });
 });
