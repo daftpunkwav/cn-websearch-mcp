@@ -53,7 +53,12 @@ async function session(
   const runtime = createRuntime({
     env: over.env ?? { STEPFUN_API_KEY: 's', KIMI_API_KEY: 'k' },
     warn: () => {},
+    // "No config file": without fileExists, configPath: undefined reaches into
+    // the developer's own working directory, where a cn-websearch.config.json
+    // (gitignored, absent in CI) would change the count, strategy and chain the
+    // session greets with.
     configPath: undefined,
+    fileExists: () => false,
   });
   const deps = makeReplDeps(runtime, output, over);
   const running = runRepl(deps, { input });
@@ -180,6 +185,41 @@ describe('runRepl', () => {
     expect(text).toContain('error: unknown provider(s): openai');
   });
 
+  it('reports the settings the session now holds, not the ones it started with', async () => {
+    // Each of these four commands has a show-only spelling, and each must answer
+    // with the value it currently holds: readline writes its prompt straight
+    // onto the same line, so a stale report ("(all available)", "off") is a
+    // report about the wrong state, not a formatting difference. Ordered
+    // comparison, so a show form that repeated its starting value names itself.
+    const { text } = await session([
+      '/strategy aggregate',
+      '/count 3',
+      '/providers kimi',
+      '/json on',
+      '/strategy',
+      '/count',
+      '/providers',
+      '/json',
+      '/quit',
+    ]);
+    const reported = text
+      .replace(/cn-websearch> /g, '')
+      .split('\n')
+      .filter((line) => /^(strategy|count|providers|json): /.test(line));
+    expect(reported).toEqual([
+      // What each setter echoed back...
+      'strategy: aggregate',
+      'count: 3',
+      'providers: kimi',
+      'json: on',
+      // ...and what the show-only spelling of the same four reported afterwards.
+      'strategy: aggregate',
+      'count: 3',
+      'providers: kimi',
+      'json: on',
+    ]);
+  });
+
   it('probes providers via /test, optionally for one provider', async () => {
     const probed: string[][] = [];
     const queries: string[] = [];
@@ -267,6 +307,7 @@ describe('runRepl fault tolerance', () => {
       env: { STEPFUN_API_KEY: 's' },
       warn: () => {},
       configPath: undefined,
+      fileExists: () => false,
     });
     const deps = makeReplDeps(runtime, output, over);
     const running = runRepl(deps, { input });

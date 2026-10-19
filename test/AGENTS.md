@@ -15,7 +15,8 @@ Layout and coverage details live in [README.md](README.md).
 - Never put a real API key in a test. Synthetic placeholder strings are allowed.
 - Unit tests stub `fetchImpl` and do not open the network.
 - When an assertion depends on the `.env` at cwd, run in a fresh temp directory (`runCliInEphemeralCwd` or `freshTempDir`).
-- The entry-point suite stubs `loadDotEnv`.
+- A unit test that means "no config file" passes `fileExists: () => false`. `configPath: undefined` alone is not that: it still looks for `cn-websearch.config.json` under the developer's own cwd, which is gitignored and so exists only on someone's machine.
+- The entry-point suite stubs `loadDotEnv` and the config-file lookup, and states the environment it needs around the import.
 - Live upstream checks belong in `scripts/smoke.ts` (`npm run smoke`).
 
 ## Conventions
