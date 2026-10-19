@@ -120,6 +120,8 @@ cn-websearch> /status  /config  /json on  /help  /quit
 2. 每个通道的 `priority`——数值越大越靠前;同值时按字母序,保证结果稳定可复现。
 3. 都没设置 → 字母序默认(`kimi, mimo, stepfun, zhipu`)。
 
+显式的 `order` / `WEBSEARCH_ORDER` 列表同时也是参与范围的过滤器:没写进列表的槽位即便已启用且配了 key,也不会被搜索。`priority` 只调顺序,不会移除任何通道。
+
 配置文件写法:
 
 ```json
@@ -180,7 +182,7 @@ STEPFUN_PRIORITY=10
 
 入参:`{ "query": string, "count"?: integer, "strategy"?: "fallback"|"aggregate", "providers"?: string[] }`。
 
-`count` 默认取配置值,`strategy` 默认取配置策略;显式传入的 `providers` 必须是已启用且配了 key 的槽位——否则返回带明确原因的结构化错误,而不是静默忽略。`count` 被夹到 1-50、`query` 截到 400 字符,本接口与所有 CLI 命令一致。
+`count` 默认取配置值,`strategy` 默认取配置策略;显式传入的 `providers` 必须是在活跃链中的槽位——已启用、配了 key 且写进了配置的 order 列表——否则返回带明确原因的结构化错误,而不是静默忽略。`count` 被夹到 1-50、`query` 截到 400 字符,本接口与所有 CLI 命令一致。
 
 输出:归一化结果 + 审计轨迹。聚合模式下每条结果带 `source`,`_meta.providers` 列出全部应答方:
 

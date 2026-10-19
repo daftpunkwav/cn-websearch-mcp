@@ -120,6 +120,8 @@ Three equivalent ways, evaluated in this order:
 2. `priority` per channel — a number, higher goes earlier. Ties are broken alphabetically so the result is deterministic.
 3. Neither set → alphabetical default (`kimi, mimo, stepfun, zhipu`).
 
+An explicit `order` / `WEBSEARCH_ORDER` list is also the participation filter: a slot left out of it is never searched, even when it is enabled and has a key. `priority` only reorders — it never removes a channel.
+
 Set in the config file:
 
 ```json
@@ -182,7 +184,7 @@ Keys are never logged or echoed: error text is scrubbed of credential-looking st
 
 Input: `{ "query": string, "count"?: integer, "strategy"?: "fallback"|"aggregate", "providers"?: string[] }`.
 
-`count` defaults to your configured `count`, `strategy` to your configured strategy, and `providers` (when given) must name slots that are enabled and have a key — otherwise the call returns a structured error naming the problem rather than silently ignoring it. `count` is clamped to 1-50 and `query` is capped at 400 characters, on this surface and on every CLI command alike.
+`count` defaults to your configured `count`, `strategy` to your configured strategy, and `providers` (when given) must name slots that are in the active chain — enabled, keyed and listed in the configured order — otherwise the call returns a structured error naming the problem rather than silently ignoring it. `count` is clamped to 1-50 and `query` is capped at 400 characters, on this surface and on every CLI command alike.
 
 Output: normalized results plus an audit trail. In aggregate mode each item carries `source`, and `_meta.providers` lists everyone who answered:
 

@@ -42,6 +42,20 @@ describe('createRuntime', () => {
     expect(runtime.chain.map((p) => p.name)).toEqual(['stepfun']);
   });
 
+  it('treats an explicit order as the participation filter, not only as a ranking', () => {
+    // Documented in README: a slot left out of order / WEBSEARCH_ORDER is never
+    // searched even when it is enabled and keyed. This is why provider-selection
+    // cannot answer "why is this unavailable?" with the key or the switch alone.
+    const runtime = createRuntime({
+      env: env({ KIMI_API_KEY: 'k', STEPFUN_API_KEY: 's', WEBSEARCH_ORDER: 'stepfun' }),
+      warn: () => {},
+      ...noConfigFile,
+    });
+    expect(runtime.config.providers.kimi.enabled).toBe(true);
+    expect(runtime.config.providers.kimi.apiKey).not.toBe('');
+    expect(runtime.chain.map((p) => p.name)).toEqual(['stepfun']);
+  });
+
   it('produces an empty chain when no key is configured at all', () => {
     const runtime = createRuntime({ env: env(), warn: () => {}, ...noConfigFile });
     expect(runtime.chain).toEqual([]);

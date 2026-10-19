@@ -81,9 +81,15 @@ export function selectProviders(requested: unknown, chain: SearchProvider[]): Pr
   const byName = new Map(chain.map((p) => [p.name, p]));
   const unavailable = names.filter((n) => !byName.has(n));
   if (unavailable.length) {
+    // The chain it is handed does not record why a slot is missing from it, and
+    // there are three reasons: disabled, no API key, or left out of an explicit
+    // order (runtime builds the chain from that list alone). Naming only the
+    // first two would send an operator to debug a key and an enabled switch that
+    // were both fine.
     return {
       ok: false,
-      error: `provider(s) unavailable: ${unavailable.join(', ')} (disabled or missing API key)`,
+      error: `provider(s) unavailable: ${unavailable.join(', ')} `
+        + '(not in the active chain: disabled, no API key, or excluded by the configured order)',
     };
   }
   return { ok: true, providers: names.map((n) => byName.get(n)!) };
