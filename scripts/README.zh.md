@@ -9,6 +9,15 @@
 
 `mcp-probe.mjs` 启动的是 `dist/index.js`,需先 `npm run build`;`smoke.ts` 经 tsx 直接从源码运行,无需构建。
 
+## ci/ —— 离线 CI 门禁
+
+无需网络、无需安装;两者都在 CI 中运行,也可在本地运行。
+
+| 文件 | 职责 |
+|---|---|
+| `ci/check_npm_deps_policy.mjs` | 拒绝名单门禁:当 `ci/dependency-policy.json` 中被禁的包出现在 `package-lock.json`(含传递依赖树与别名安装)或 `package.json` 中时失败。 |
+| `ci/npm-audit-check.mjs` | 审计门禁:`npm audit` 中任何未列入 `ci/npm-audit-allowlist.json` 的 high/critical 发现即失败;输入格式不合法时同样按 fail-closed 处理。CI 把 `npm audit --json` 管道给它。 |
+
 `smoke.ts` 的真实网络部分无法自动化,但它的装配路径可以:`test/probe.test.ts`
 用合成假 key 和注入的 fetch 驱动同一条 `createRuntime` → `chain` → `probeAll`
 链路,因此探测链路一旦断掉会在 CI 暴露,而不是等到打真实上游时才发现。
