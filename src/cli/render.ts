@@ -44,7 +44,10 @@ export function redactedConfig(config: GatewayConfig): Record<string, unknown> {
       model: p.model ?? null,
       apiKey: p.apiKey.trim() === '' ? '(unset)' : '(set)',
       timeoutMs: p.timeoutMs ?? null,
-      options: p.options ? Object.keys(p.options).sort() : null,
+      // The comparator makes the order locale-aware and identical on every
+      // runtime, where a bare sort() leaves it to whatever collation the
+      // build happens to carry — resolveOrder in config.ts sorts the same way.
+      options: p.options ? Object.keys(p.options).sort((a, b) => a.localeCompare(b)) : null,
     };
   }
   return {
