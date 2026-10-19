@@ -112,6 +112,18 @@ describe('runRepl', () => {
     expect(text).toContain('error: /search takes a query only — use /json, /count, /strategy or /providers to change session settings');
   });
 
+  it('gives every search entry point the same advice for a flag-looking query', async () => {
+    const { text } = await session(['--bare', '/search --json foo', '/aggregate --json bar', '/quit']);
+    const refusals = text.split('\n').filter((line) => line.includes('takes a query only'));
+    expect(refusals).toHaveLength(3);
+    // The only part that may differ is the command the user actually typed.
+    // The advice is one message, not a per-entry-point copy: a second copy is a
+    // second thing to keep current, and it drifts into telling the user two
+    // different things about the same refusal.
+    const advice = refusals.map((line) => line.slice(line.indexOf(' — ') + ' — '.length));
+    expect(new Set(advice).size).toBe(1);
+  });
+
   it('shows and updates the session strategy', async () => {
     const strategies: string[] = [];
     const { text } = await session(['/strategy', '/strategy aggregate', '/status', '/quit'], {
