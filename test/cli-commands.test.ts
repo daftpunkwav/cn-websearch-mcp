@@ -492,12 +492,20 @@ describe('exit-code contract', () => {
     const offenders: string[] = [];
     for (const name of readdirSync(cliDir)) {
       if (!name.endsWith('.ts')) continue;
-      // Comments name the pattern they forbid, so strip them before matching.
+      // Comments and string literals mention the pattern they forbid, so both
+      // are stripped before matching — the doc comment above names a bare
+      // `return 2`, and a message string could carry one too.
       const code = readFileSync(join(cliDir, name), 'utf8')
-        .replace(/\/\*[\s\S]*?\*\//g, '')
-        .replace(/\/\/.*$/gm, '');
+        .replace(/\/\*[\s\S]*?\*\//g, ' ')
+        .replace(/\/\/.*$/gm, ' ')
+        .replace(/'(?:[^'\\\n]|\\.)*'/g, "''")
+        .replace(/"(?:[^"\\\n]|\\.)*"/g, '""')
+        .replace(/`(?:[^`\\]|\\.)*`/g, '``');
       for (const [i, line] of code.split('\n').entries()) {
-        if (/^\s*return\s+\d+\s*;/.test(line)) offenders.push(`${name}:${i + 1}`);
+        // The statement can sit on its own line or after a condition, and the
+        // semicolon is optional — so the number has to end the statement
+        // rather than be followed by one.
+        if (/\breturn\s+\d+\s*(?:;|$)/.test(line)) offenders.push(`${name}:${i + 1}`);
       }
     }
     expect(offenders).toEqual([]);
