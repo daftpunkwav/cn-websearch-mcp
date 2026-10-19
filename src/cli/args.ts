@@ -90,6 +90,19 @@ function parsePositiveInt(raw: string): number | undefined {
 }
 
 /**
+ * The offending value as a diagnostic should print it, or a placeholder when
+ * the option supplied nothing.
+ *
+ * An absent value and an inline `--count=` are the same situation: `--flag=`
+ * is a complete token whose inline value is the empty string, and printing
+ * that verbatim ends the message at its own colon without saying what was
+ * wrong. Both shapes therefore report "(missing)".
+ */
+function shownValue(value: string | undefined): string {
+  return value === undefined || value === '' ? '(missing)' : value;
+}
+
+/**
  * Parse argv.
  * - Empty arguments mean serve (MCP clients launch this process with no args;
  *   this default must be preserved)
@@ -152,10 +165,9 @@ export function parseArgs(argv: string[]): ParseResult {
     if (flag === '-n' || flag === '--count') {
       const value = takeNumberValue();
       const n = value === undefined ? undefined : parsePositiveInt(value);
-      // `||`, not `??`: an inline `--count=` supplies an empty string, which
-      // `??` would print verbatim and leave the message naming no value at all
-      // — the same "(missing)" wording --strategy already uses for that shape.
-      if (n === undefined) return { ok: false, message: `invalid --count value: ${value || '(missing)'}` };
+      // shownValue covers the inline `--count=` case, where the flag is complete
+      // but its value is empty — see its comment.
+      if (n === undefined) return { ok: false, message: `invalid --count value: ${shownValue(value)}` };
       args.count = n;
       continue;
     }
@@ -169,7 +181,7 @@ export function parseArgs(argv: string[]): ParseResult {
       const value = (takeValue() ?? '').toLowerCase() as SearchStrategy;
       if (!(SEARCH_STRATEGIES as readonly string[]).includes(value)) {
         const expected = SEARCH_STRATEGIES.join('|');
-        return { ok: false, message: `invalid --strategy value: ${value || '(missing)'} (expected ${expected})` };
+        return { ok: false, message: `invalid --strategy value: ${shownValue(value)} (expected ${expected})` };
       }
       args.strategy = value;
       continue;
