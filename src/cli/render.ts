@@ -14,6 +14,7 @@
 import type { GatewayConfig, ProviderName } from '../config.js';
 import type { ProbeRow } from '../probe.js';
 import type { NormalizedSearchResult } from '../types.js';
+import { stripControlChars } from '../errors.js';
 import { truncate } from '../normalize.js';
 
 /** Snippet cap for rendering: terminal readability first; full content via --json. */
@@ -22,7 +23,17 @@ const SNIPPET_MAX = 160;
 /** Failure-note cap in the probe table: one readable column; the full summary is in --json. */
 const PROBE_NOTE_MAX = 80;
 
-/** Secret redaction: echo only whether a key is set, never its contents. */
+/**
+ * Secret redaction: echo only whether a key is set, never its contents.
+ *
+ * `providers.*.options` contributes its key names only. It is the one
+ * free-form field in the config, and the schema offers nowhere else for an
+ * operator to park a credential an adapter needs (a proxy key, for instance),
+ * so a value there is as likely to be a secret as not — while both consumers
+ * of this snapshot are output people paste into issues and CI logs. Which
+ * options resolved is the part a status command actually answers for; the
+ * values are not reproduced anywhere.
+ */
 export function redactedConfig(config: GatewayConfig): Record<string, unknown> {
   const providers: Record<string, unknown> = {};
   for (const [name, p] of Object.entries(config.providers)) {
@@ -33,7 +44,7 @@ export function redactedConfig(config: GatewayConfig): Record<string, unknown> {
       model: p.model ?? null,
       apiKey: p.apiKey.trim() === '' ? '(unset)' : '(set)',
       timeoutMs: p.timeoutMs ?? null,
-      options: p.options ?? null,
+      options: p.options ? Object.keys(p.options).sort() : null,
     };
   }
   return {
@@ -78,6 +89,12 @@ export function formatSearchResult(result: NormalizedSearchResult): string {
 /** Formats the effective config and provider status (redacted). */
 export function formatStatus(config: GatewayConfig, chainNames: string[]): string {
   const inChain = new Set(chainNames);
+  // Unlike the JSON surfaces, these two lines are written to the terminal
+  // unescaped, and both values come from data the working directory supplies
+  // (a config file field, or WEBSEARCH_CONFIG through a .env). A model name or
+  // a path carrying an escape sequence would otherwise repaint or forge output
+  // lines here — the same class errors.ts strips from upstream text.
+  const configFile = stripControlChars(config.configFile ?? '(none)');
   const lines: string[] = [
     `strategy      : ${config.strategy}`,
     `order         : ${config.order.join(' -> ') || '(none)'}`,
@@ -85,7 +102,7 @@ export function formatStatus(config: GatewayConfig, chainNames: string[]): strin
     `timeout/attempt: ${config.timeoutMs}ms`,
     `max providers : ${config.maxProviders}`,
     `dedupe        : ${config.dedupe ? 'on' : 'off'}`,
-    `config file   : ${config.configFile ?? '(none)'}`,
+    `config file   : ${configFile}`,
     '',
     'provider   enabled  configured  in-chain  priority  model',
   ];
@@ -97,7 +114,7 @@ export function formatStatus(config: GatewayConfig, chainNames: string[]): strin
       (p.apiKey.trim() !== '' ? 'yes' : 'no').padEnd(11),
       (inChain.has(name) ? 'yes' : 'no').padEnd(9),
       String(p.priority).padEnd(9),
-      p.model ?? '-',
+      stripControlChars(p.model ?? '-'),
     ];
     lines.push(cells.join(' '));
   }

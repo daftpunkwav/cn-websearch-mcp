@@ -25,7 +25,7 @@ The module map and layering diagram live in [README.md](README.md).
 
 - Never print or log API keys or credential-like strings. Use `redactSecrets` in `errors.ts` and `redactedConfig` in `cli/render.ts` at the boundary.
 - An error message returned to a caller goes through `summarizeError`, or is written from already-redacted text. Never return a raw `err.message`. Top-level fatal handlers may log the whole error to stderr.
-- `stripControlChars` in `errors.ts` is the only control-character stripper. Upstream fields go through `str` and `normalizeDate`. Error text goes through `summarizeError`. Adapters and the renderer do not strip control characters.
+- `stripControlChars` in `errors.ts` is the only control-character stripper. Upstream fields go through `str` and `normalizeDate`. Error text goes through `summarizeError`, configuration diagnostics through `defaultWarn`, and the terminal status lines through `formatStatus`. Adapters do not strip control characters.
 - A blank configuration value means "not set" at every layer. Keep that rule in `config.ts` when adding a field.
 - Invalid configuration input never throws. Warn and fall back in `config.ts`, `config-file.ts`, and `runtime.ts`.
 - When a public function depends on env, warn, fetch, streams, or signals, those are arguments.
