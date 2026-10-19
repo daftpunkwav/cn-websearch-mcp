@@ -152,7 +152,10 @@ export function parseArgs(argv: string[]): ParseResult {
     if (flag === '-n' || flag === '--count') {
       const value = takeNumberValue();
       const n = value === undefined ? undefined : parsePositiveInt(value);
-      if (n === undefined) return { ok: false, message: `invalid --count value: ${value ?? '(missing)'}` };
+      // `||`, not `??`: an inline `--count=` supplies an empty string, which
+      // `??` would print verbatim and leave the message naming no value at all
+      // — the same "(missing)" wording --strategy already uses for that shape.
+      if (n === undefined) return { ok: false, message: `invalid --count value: ${value || '(missing)'}` };
       args.count = n;
       continue;
     }

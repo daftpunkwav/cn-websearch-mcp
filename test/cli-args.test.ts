@@ -97,6 +97,14 @@ describe('parseArgs', () => {
     expect(fail(['test', '--query'])).toBe('missing value for --query');
   });
 
+  it('names the value an inline empty option failed to supply', () => {
+    // `--count=` is a complete flag with an empty inline value: printing that
+    // empty string left the message ending at its own colon, saying nothing
+    // about what was wrong. `--strategy=` already answers the same shape.
+    expect(fail(['search', 'q', '--count='])).toContain('invalid --count value: (missing)');
+    expect(fail(['search', 'q', '--strategy='])).toContain('invalid --strategy value: (missing)');
+  });
+
   it('rejects an empty provider list', () => {
     expect(fail(['search', 'q', '--providers=,'])).toContain('invalid --providers value');
   });
