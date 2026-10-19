@@ -55,6 +55,17 @@ export interface CliDeps {
 export const DEFAULT_PROBE_QUERY = '今日新闻';
 
 /**
+ * The exit-code contract: 0 success, 1 runtime failure, 2 usage error.
+ *
+ * Defined here, not in the dispatcher, because this module is where most of the
+ * codes are actually produced. A bare `return 1` / `return 2` is a second copy
+ * of the same contract that these constants cannot see, and moving the contract
+ * then means hunting down every literal in both files — or silently leaving the
+ * CLI reporting two different numbers for the same class of failure.
+ */
+export const EXIT = { ok: 0, failure: 1, usage: 2 } as const;
+
+/**
  * Write one line, terminating it exactly once.
  *
  * Shared by every CLI module that prints (commands, the dispatcher and the
@@ -90,16 +101,16 @@ export async function cmdSearch(deps: CliDeps, args: CliArgs): Promise<number> {
   const config: GatewayConfig = runtime.config;
   if (!args.query.trim()) {
     writeLine(error, 'error: missing query (usage: cn-websearch-mcp search <query>)');
-    return 2;
+    return EXIT.usage;
   }
   if (!runtime.chain.length) {
     writeLine(error, NO_READY_PROVIDER);
-    return 1;
+    return EXIT.failure;
   }
   const picked = pickProviders(args.providers, runtime.chain);
   if (!picked.ok) {
     writeLine(error, `error: ${picked.error}`);
-    return 2;
+    return EXIT.usage;
   }
 
   const search = deps.search ?? runSearch;
@@ -120,7 +131,7 @@ export async function cmdSearch(deps: CliDeps, args: CliArgs): Promise<number> {
       },
     );
     writeLine(output, args.json ? JSON.stringify(result, null, 2) : formatSearchResult(result));
-    return 0;
+    return EXIT.ok;
   } catch (err) {
     // Every structured failure carries an audit trail; print it the same way
     // instead of special-casing each one. (A call that never reached a provider
@@ -130,10 +141,10 @@ export async function cmdSearch(deps: CliDeps, args: CliArgs): Promise<number> {
       for (const a of err.attempts) {
         writeLine(error, `  - ${a.provider}: ${a.status} (${a.latency_ms}ms)${a.error ? ` ${a.error}` : ''}`);
       }
-      return 1;
+      return EXIT.failure;
     }
     writeLine(error, `error: unexpected failure: ${summarizeError(err)}`);
-    return 1;
+    return EXIT.failure;
   }
 }
 
@@ -144,7 +155,7 @@ export async function cmdStatus(deps: CliDeps, args: CliArgs): Promise<number> {
     ? JSON.stringify(redactedConfig(runtime.config), null, 2)
     : formatStatus(runtime.config, runtime.chain.map((p) => p.name));
   writeLine(output, payload);
-  return 0;
+  return EXIT.ok;
 }
 
 /**
@@ -155,12 +166,12 @@ export async function cmdTest(deps: CliDeps, args: CliArgs): Promise<number> {
   const { runtime, output, error } = deps;
   if (!runtime.chain.length) {
     writeLine(error, NO_READY_PROVIDER);
-    return 1;
+    return EXIT.failure;
   }
   const picked = pickProviders(args.providers, runtime.chain);
   if (!picked.ok) {
     writeLine(error, `error: ${picked.error}`);
-    return 2;
+    return EXIT.usage;
   }
 
   const probe = deps.probe ?? probeAll;
@@ -175,5 +186,5 @@ export async function cmdTest(deps: CliDeps, args: CliArgs): Promise<number> {
     { timeoutMs: runtime.config.timeoutMs },
   );
   writeLine(output, args.json ? JSON.stringify(rows, null, 2) : formatProbeTable(rows));
-  return rows.every((r) => r.ok) ? 0 : 1;
+  return rows.every((r) => r.ok) ? EXIT.ok : EXIT.failure;
 }

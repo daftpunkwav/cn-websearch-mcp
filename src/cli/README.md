@@ -31,9 +31,9 @@ writing the flag without a value is the only way to turn it on.
 Argument bounds match the MCP tool layer: `count` is clamped to 1-50 and a
 query is capped at 400 characters, on `search` and `test` alike.
 
-Exit codes (defined as `EXIT` in `index.ts`): `0` success, `1` runtime
-failure (search failed / no usable provider), `2` usage error — so scripts
-and CI can branch on them.
+Exit codes (the `EXIT` contract, owned by `commands.ts` and re-exported by
+`index.ts`): `0` success, `1` runtime failure (search failed / no usable
+provider), `2` usage error — so scripts and CI can branch on them.
 
 ## File map
 
