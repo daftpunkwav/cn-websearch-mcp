@@ -92,10 +92,10 @@ row cannot run.
 
 `allowScripts` in `package.json` records, by exact version, which install
 scripts in the tree have been read. What an unlisted script does depends on
-the npm version: npm 11 runs it and prints a warning, so an entry there is an
-acknowledgement rather than a switch, while npm 12 skips it and reports the
-skipped packages instead. A version outside a listed pin is unreviewed again
-either way.
+the npm version: npm 11.16 and later run it and print a warning, so an entry
+there is an acknowledgement rather than a switch, while npm 12 blocks it and
+reports the blocked packages instead. A version outside a listed pin is
+unreviewed again either way.
 
 Two esbuild versions are listed because two incompatible ranges require them:
 `tsx` asks for `~0.28.0` and `vite` for `^0.25.0`, so npm cannot hoist one copy
