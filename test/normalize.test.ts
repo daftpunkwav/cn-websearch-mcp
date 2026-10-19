@@ -5,7 +5,9 @@
  * merging (canonicalUrl / mergeItems / mergeSourceItems).
  */
 
-import { describe, expect, it } from 'vitest';
+import {
+  describe, expect, it, vi,
+} from 'vitest';
 import {
   asArray,
   asObject,
@@ -208,6 +210,41 @@ describe('canonicalUrl', () => {
 
   it('returns the trimmed input when the URL cannot be parsed', () => {
     expect(canonicalUrl('  not a url  ')).toBe('not a url');
+  });
+
+  // Bounds the work by counting URL rewrites instead of timing them: the URL
+  // binding re-serializes the entire parameter list on every searchParams
+  // mutation, so a per-key delete made canonicalization quadratic in the number
+  // of tracking parameters (measured: 500 -> 65 ms, 8000 -> 8966 ms for utm_*
+  // links). Asserting the count is constant as the input grows is what pins the
+  // bound; a duration threshold would only be flaky.
+  it('rewrites the query a bounded number of times, not once per tracking param', () => {
+    const rewrites = (n: number): number => {
+      const spy = vi.spyOn(URLSearchParams.prototype, 'delete');
+      try {
+        canonicalUrl(`https://a.example/x?${Array.from({ length: n }, (_, i) => `utm_${i}=v${i}`).join('&')}`);
+        return spy.mock.calls.length;
+      } finally {
+        spy.mockRestore();
+      }
+    };
+    const small = rewrites(10);
+    const large = rewrites(1000);
+    // Constant with respect to the input size — the whole point of the bound.
+    expect(small).toBe(large);
+    expect(large).toBeLessThanOrEqual(1);
+  });
+
+  it('still collapses every tracking param and keeps the rest, at scale', () => {
+    const n = 500;
+    const tracking = Array.from({ length: n }, (_, i) => `utm_${i}=v${i}`);
+    const canonical = canonicalUrl(`https://a.example/x?${[...tracking, 'keep=1', 'id=7'].join('&')}#frag`);
+    expect(canonical).toBe('https://a.example/x?keep=1&id=7');
+    // The dedupe key the aggregate strategy relies on: the same resource behind
+    // a differently-tracked link collapses to the same key.
+    const other = Array.from({ length: n }, (_, i) => `utm_${i}=other${i}`).reverse();
+    expect(canonicalUrl(`https://a.example/x?${[...other, 'keep=1', 'id=7'].join('&')}#second`))
+      .toBe(canonical);
   });
 });
 
