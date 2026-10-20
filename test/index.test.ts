@@ -46,6 +46,19 @@ vi.mock('@modelcontextprotocol/sdk/server/stdio.js', () => ({
 // imports it), so the mock must provide that default.
 vi.mock('../src/dotenv.js', () => ({ default: vi.fn() }));
 
+/**
+ * The entry point also assembles its runtime at module scope, and config-file
+ * discovery is the one step in that path that touches the filesystem: a
+ * developer's own cn-websearch.config.json (gitignored, so never present in CI)
+ * would put a keyed provider into the chain and silently redefine what every
+ * assertion below means. Only the lookup is replaced — readConfigFile stays
+ * real, and is covered on its own in test/config-file.test.ts.
+ */
+vi.mock('../src/config-file.js', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../src/config-file.js')>(),
+  resolveConfigPath: () => undefined,
+}));
+
 /** Gateway variable names the loader would have exported; none may appear. */
 const GATEWAY_VARS = [
   'WEBSEARCH_CONFIG',
@@ -114,7 +127,20 @@ describe('server entry point', () => {
   });
 
   it('tools/call handler survives an already-cancelled request', async () => {
-    await importEntryPoint();
+    // The entry point builds its runtime from the real process.env at import
+    // time, so a provider key the developer exported in their own shell would
+    // put a usable slot in the chain and turn "no provider is configured" into
+    // a real search. The assertion below is about the empty-chain shape, so the
+    // environment it states is cleared for the import and restored after.
+    const saved = GATEWAY_VARS.map((name) => [name, process.env[name]] as const);
+    try {
+      for (const name of GATEWAY_VARS) delete process.env[name];
+      await importEntryPoint();
+    } finally {
+      for (const [name, value] of saved) {
+        if (value !== undefined) process.env[name] = value;
+      }
+    }
     const callHandler = mocks.setRequestHandler.mock.calls[1]![1] as (
       req: { params: { name: string; arguments?: Record<string, unknown> } },
       extra: { signal: AbortSignal },
@@ -139,9 +165,16 @@ describe('server entry point', () => {
     // developer's credentials into this worker's environment — which would
     // both leak them and make the rest of this file's assumptions depend on
     // local machine state.
+    //
+    // Compared as a before/after rather than against an empty list: a variable
+    // the developer's own shell already exported is not something the entry
+    // point leaked, and asserting it was absent would report this machine's
+    // environment as a defect in the module. What must not happen is the set
+    // growing across the import.
+    const before = GATEWAY_VARS.filter((name) => process.env[name] !== undefined);
     await importEntryPoint();
-    const leaked = GATEWAY_VARS.filter((name) => process.env[name] !== undefined);
-    expect(leaked).toEqual([]);
+    const after = GATEWAY_VARS.filter((name) => process.env[name] !== undefined);
+    expect(after).toEqual(before);
   });
 
   it('does not auto-start when argv[1] is undefined', async () => {

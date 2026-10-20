@@ -168,10 +168,12 @@ export function redactForMessage(text: string): string {
  * Control characters that must never reach a caller: C0 except the newline that
  * multi-line LLM answers legitimately contain, plus DEL and the C1 block.
  * Untrusted text that ends up in a terminal — an upstream error body carried by
- * HttpError, an item title, a synthesized answer — can carry an escape sequence
+ * HttpError, an item title, a synthesized answer, a value a config file or a
+ * .env put into a diagnostic or a status line — can carry an escape sequence
  * that repaints or forges output lines, so it is removed at every chokepoint
- * before the text is shown. This is the single implementation: the result-item
- * chokepoint (normalize.str) and the error pipeline (summarizeError) both use it.
+ * before the text is shown. This is the single implementation, used by the
+ * result-item chokepoint (normalize.str), the error pipeline (summarizeError),
+ * the diagnostic outlet (config.defaultWarn) and the CLI status renderer.
  */
 // The control characters are the subject of this pattern, not an accident.
 // eslint-disable-next-line no-control-regex -- stripping control chars is this constant's purpose

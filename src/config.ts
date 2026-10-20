@@ -26,9 +26,12 @@
 // variables, so env sits at the top layer.
 
 import type { ConfigFileShape } from './config-file.js';
+import { stripControlChars } from './errors.js';
 import { clampInt, lenientInt, maybeObject } from './normalize.js';
 import { SERVER_NAME } from './server-info.js';
-import { SEARCH_STRATEGIES, type SearchStrategy } from './types.js';
+import {
+  COUNT_MAX, COUNT_MIN, SEARCH_STRATEGIES, type SearchStrategy,
+} from './types.js';
 
 /**
  * All supported providers, in alphabetical order. This order doubles as the
@@ -57,10 +60,12 @@ const TIMEOUT_MAX_MS = 600_000;
  * Search-argument bounds shared by every entry surface (MCP tool layer and
  * CLI), so a `count` means the same range wherever it is supplied and the tool
  * schema cannot drift from the CLI's own help text.
+ *
+ * Defined next to the other cross-surface vocabulary in types.ts, which the
+ * dependency-free argument parser can also reach; re-exported here so every
+ * consumer of this layer keeps one import site.
  */
-export const COUNT_MIN = 1;
-export const COUNT_MAX = 50;
-export const QUERY_MAX = 400;
+export { COUNT_MAX, COUNT_MIN, QUERY_MAX } from './types.js';
 
 /**
  * The result count of one call: an omitted count takes the configured default,
@@ -455,9 +460,16 @@ export interface LoadConfigOptions {
  * resolution, .env loading) formats the same line to the same stderr stream;
  * otherwise the same class of problem is reported under three different
  * prefixes, and the entry points have to know which default they landed on.
+ *
+ * The message is scrubbed of control characters because these diagnostics quote
+ * the offending value verbatim — an unknown provider name, a rejected strategy,
+ * a config path — and all three can be supplied by a `.env` or a config file
+ * shipped in the working directory, which this codebase already treats as
+ * untrusted. Left alone, one ESC would let that file repaint or forge lines on
+ * the operator's terminal.
  */
 export const defaultWarn = (m: string): void => {
-  console.error(`[${SERVER_NAME}] ${m}`);
+  console.error(`[${SERVER_NAME}] ${stripControlChars(m)}`);
 };
 
 /**

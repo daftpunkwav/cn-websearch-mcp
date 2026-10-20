@@ -11,7 +11,9 @@
 // CLI argument layer. Pure functions: input is the argv array, output is a
 // structured command or an error message.
 
-import { SEARCH_STRATEGIES, type SearchStrategy } from '../types.js';
+import {
+  COUNT_MAX, COUNT_MIN, QUERY_MAX, SEARCH_STRATEGIES, type SearchStrategy,
+} from '../types.js';
 
 /** Supported command names (including aliases). */
 const COMMAND_ALIASES: Record<string, CliCommandName> = {
@@ -62,7 +64,7 @@ export function usage(): string {
     '  cn-websearch-mcp version                Show version',
     '',
     'Options:',
-    '  -n, --count <1-50>         Desired number of results',
+    `  -n, --count <${COUNT_MIN}-${COUNT_MAX}>         Desired number of results`,
     '      --strategy <s>         fallback | aggregate (multi-source merge)',
     '      --providers <a,b>      Restrict this call to the given providers',
     '      --no-dedupe            Keep duplicate URLs when aggregating',
@@ -77,7 +79,7 @@ export function usage(): string {
     '  cn-websearch-mcp test stepfun zhipu',
     '  WEBSEARCH_STRATEGY=aggregate cn-websearch-mcp search hello',
     '',
-    'A query longer than 400 characters is truncated; --count is clamped to 1-50.',
+    `A query longer than ${QUERY_MAX} characters is truncated; --count is clamped to ${COUNT_MIN}-${COUNT_MAX}.`,
   ].join('\n');
 }
 
@@ -85,6 +87,19 @@ export function usage(): string {
 function parsePositiveInt(raw: string): number | undefined {
   const n = Number(raw);
   return Number.isInteger(n) && n > 0 ? n : undefined;
+}
+
+/**
+ * The offending value as a diagnostic should print it, or a placeholder when
+ * the option supplied nothing.
+ *
+ * An absent value and an inline `--count=` are the same situation: `--flag=`
+ * is a complete token whose inline value is the empty string, and printing
+ * that verbatim ends the message at its own colon without saying what was
+ * wrong. Both shapes therefore report "(missing)".
+ */
+function shownValue(value: string | undefined): string {
+  return value === undefined || value === '' ? '(missing)' : value;
 }
 
 /**
@@ -150,7 +165,9 @@ export function parseArgs(argv: string[]): ParseResult {
     if (flag === '-n' || flag === '--count') {
       const value = takeNumberValue();
       const n = value === undefined ? undefined : parsePositiveInt(value);
-      if (n === undefined) return { ok: false, message: `invalid --count value: ${value ?? '(missing)'}` };
+      // shownValue covers the inline `--count=` case, where the flag is complete
+      // but its value is empty — see its comment.
+      if (n === undefined) return { ok: false, message: `invalid --count value: ${shownValue(value)}` };
       args.count = n;
       continue;
     }
@@ -164,7 +181,7 @@ export function parseArgs(argv: string[]): ParseResult {
       const value = (takeValue() ?? '').toLowerCase() as SearchStrategy;
       if (!(SEARCH_STRATEGIES as readonly string[]).includes(value)) {
         const expected = SEARCH_STRATEGIES.join('|');
-        return { ok: false, message: `invalid --strategy value: ${value || '(missing)'} (expected ${expected})` };
+        return { ok: false, message: `invalid --strategy value: ${shownValue(value)} (expected ${expected})` };
       }
       args.strategy = value;
       continue;

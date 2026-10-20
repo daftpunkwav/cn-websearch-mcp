@@ -85,9 +85,10 @@ export function buildToolDefinitions(defaultCount: number, defaultStrategy: Sear
       description:
         'Search the web through any of the configured built-in search channels. '
         + "Two strategies: 'fallback' tries slots in your configured priority order and returns the first success; "
-        + "'aggregate' queries several slots in parallel and merges the results (deduplicated by URL, each item tagged "
-        + 'with its source slot). Per-attempt timeout, with one retry after a transient failure (network error, '
-        + 'HTTP 5xx, 429); an attempt that times out is never retried. Returns normalized results '
+        + "'aggregate' queries several slots in parallel and merges the results (deduplicated by URL unless the dedupe "
+        + 'setting is off, each item tagged with its source slot). Per-attempt timeout, with one retry after a '
+        + 'transient failure (network error, HTTP 5xx, 429); an attempt that times out is never retried. '
+        + 'Returns normalized results '
         + '{ title, url, snippet, content?, published_date?, source? } plus _meta with the answering slot(s), '
         + 'total latency, and a per-attempt audit trail.',
       inputSchema: {

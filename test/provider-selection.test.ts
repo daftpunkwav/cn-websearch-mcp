@@ -66,7 +66,16 @@ describe('selectProviders', () => {
   it('distinguishes a known slot that is simply not usable', () => {
     const out = selectProviders(['mimo'], chain);
     expect((out as { error: string }).error).toBe(
-      'provider(s) unavailable: mimo (disabled or missing API key)',
+      'provider(s) unavailable: mimo '
+      + '(not in the active chain: disabled, no API key, or excluded by the configured order)',
     );
+  });
+
+  it('never names a cause it cannot know about', () => {
+    // The chain carries no reason for a missing slot: an explicit order leaves
+    // enabled, keyed slots out of it, so blaming only the switch and the key
+    // would point the operator at two settings that were both correct.
+    const out = selectProviders(['kimi'], [ok('stepfun')]);
+    expect((out as { error: string }).error).toContain('excluded by the configured order');
   });
 });

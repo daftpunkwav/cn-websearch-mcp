@@ -6,7 +6,7 @@ The command table and file map live in [README.md](README.md).
 
 - `runCli` in `index.ts` is the only CLI entry. `src/index.ts` injects the runtime, the streams, and the serve implementation, then turns the returned code into a process exit.
 - Collapse every failure into an `EXIT` code. `runCli` does not throw.
-- `EXIT` in `index.ts` is the exit-code contract: `0` success, `1` runtime failure, `2` usage error.
+- `EXIT` is the exit-code contract: `0` success, `1` runtime failure, `2` usage error. It lives in `commands.ts` (which produces most of the codes) and is re-exported by `index.ts`; never return a bare number from a CLI module.
 - A new command is a case in `index.ts` plus its implementation in `commands.ts`.
 - Send every line through `writeLine` and the injected streams. Never write to `process.stdout` or `process.stderr`.
 

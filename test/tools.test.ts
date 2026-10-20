@@ -11,6 +11,7 @@ import { buildToolDefinitions, createGatewayTools, textContent } from '../src/to
 import { AllProvidersFailedError } from '../src/orchestrator.js';
 import { HttpError } from '../src/errors.js';
 import { loadConfig } from '../src/config.js';
+import { COUNT_MAX, COUNT_MIN } from '../src/types.js';
 import type {
   AttemptRecord, NormalizedSearchResult, SearchProvider, SearchRequest,
 } from '../src/types.js';
@@ -82,6 +83,25 @@ describe('buildToolDefinitions', () => {
     expect(search.count!.default).toBe(12);
     expect(search.strategy!.default).toBe('aggregate');
     expect(search.strategy!.enum).toEqual(['fallback', 'aggregate']);
+  });
+
+  it('qualifies the aggregate dedupe claim with the dedupe setting', () => {
+    // The description is the whole contract an MCP client reads, and dedupe is
+    // configurable: claiming the merge is always deduplicated would misdescribe
+    // a gateway running with dedupe off.
+    expect(buildToolDefinitions(8, 'aggregate')[0].description)
+      .toMatch(/deduplicated by URL unless the dedupe/);
+  });
+
+  it('declares the count bounds the tool layer actually enforces', () => {
+    // minimum/maximum are what a client generates its own validation from, so a
+    // schema wider than effectiveCount invites a call the server silently
+    // rewrites, and a narrower one rejects a count searches have always taken.
+    // The CLI help prints the same two numbers (test/cli-args.test.ts), and both
+    // must come from the shared constants rather than hand-typed copies.
+    const search = buildToolDefinitions(8, 'fallback')[0].inputSchema.properties as Record<string, any>;
+    expect(search.count!.minimum).toBe(COUNT_MIN);
+    expect(search.count!.maximum).toBe(COUNT_MAX);
   });
 });
 

@@ -6,6 +6,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { parseArgs, usage } from '../src/cli/args.js';
+import { COUNT_MAX, COUNT_MIN, QUERY_MAX } from '../src/types.js';
 
 function ok(argv: string[]) {
   const res = parseArgs(argv);
@@ -96,6 +97,14 @@ describe('parseArgs', () => {
     expect(fail(['test', '--query'])).toBe('missing value for --query');
   });
 
+  it('names the value an inline empty option failed to supply', () => {
+    // `--count=` is a complete flag with an empty inline value: printing that
+    // empty string left the message ending at its own colon, saying nothing
+    // about what was wrong. `--strategy=` already answers the same shape.
+    expect(fail(['search', 'q', '--count='])).toContain('invalid --count value: (missing)');
+    expect(fail(['search', 'q', '--strategy='])).toContain('invalid --strategy value: (missing)');
+  });
+
   it('rejects an empty provider list', () => {
     expect(fail(['search', 'q', '--providers=,'])).toContain('invalid --providers value');
   });
@@ -133,5 +142,15 @@ describe('usage', () => {
       expect(text).toContain(token);
     }
     expect(text).toContain('stdio');
+  });
+
+  it('prints the search bounds the tool schema declares', () => {
+    // The help text is the only place a CLI user learns the accepted range, so
+    // it has to be the shared constants rather than a hand-typed copy that
+    // silently keeps advertising the old range after a bound changes.
+    const text = usage();
+    expect(text).toContain(`-n, --count <${COUNT_MIN}-${COUNT_MAX}>`);
+    expect(text).toContain(`longer than ${QUERY_MAX} characters`);
+    expect(text).toContain(`--count is clamped to ${COUNT_MIN}-${COUNT_MAX}`);
   });
 });

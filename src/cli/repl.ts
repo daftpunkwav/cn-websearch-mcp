@@ -87,24 +87,37 @@ export function runRepl(
   write(`cn-websearch-mcp interactive session — ${chainNames.length} provider(s) ready: ${chainNames.join(', ') || '(none)'}`);
   write('Type a query to search, or /help for commands.');
 
-  /** Delegate one search to the one-shot command to reuse the same
-   *  validation and error handling. */
-  const doSearch = async (query: string): Promise<void> => {
-    if (!query.trim()) {
-      write('usage: /search <query>');
+  /**
+   * The one way a session line reaches the search command. Bare text,
+   * `/search` and `/aggregate` all map the session settings here, so a setting
+   * added to the session cannot be honoured by one spelling and silently
+   * dropped by another; the guards below are likewise stated once.
+   *
+   * `label` is the command the user actually typed, so a refusal names the
+   * command they used instead of always answering `/search`. `strategy` is the
+   * one caller-owned override `/aggregate` makes.
+   */
+  const doSearch = async (
+    query: string,
+    label: string,
+    strategy: SearchStrategy,
+  ): Promise<void> => {
+    const trimmed = query.trim();
+    if (!trimmed) {
+      write(`usage: /${label} <query>`);
       return;
     }
     // In-session switches are slash commands; if a user passes a --flag as the query, silently
     // searching a "--" query would be misleading, so offer a workable alternative instead.
-    if (query.startsWith('-')) {
-      write('error: /search takes a query only — use /json, /count, /strategy or /providers to change session settings');
+    if (trimmed.startsWith('-')) {
+      write(`error: /${label} takes a query only — use /json, /count, /strategy or /providers to change session settings`);
       return;
     }
     const args: CliArgs = {
       command: 'search',
-      query,
+      query: trimmed,
       count: session.count,
-      strategy: session.strategy,
+      strategy,
       providers: session.providers,
       dedupe: session.dedupe,
       json: session.json,
@@ -117,7 +130,7 @@ export function runRepl(
     const trimmed = line.trim();
     if (!trimmed) return false;
     if (!looksLikeCommand(trimmed)) {
-      await doSearch(trimmed);
+      await doSearch(trimmed, 'search', session.strategy);
       return false;
     }
 
@@ -137,29 +150,11 @@ export function runRepl(
         return false;
 
       case 'search':
-      case 'aggregate': {
+      case 'aggregate':
         // /aggregate is a one-shot multi-source search; it does not change
         // the session default strategy.
-        const args: CliArgs = {
-          command: 'search',
-          query: argText,
-          count: session.count,
-          strategy: cmd === 'aggregate' ? 'aggregate' : session.strategy,
-          providers: session.providers,
-          dedupe: session.dedupe,
-          json: session.json,
-        };
-        if (!args.query) {
-          write(`usage: /${cmd} <query>`);
-          return false;
-        }
-        if (args.query.startsWith('-')) {
-          write(`error: /${cmd} takes a query only — use /json, /count, /strategy or /providers for session settings`);
-          return false;
-        }
-        await cmdSearch(deps, args);
+        await doSearch(argText, cmd, cmd === 'aggregate' ? 'aggregate' : session.strategy);
         return false;
-      }
 
       case 'strategy': {
         if (!argText) {

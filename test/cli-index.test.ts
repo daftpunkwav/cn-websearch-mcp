@@ -38,7 +38,11 @@ function makeDeps(over: {
   const runtime = createRuntime({
     env: over.env ?? { STEPFUN_API_KEY: 's' },
     warn: () => {},
+    // "No config file": without fileExists, configPath: undefined reaches into
+    // the developer's own working directory, where a cn-websearch.config.json
+    // (gitignored, absent in CI) would silently reconfigure this runtime.
     configPath: undefined,
+    fileExists: () => false,
   });
   return {
     deps: {

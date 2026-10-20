@@ -14,6 +14,7 @@ import {
   DEFAULT_STRATEGY,
   DEFAULT_TIMEOUT_MS,
   KNOWN_PROVIDERS,
+  defaultWarn,
   gatewayEnvKeys,
   loadConfig,
   parseProviderList,
@@ -581,5 +582,28 @@ describe('the gateway environment contract', () => {
         else process.env[name] = value;
       }
     }
+  });
+});
+
+describe('defaultWarn', () => {
+  it('strips escape sequences from the diagnostics it renders', () => {
+    // Every diagnostic that quotes an offending value verbatim — an unknown
+    // provider name, a rejected strategy, a rejected integer — can be supplied
+    // by a .env or a config file shipped in the working directory, which this
+    // codebase already treats as untrusted. A single ESC reaching stderr would
+    // let that file repaint or forge lines on the operator's terminal.
+    let written = '';
+    const spy = vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+      written = args.join(' ');
+    });
+    try {
+      defaultWarn('config providers: unknown provider "\u001b[2J\u001b[31mevil\u0007" ignored');
+    } finally {
+      spy.mockRestore();
+    }
+    expect(written).not.toContain('\u001b');
+    expect(written).not.toContain('\u0007');
+    // The message itself survives; only the control characters are gone.
+    expect(written).toContain('evil');
   });
 });

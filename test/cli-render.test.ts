@@ -48,6 +48,35 @@ describe('redactedConfig', () => {
     });
     expect(snapshot.providers.kimi).toMatchObject({ enabled: true, priority: 0, apiKey: '(unset)' });
   });
+
+  it('never echoes a provider option value, only the presence of the key', () => {
+    // The config schema offers nowhere else to park a credential an adapter
+    // needs, so `options` is the one field a secret can plausibly end up in —
+    // and this snapshot is what `status --json` and `/config` print.
+    const cfg = loadConfig({
+      env: {},
+      warn: () => {},
+      file: {
+        providers: {
+          kimi: {
+            options: {
+              proxyApiKey: 'AIzaSyAbCdEfGhIjKlMnOpQrStUvWxYz012345',
+              ghp: 'ghp_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789',
+              maxRounds: 3,
+            },
+          },
+        },
+      },
+    });
+    // The values reach the config layer intact; only the snapshot withholds them.
+    expect(cfg.providers.kimi.options?.proxyApiKey).toBe('AIzaSyAbCdEfGhIjKlMnOpQrStUvWxYz012345');
+    const text = JSON.stringify(redactedConfig(cfg));
+    expect(text).not.toContain('AIzaSyAbCdEfGhIjKlMnOpQrStUvWxYz012345');
+    expect(text).not.toContain('ghp_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789');
+    // Which options resolved is the diagnosable half, and a key name is not a
+    // credential, so the snapshot keeps it and drops the value beside it.
+    expect(JSON.parse(text).providers.kimi.options).toEqual(['ghp', 'maxRounds', 'proxyApiKey']);
+  });
 });
 
 describe('formatSearchResult', () => {
@@ -144,6 +173,25 @@ describe('formatStatus', () => {
   it('falls back to a placeholder when no order could be resolved', () => {
     const cfg = { ...loadConfig({ env: {}, warn: () => {} }), order: [] };
     expect(formatStatus(cfg, [])).toContain('order         : (none)');
+  });
+
+  it('strips escape sequences out of config-derived text before it reaches the terminal', () => {
+    // Unlike the JSON surfaces, these lines are written unescaped, and both
+    // values come from the working directory (a config file field, or
+    // WEBSEARCH_CONFIG through a .env). An OSC title-set plus BEL here would
+    // otherwise rewrite the operator's terminal title and hide the real output.
+    const cfg = loadConfig({
+      env: {},
+      warn: () => {},
+      configFile: '/tmp/\u001b]0;pwned\u0007cfg.json',
+      file: { providers: { kimi: { model: '\u001b[31mkimi-fake\u0007' } } },
+    });
+    const text = formatStatus(cfg, ['kimi']);
+    expect(text).not.toContain('\u001b');
+    expect(text).not.toContain('\u0007');
+    // The line itself survives; only the escape sequences are gone.
+    expect(text).toContain('pwned');
+    expect(text).toContain('kimi-fake');
   });
 });
 

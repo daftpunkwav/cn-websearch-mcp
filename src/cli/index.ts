@@ -15,12 +15,16 @@
 import { SERVER_NAME, SERVER_VERSION } from '../server-info.js';
 import { parseArgs, usage } from './args.js';
 import {
-  cmdSearch, cmdStatus, cmdTest, writeLine, type CliDeps,
+  cmdSearch, cmdStatus, cmdTest, EXIT, writeLine, type CliDeps,
 } from './commands.js';
 import { runRepl } from './repl.js';
 
-/** Exit codes: 0 success, 1 runtime failure, 2 usage error. */
-export const EXIT = { ok: 0, failure: 1, usage: 2 } as const;
+/**
+ * Re-exported so a caller reaching for the exit-code contract through the
+ * dispatcher keeps finding it; commands.ts owns it because that is where most
+ * of the codes are produced, and importing it back here would be a cycle.
+ */
+export { EXIT };
 
 /** CLI dependencies: CliDeps plus the serve implementation (injected by the entry point). */
 export interface CliRunDeps extends CliDeps {

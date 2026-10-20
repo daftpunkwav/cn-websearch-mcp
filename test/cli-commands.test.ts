@@ -8,8 +8,11 @@ import {
   describe, expect, it, vi,
 } from 'vitest';
 import { PassThrough } from 'node:stream';
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
-  cmdSearch, cmdStatus, cmdTest, pickProviders, writeLine,
+  cmdSearch, cmdStatus, cmdTest, EXIT, pickProviders, writeLine,
 } from '../src/cli/commands.js';
 import { createRuntime } from '../src/runtime.js';
 import { loadConfig } from '../src/config.js';
@@ -43,7 +46,12 @@ function makeDeps(
   const runtime = createRuntime({
     env: over.env ?? { STEPFUN_API_KEY: 's', KIMI_API_KEY: 'k' },
     warn: () => {},
+    // "No config file": without fileExists, configPath: undefined reaches into
+    // the developer's own working directory, where a cn-websearch.config.json
+    // (gitignored, absent in CI) would silently set the count and strategy these
+    // tests assert against.
     configPath: undefined,
+    fileExists: () => false,
   });
   const out: string[] = [];
   const err: string[] = [];
@@ -463,5 +471,43 @@ describe('CliDeps contract', () => {
     await cmdSearch(deps, searchArgs());
     expect(stdout).not.toHaveBeenCalled();
     stdout.mockRestore();
+  });
+});
+
+/**
+ * The exit-code contract is cross-file: `EXIT` holds the numbers, but a bare
+ * `return 2` in any CLI module produces the process exit code just as
+ * authoritatively while staying invisible to it. Unit tests cannot tell the two
+ * apart — with both copies in place they assert the same value either way — so
+ * the invariant is stated here and checked against the sources, the way
+ * server-info.test.ts checks the version against package.json.
+ */
+describe('exit-code contract', () => {
+  it('pins the codes themselves to the documented values', () => {
+    expect(EXIT).toEqual({ ok: 0, failure: 1, usage: 2 });
+  });
+
+  it('leaves no CLI module returning a bare number', () => {
+    const cliDir = fileURLToPath(new URL('../src/cli/', import.meta.url));
+    const offenders: string[] = [];
+    for (const name of readdirSync(cliDir)) {
+      if (!name.endsWith('.ts')) continue;
+      // Comments and string literals mention the pattern they forbid, so both
+      // are stripped before matching — the doc comment above names a bare
+      // `return 2`, and a message string could carry one too.
+      const code = readFileSync(join(cliDir, name), 'utf8')
+        .replace(/\/\*[\s\S]*?\*\//g, ' ')
+        .replace(/\/\/.*$/gm, ' ')
+        .replace(/'(?:[^'\\\n]|\\.)*'/g, "''")
+        .replace(/"(?:[^"\\\n]|\\.)*"/g, '""')
+        .replace(/`(?:[^`\\]|\\.)*`/g, '``');
+      for (const [i, line] of code.split('\n').entries()) {
+        // The statement can sit on its own line or after a condition, and the
+        // semicolon is optional — so the number has to end the statement
+        // rather than be followed by one.
+        if (/\breturn\s+\d+\s*(?:;|$)/.test(line)) offenders.push(`${name}:${i + 1}`);
+      }
+    }
+    expect(offenders).toEqual([]);
   });
 });
