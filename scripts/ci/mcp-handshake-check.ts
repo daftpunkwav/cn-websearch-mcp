@@ -24,6 +24,7 @@ import { PassThrough } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const DIST_ENTRY = resolve(REPO_ROOT, 'dist', 'index.js');
@@ -58,6 +59,44 @@ async function withDeadline<T>(promise: Promise<T>, deadline: number, message: s
   }
 }
 
+/**
+ * Drain the server's stderr. The ready banner is informational here, but the
+ * child must never block on a full pipe; the tail is kept for the failure
+ * message.
+ */
+function drainStderr(transport: StdioClientTransport): () => string {
+  let log = '';
+  const sink = new PassThrough();
+  sink.setEncoding('utf8');
+  sink.on('data', (chunk: string) => {
+    log = (log + chunk).slice(-2000);
+  });
+  transport.stderr?.pipe(sink);
+  return () => log;
+}
+
+/** The identity the server reported during the handshake. */
+function serverIdentity(client: Client): { name: string; version: string } {
+  const info = client.getServerVersion();
+  if (info?.name !== 'cn-websearch-mcp') {
+    throw new Error(`unexpected server name: ${JSON.stringify(info?.name ?? null)}`);
+  }
+  return { name: info.name, version: info.version };
+}
+
+/** The tools the server advertises, with the gateway tool among them. */
+async function advertisedTools(client: Client, deadline: number): Promise<Tool[]> {
+  const { tools } = await withDeadline(
+    client.listTools(),
+    deadline,
+    `tools/list timed out after ${HANDSHAKE_TIMEOUT_MS}ms`,
+  );
+  if (!tools.some((tool) => tool.name === 'web_search')) {
+    throw new Error(`web_search not advertised (tools: ${tools.map((tool) => tool.name).join(', ') || 'none'})`);
+  }
+  return tools;
+}
+
 async function main(): Promise<void> {
   // A fresh empty cwd keeps the project's own .env out of the child: the
   // server has to start with no channel configured.
@@ -69,16 +108,7 @@ async function main(): Promise<void> {
     cwd,
     stderr: 'pipe',
   });
-  // The ready banner is informational here. Drain it so the child never
-  // blocks on a full pipe, and keep its tail for the failure message.
-  let serverLog = '';
-  const errSink = new PassThrough();
-  errSink.setEncoding('utf8');
-  errSink.on('data', (chunk: string) => {
-    serverLog = (serverLog + chunk).slice(-2000);
-  });
-  transport.stderr?.pipe(errSink);
-
+  const serverLog = drainStderr(transport);
   const client = new Client({ name: 'handshake-check', version: '0.0.0' }, { capabilities: {} });
   // One budget for the whole exchange: a server that answers `initialize` and
   // then goes quiet must not park the check on an unanswered `tools/list`.
@@ -89,22 +119,12 @@ async function main(): Promise<void> {
       deadline,
       `initialize handshake timed out after ${HANDSHAKE_TIMEOUT_MS}ms`,
     );
-    const info = client.getServerVersion();
-    if (info?.name !== 'cn-websearch-mcp') {
-      throw new Error(`unexpected server name: ${JSON.stringify(info?.name ?? null)}`);
-    }
-    const { tools } = await withDeadline(
-      client.listTools(),
-      deadline,
-      `tools/list timed out after ${HANDSHAKE_TIMEOUT_MS}ms`,
-    );
-    if (!tools.some((tool) => tool.name === 'web_search')) {
-      throw new Error(`web_search not advertised (tools: ${tools.map((tool) => tool.name).join(', ') || 'none'})`);
-    }
+    const info = serverIdentity(client);
+    const tools = await advertisedTools(client, deadline);
     console.log(`mcp-handshake-check: OK (${info.name} v${info.version}, ${tools.length} tools)`);
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
-    throw new Error(`${reason}\nserver stderr:\n${serverLog.trim() || '(empty)'}`);
+    throw new Error(`${reason}\nserver stderr:\n${serverLog().trim() || '(empty)'}`);
   } finally {
     await client.close().catch(() => {});
     rmSync(cwd, { recursive: true, force: true });
