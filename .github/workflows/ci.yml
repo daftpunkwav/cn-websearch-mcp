@@ -78,6 +78,11 @@ jobs:
       # promises to the people who install the package.
       - if: matrix.node >= 20
         run: npm run test:coverage
+      # Compiling is not running: the Node 18 row starts the built artifact
+      # and completes one MCP handshake, so a runtime regression on the
+      # oldest supported runtime fails here and not in an install.
+      - if: matrix.node == 18
+        run: npm run handshake-check
 
   # Style gate: Airbnb ESLint config over src/, test/, scripts/ and the root
   # config files. Single job (lint result does not vary by Node version the

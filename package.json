@@ -22,6 +22,7 @@
     "test:coverage": "vitest run --coverage",
     "smoke": "tsx scripts/smoke.ts",
     "cli": "tsx src/index.ts",
+    "handshake-check": "tsx scripts/ci/mcp-handshake-check.ts",
     "prepack": "npm run build"
   },
   "keywords": [
