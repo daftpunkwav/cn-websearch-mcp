@@ -82,30 +82,44 @@ function followsRedirects(args) {
   return args.some((arg) => arg === '--location' || (/^-[A-Za-z]+$/.test(arg) && arg.includes('L')));
 }
 
+/** The violation of a package install, or null when it keeps its protection. */
+function installViolation(args) {
+  if (!NPM_INSTALL.test(args.join(' '))) return null;
+  if (flagEnabled(args, '--ignore-scripts') === true) return null;
+  return 'package install without --ignore-scripts';
+}
+
+/** The violation of a curl command, or null when it keeps its protections. */
+function curlViolation(args) {
+  if (optionValue(args, '--proto') !== HTTPS_ONLY) return "curl without --proto '=https'";
+  if (followsRedirects(args) && optionValue(args, '--proto-redir') !== HTTPS_ONLY) {
+    return "curl follows redirects without --proto-redir '=https'";
+  }
+  return null;
+}
+
+/** The violation of a wget command, or null when it keeps its protection. */
+function wgetViolation(args) {
+  if (optionValue(args, '--max-redirect') !== '0') {
+    return 'wget may follow redirects (--max-redirect=0 required)';
+  }
+  return null;
+}
+
+/** The violation of a download, or null when it keeps its protections. */
+function downloadViolation(args) {
+  const cleartext = args.find((arg) => URL.test(arg) && !arg.toLowerCase().startsWith('https://'));
+  if (cleartext) return `download over a protocol other than HTTPS (${cleartext})`;
+  if (args.some((arg) => CURL.test(arg))) return curlViolation(args);
+  if (args.some((arg) => WGET.test(arg))) return wgetViolation(args);
+  return null;
+}
+
 /**
  * The violation a command carries, or null when it keeps every protection.
  */
 function violationOf(args) {
-  const isCurl = args.some((arg) => CURL.test(arg));
-  const isWget = args.some((arg) => WGET.test(arg));
-
-  if (NPM_INSTALL.test(args.join(' ')) && flagEnabled(args, '--ignore-scripts') !== true) {
-    return 'package install without --ignore-scripts';
-  }
-  if (!isCurl && !isWget) return null;
-
-  const cleartext = args.find((arg) => URL.test(arg) && !arg.toLowerCase().startsWith('https://'));
-  if (cleartext) return `download over a protocol other than HTTPS (${cleartext})`;
-  if (isCurl && optionValue(args, '--proto') !== HTTPS_ONLY) {
-    return "curl without --proto '=https'";
-  }
-  if (isCurl && followsRedirects(args) && optionValue(args, '--proto-redir') !== HTTPS_ONLY) {
-    return "curl follows redirects without --proto-redir '=https'";
-  }
-  if (isWget && optionValue(args, '--max-redirect') !== '0') {
-    return 'wget may follow redirects (--max-redirect=0 required)';
-  }
-  return null;
+  return installViolation(args) ?? downloadViolation(args);
 }
 
 /**
