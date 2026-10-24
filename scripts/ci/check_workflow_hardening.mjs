@@ -25,8 +25,8 @@ const WORKFLOW_DIR = process.argv[2]
   ? resolve(process.argv[2])
   : join(REPO_ROOT, '.github', 'workflows');
 
-// Package installs, including the npm aliases: ci, install, i, add.
-const NPM_INSTALL = /\bnpm\s+(?:ci|install|i|add)(?![\w-])/;
+// The npm commands that install packages, including the aliases.
+const INSTALL_COMMANDS = new Set(['ci', 'install', 'i', 'add']);
 // A download client as a command word.
 const CURL = /^curl(\.exe)?$/;
 const WGET = /^wget(\.exe)?$/;
@@ -53,14 +53,20 @@ function argumentsOf(command) {
 /**
  * The value of the last occurrence of an option, in either the
  * `--option value` or the `--option=value` spelling. The last occurrence
- * wins, because that is how the client reads it.
+ * wins, because that is how the client reads it. An option that is not
+ * there reads as an empty value.
  */
 function optionValue(args, name) {
-  let value;
-  args.forEach((arg, index) => {
-    if (arg === name) value = args[index + 1];
-    else if (arg.startsWith(`${name}=`)) value = arg.slice(name.length + 1);
-  });
+  let value = '';
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i];
+    if (arg === name) {
+      value = args[i + 1] ?? '';
+      i += 1;
+    } else if (arg.startsWith(`${name}=`)) {
+      value = arg.slice(name.length + 1);
+    }
+  }
   return value;
 }
 
@@ -69,11 +75,11 @@ function optionValue(args, name) {
  * `--ignore-scripts=false` switches it off again.
  */
 function flagEnabled(args, name) {
-  let enabled;
-  args.forEach((arg) => {
+  let enabled = false;
+  for (const arg of args) {
     if (arg === name) enabled = true;
     else if (arg.startsWith(`${name}=`)) enabled = arg.slice(name.length + 1) !== 'false';
-  });
+  }
   return enabled;
 }
 
@@ -82,10 +88,15 @@ function followsRedirects(args) {
   return args.some((arg) => arg === '--location' || (/^-[A-Za-z]+$/.test(arg) && arg.includes('L')));
 }
 
+/** Whether the command installs packages. */
+function isInstall(args) {
+  return args.some((arg, index) => arg === 'npm' && INSTALL_COMMANDS.has(args[index + 1]));
+}
+
 /** The violation of a package install, or null when it keeps its protection. */
 function installViolation(args) {
-  if (!NPM_INSTALL.test(args.join(' '))) return null;
-  if (flagEnabled(args, '--ignore-scripts') === true) return null;
+  if (!isInstall(args)) return null;
+  if (flagEnabled(args, '--ignore-scripts')) return null;
   return 'package install without --ignore-scripts';
 }
 
