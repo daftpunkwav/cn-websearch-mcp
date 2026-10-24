@@ -4,7 +4,7 @@
  *
  * Responsibilities:
  * - Run the checker against fixture workflows written to a temp directory
- * - Assert that a workflow that keeps every protection passes
+ * - Assert that a workflow which keeps every protection passes
  * - Assert that each way of dropping a protection fails, with a message that
  *   names the file and the line
  *
@@ -36,10 +36,10 @@ interface CheckerResult {
 }
 
 /** Run the checker against a workflow file written into a temp directory. */
-function runChecker(workflow: string, fileName = 'ci.yml'): CheckerResult {
+function runChecker(workflow: string): CheckerResult {
   const dir = mkdtempSync(join(tmpdir(), 'cn-websearch-policy-'));
   try {
-    writeFileSync(join(dir, fileName), workflow, 'utf8');
+    writeFileSync(join(dir, 'ci.yml'), workflow, 'utf8');
     const result = spawnSync(process.execPath, [CHECKER, dir], { encoding: 'utf8' });
     return { code: result.status, stdout: result.stdout, stderr: result.stderr };
   } finally {
@@ -47,92 +47,98 @@ function runChecker(workflow: string, fileName = 'ci.yml'): CheckerResult {
   }
 }
 
-const PROTECTED_WORKFLOW = `name: Example
+/** A one-step workflow that runs the given command. */
+function workflowWith(command: string): string {
+  return ['jobs:', '  a:', '    steps:', `      - run: ${command}`, ''].join('\n');
+}
 
-on: [push]
+/** A one-step workflow whose run block holds the given lines. */
+function workflowWithBody(lines: string[]): string {
+  return [
+    'jobs:',
+    '  a:',
+    '    steps:',
+    '      - run: |',
+    ...lines.map((line) => `          ${line}`),
+    '',
+  ].join('\n');
+}
 
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - run: npm ci --ignore-scripts
-      - run: |
-          set -euo pipefail
-          curl -sSfL --proto '=https' --proto-redir '=https' --tlsv1.2 -o /tmp/tool \\
-            "https://example.com/tool.tgz"
-`;
+const REJECTED: { name: string; workflow: string; message: string }[] = [
+  {
+    name: 'a package install that runs lifecycle scripts',
+    workflow: workflowWith('npm ci'),
+    message: '--ignore-scripts',
+  },
+  {
+    name: 'an install alias that runs lifecycle scripts',
+    workflow: workflowWith('npm i pkg'),
+    message: '--ignore-scripts',
+  },
+  {
+    name: 'an install that switches the protection off again',
+    workflow: workflowWith('npm ci --ignore-scripts=false'),
+    message: '--ignore-scripts',
+  },
+  {
+    name: 'a download over cleartext HTTP',
+    workflow: workflowWith('curl -sSf http://example.com/x'),
+    message: 'other than HTTPS',
+  },
+  {
+    name: 'a protocol list that also allows HTTP',
+    workflow: workflowWith("curl -sSf --proto '=https,http' https://example.com/x"),
+    message: "--proto '=https'",
+  },
+  {
+    name: 'a redirect chain that may leave HTTPS',
+    workflow: workflowWith("curl -sSfL --proto '=https' https://example.com/x"),
+    message: "--proto-redir '=https'",
+  },
+  {
+    name: 'a command split over two lines',
+    workflow: workflowWithBody([
+      "curl -sSfL --proto '=https' \\",
+      '  https://example.com/x',
+    ]),
+    message: "--proto-redir '=https'",
+  },
+  {
+    name: 'a wget that may follow redirects',
+    workflow: workflowWith('wget https://example.com/x'),
+    message: '--max-redirect=0',
+  },
+];
+
+const ACCEPTED: { name: string; workflow: string }[] = [
+  {
+    name: 'a workflow that keeps every protection',
+    workflow: workflowWithBody([
+      'npm ci --ignore-scripts',
+      "curl -sSfL --proto '=https' --proto-redir '=https' --tlsv1.2 -o /tmp/tool \\",
+      '  "https://example.com/tool.tgz"',
+    ]),
+  },
+  {
+    name: 'a wget that refuses redirects',
+    workflow: workflowWith('wget --max-redirect 0 https://example.com/x'),
+  },
+  {
+    name: 'a command that only appears in a comment',
+    workflow: workflowWith('# npm ci without the flag'),
+  },
+];
 
 describe('workflow hardening gate', () => {
-  it('accepts a workflow that keeps every protection', () => {
-    const result = runChecker(PROTECTED_WORKFLOW);
+  it.each(REJECTED)('rejects $name', ({ workflow, message }) => {
+    const result = runChecker(workflow);
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain(message);
+  });
+
+  it.each(ACCEPTED)('accepts $name', ({ workflow }) => {
+    const result = runChecker(workflow);
     expect(result.code).toBe(0);
     expect(result.stdout).toContain('workflow hardening ok');
-  });
-
-  it('rejects a package install that runs lifecycle scripts', () => {
-    const result = runChecker('jobs:\n  a:\n    steps:\n      - run: npm ci\n');
-    expect(result.code).toBe(1);
-    expect(result.stderr).toContain('--ignore-scripts');
-  });
-
-  it('rejects an install alias that runs lifecycle scripts', () => {
-    const result = runChecker('jobs:\n  a:\n    steps:\n      - run: npm i pkg\n');
-    expect(result.code).toBe(1);
-    expect(result.stderr).toContain('--ignore-scripts');
-  });
-
-  it('rejects an install that switches the protection off again', () => {
-    const result = runChecker('jobs:\n  a:\n    steps:\n      - run: npm ci --ignore-scripts=false\n');
-    expect(result.code).toBe(1);
-    expect(result.stderr).toContain('--ignore-scripts');
-  });
-
-  it('rejects a download over cleartext HTTP', () => {
-    const result = runChecker('jobs:\n  a:\n    steps:\n      - run: curl -sSf http://example.com/x\n');
-    expect(result.code).toBe(1);
-    expect(result.stderr).toContain('other than HTTPS');
-  });
-
-  it('rejects a protocol list that also allows HTTP', () => {
-    const result = runChecker("jobs:\n  a:\n    steps:\n      - run: curl -sSf --proto '=https,http' https://example.com/x\n");
-    expect(result.code).toBe(1);
-    expect(result.stderr).toContain("--proto '=https'");
-  });
-
-  it('rejects a redirect chain that may leave HTTPS', () => {
-    const result = runChecker("jobs:\n  a:\n    steps:\n      - run: curl -sSfL --proto '=https' https://example.com/x\n");
-    expect(result.code).toBe(1);
-    expect(result.stderr).toContain("--proto-redir '=https'");
-  });
-
-  it('reads the flags of a command split over two lines', () => {
-    const split = [
-      'jobs:',
-      '  a:',
-      '    steps:',
-      '      - run: |',
-      '          curl -sSfL --proto \'=https\' \\',
-      '            https://example.com/x',
-      '',
-    ].join('\n');
-    const result = runChecker(split);
-    expect(result.code).toBe(1);
-    expect(result.stderr).toContain("--proto-redir '=https'");
-  });
-
-  it('rejects a wget that may follow redirects', () => {
-    const result = runChecker('jobs:\n  a:\n    steps:\n      - run: wget https://example.com/x\n');
-    expect(result.code).toBe(1);
-    expect(result.stderr).toContain('--max-redirect=0');
-  });
-
-  it('accepts a wget that refuses redirects', () => {
-    const result = runChecker('jobs:\n  a:\n    steps:\n      - run: wget --max-redirect 0 https://example.com/x\n');
-    expect(result.code).toBe(0);
-  });
-
-  it('ignores a command that only appears in a comment', () => {
-    const result = runChecker('jobs:\n  a:\n    steps:\n      # npm ci without the flag\n      - run: node -e "0"\n');
-    expect(result.code).toBe(0);
   });
 });
