@@ -13,8 +13,11 @@ export default defineConfig({
       // Coverage is measured over shipped runtime code. src/types.ts holds only
       // contracts and the strategy vocabulary, so it stays at 100% on its own;
       // scripts/ (live-network CLI) and test/ never appear here because
-      // `include` is limited to src/**.
-      include: ['src/**'],
+      // `include` is limited to src/**. The glob stops at .ts on purpose: the
+      // v8 provider reports every file `include` matches, and the Markdown
+      // docs sitting next to the sources would enter the report as
+      // uncovered files instead of being left out.
+      include: ['src/**/*.ts'],
       thresholds: {
         lines: 95, functions: 95, branches: 95, statements: 95,
       },

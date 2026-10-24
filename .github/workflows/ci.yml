@@ -56,7 +56,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: [18, 20, 22]
+        include:
+          # The published package supports Node 18 (engines.node), so that row
+          # still compiles and type-checks the shipped code. The test runner
+          # is the part that moved on: vitest 4 declares engines.node
+          # ^20 || ^22 || >=24, so the suite runs on the Node 20 and 22 rows.
+          - node: 18
+            run_tests: false
+          - node: 20
+            run_tests: true
+          - node: 22
+            run_tests: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -72,11 +82,12 @@ jobs:
       # test/ and scripts/ are outside the build's tsconfig, so they need their own type check
       - run: npm run typecheck
       # e2e tests in test/e2e/ exercise dist/, so build must precede tests
-      - run: npm run test:coverage
+      - if: matrix.run_tests
+        run: npm run test:coverage
 
   # Style gate: Airbnb ESLint config over src/, test/, scripts/ and the root
   # config files. Single job (lint result does not vary by Node version the
-  # way runtime behavior can); the devDependency toolchain requires Node >= 18.18,
+  # way runtime behavior can); the lint toolchain requires Node >= 18.18,
   # so it runs on the newest matrix version rather than the floor.
   lint:
     name: Lint (Airbnb)
