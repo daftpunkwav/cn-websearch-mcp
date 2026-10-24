@@ -21,3 +21,14 @@ The script table lives in [README.md](README.md).
 
 - Local stdio handshake. It spawns `dist/index.js`, sends MCP `initialize` frames, and does not run a search.
 - It is not part of CI. Run `npm run build` before using it.
+
+## ci/mcp-handshake-check.ts
+
+- CI gate, and the only place the shipped artifact runs on Node 18: the vitest
+  suite needs Node 20, so the Node 18 matrix row compiles the package and then
+  runs this check.
+- It spawns `dist/index.js` with a clean env and completes one MCP `initialize`
+  handshake. The entry is `npm run handshake-check`; it runs through tsx, because
+  Node 18 runs neither the TypeScript under `test/e2e/` nor the vitest runner.
+- It needs `dist/`, so it runs after `npm run build`.
+

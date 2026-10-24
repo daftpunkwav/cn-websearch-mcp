@@ -40,6 +40,8 @@ check.
 branches and statements (`vitest.config.ts`). `src/types.ts` is inside that
 tree, but it carries only contracts and the strategy vocabulary with no
 branching, so it stays at 100% on its own; `test/` + `scripts/` are outside the
-measured tree because `include` is limited to `src/**`. A change that drops
-coverage below the gate fails the run — add or extend unit tests rather than
-lowering the threshold.
+measured tree because `include` is limited to `src/**/*.ts`. The glob stops at
+`.ts` on purpose: the v8 provider reports every file `include` matches, so a
+broad `src/**` glob would pull the Markdown files next to the sources into the
+report as uncovered files. A change that drops coverage below the gate fails
+the run — add or extend unit tests rather than lowering the threshold.
