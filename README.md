@@ -24,6 +24,8 @@ npm install
 npm run build     # tsc → dist/
 ```
 
+Running the server needs Node >= 18; running the test suite needs Node >= 20.
+
 Provide at least one channel API key — via environment variables, a `.env` file, or a JSON config file (see [Configuration](#configuration)). Channels without a key are skipped automatically.
 
 ## Use it as an MCP server

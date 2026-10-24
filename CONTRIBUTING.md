@@ -82,11 +82,16 @@ was exercised against **18.20.8, 20.19.5, 22.21.1 and 24.15.0**; the global
 by the matrix rather than by measurement — see the `combinedSignal` comment in
 `src/http.ts` for the one API that is genuinely unavailable there.
 
-The floor constrains the development tree too. `vitest` accepts `vite` `^5 ||
-^6 || ^7`, and every vite 7 release declares `engines.node: ^20.19.0 ||
->=22.12.0`, so the `overrides.vite` pin in `package.json` is the only thing
-stopping a fresh `npm install` from resolving a dev toolchain the Node 18 matrix
-row cannot run.
+The floor constrains the development tree too, and the two floors differ.
+`vitest` 4 declares `engines.node: ^20.0.0 || ^22.0.0 || >=24.0.0`, so the
+Node 18 matrix row compiles and type-checks the shipped code while the test
+suite runs on the Node 20 and 22 rows. Running the suite locally needs Node 20
+or newer; running the server does not.
+
+The `overrides.vite` pin in `package.json` keeps a fresh `npm install` from
+resolving a dev toolchain the Node 18 row cannot run: every vite 7 release
+declares `engines.node: ^20.19.0 || >=22.12.0`, while the pinned vite 6
+accepts `^18.0.0 || ^20.0.0 || >=22.0.0`.
 
 ## Install scripts
 
