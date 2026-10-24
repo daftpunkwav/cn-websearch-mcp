@@ -31,63 +31,23 @@ const NPM_INSTALL = /\bnpm\s+(?:ci|install|i|add)(?![\w-])/;
 const CURL = /^curl(\.exe)?$/;
 const WGET = /^wget(\.exe)?$/;
 // A URL argument, whatever its scheme.
-const URL_TOKEN = /^[a-z][a-z0-9+.-]*:\/\//i;
+const URL = /^[a-z][a-z0-9+.-]*:\/\//i;
 // The only protocol list the policy accepts: HTTPS and nothing else.
 const HTTPS_ONLY = '=https';
 
 /**
- * Cut a line at its comment, so a flag that only appears in a comment does
- * not count as set. A '#' starts a comment when it is outside quotes and
- * either starts the line or follows whitespace.
+ * The arguments of a command: the quotes around a value are dropped, and
+ * everything from a '#' on is a comment.
  */
-function stripComment(line) {
-  let quote = '';
-  for (let i = 0; i < line.length; i += 1) {
-    const char = line[i];
-    if (quote) {
-      if (char === quote) quote = '';
-      continue;
-    }
-    if (char === '"' || char === "'") {
-      quote = char;
-      continue;
-    }
-    if (char === '#' && (i === 0 || /\s/.test(line[i - 1]))) return line.slice(0, i);
+function argumentsOf(command) {
+  const args = [];
+  for (const raw of command.split(/\s+/)) {
+    if (!raw) continue;
+    const arg = raw.replace(/^["']/, '').replace(/["']$/, '');
+    if (arg.startsWith('#')) break;
+    args.push(arg);
   }
-  return line;
-}
-
-/**
- * Split a command into tokens, keeping a quoted argument together and
- * dropping the quotes: `--proto '=https'` is two tokens, the option and its
- * value.
- */
-function tokenize(command) {
-  const tokens = [];
-  let current = '';
-  let quote = '';
-  for (const char of command) {
-    if (quote) {
-      if (char === quote) {
-        quote = '';
-        continue;
-      }
-      current += char;
-      continue;
-    }
-    if (char === '"' || char === "'") {
-      quote = char;
-      continue;
-    }
-    if (/\s/.test(char)) {
-      if (current) tokens.push(current);
-      current = '';
-      continue;
-    }
-    current += char;
-  }
-  if (current) tokens.push(current);
-  return tokens;
+  return args;
 }
 
 /**
@@ -95,129 +55,106 @@ function tokenize(command) {
  * `--option value` or the `--option=value` spelling. The last occurrence
  * wins, because that is how the client reads it.
  */
-function lastOptionValue(tokens, name) {
+function optionValue(args, name) {
   let value;
-  for (let i = 0; i < tokens.length; i += 1) {
-    const token = tokens[i];
-    if (token === name) {
-      value = tokens[i + 1];
-      i += 1;
-    } else if (token.startsWith(`${name}=`)) {
-      value = token.slice(name.length + 1);
-    }
-  }
+  args.forEach((arg, index) => {
+    if (arg === name) value = args[index + 1];
+    else if (arg.startsWith(`${name}=`)) value = arg.slice(name.length + 1);
+  });
   return value;
 }
 
 /**
- * The state of a boolean flag: undefined when it is absent, otherwise the
- * last occurrence decides, so `--ignore-scripts=false` switches it off again.
+ * Whether a boolean flag is set. The last occurrence decides, so
+ * `--ignore-scripts=false` switches it off again.
  */
-function booleanOption(tokens, name) {
-  let state;
-  for (const token of tokens) {
-    if (token === name) state = true;
-    else if (token.startsWith(`${name}=`)) state = token.slice(name.length + 1) !== 'false';
-  }
-  return state;
+function flagEnabled(args, name) {
+  let enabled;
+  args.forEach((arg) => {
+    if (arg === name) enabled = true;
+    else if (arg.startsWith(`${name}=`)) enabled = arg.slice(name.length + 1) !== 'false';
+  });
+  return enabled;
 }
 
 /** Whether the command asks the client to follow redirects. */
-function followsRedirects(tokens) {
-  return tokens.some((token) => (
-    token === '--location'
-    || (/^-[A-Za-z]+$/.test(token) && token.includes('L'))
-  ));
-}
-
-/** Every URL argument of a command. */
-function urlArguments(tokens) {
-  return tokens.filter((token) => URL_TOKEN.test(token));
+function followsRedirects(args) {
+  return args.some((arg) => arg === '--location' || (/^-[A-Za-z]+$/.test(arg) && arg.includes('L')));
 }
 
 /**
- * Group the physical lines of a workflow into logical commands: a line that
- * ends with a backslash continues on the next one, and the flags of such a
- * command have to be read together.
+ * The violation a command carries, or null when it keeps every protection.
  */
-function logicalCommands(lines) {
-  const commands = [];
-  let buffer = null;
-  let start = 0;
-  let file = '';
-  for (const line of lines) {
-    const continued = /\\\s*$/.test(line.text);
-    const piece = continued ? line.text.replace(/\\\s*$/, '') : line.text;
-    if (buffer === null) {
-      buffer = piece;
-      start = line.number;
-      file = line.file;
-    } else {
-      buffer = `${buffer} ${piece.trim()}`;
-    }
-    if (!continued) {
-      commands.push({ file, number: start, text: buffer });
-      buffer = null;
-    }
+function violationOf(args) {
+  const isCurl = args.some((arg) => CURL.test(arg));
+  const isWget = args.some((arg) => WGET.test(arg));
+
+  if (NPM_INSTALL.test(args.join(' ')) && flagEnabled(args, '--ignore-scripts') !== true) {
+    return 'package install without --ignore-scripts';
   }
-  if (buffer !== null) commands.push({ file, number: start, text: buffer });
+  if (!isCurl && !isWget) return null;
+
+  const cleartext = args.find((arg) => URL.test(arg) && !arg.toLowerCase().startsWith('https://'));
+  if (cleartext) return `download over a protocol other than HTTPS (${cleartext})`;
+  if (isCurl && optionValue(args, '--proto') !== HTTPS_ONLY) {
+    return "curl without --proto '=https'";
+  }
+  if (isCurl && followsRedirects(args) && optionValue(args, '--proto-redir') !== HTTPS_ONLY) {
+    return "curl follows redirects without --proto-redir '=https'";
+  }
+  if (isWget && optionValue(args, '--max-redirect') !== '0') {
+    return 'wget may follow redirects (--max-redirect=0 required)';
+  }
+  return null;
+}
+
+/**
+ * The commands of a workflow file: a line that ends with a backslash
+ * continues on the next one, and the flags of such a command belong
+ * together.
+ */
+function commandsOf(lines) {
+  const commands = [];
+  let current = [];
+  let start = 0;
+  lines.forEach((line, index) => {
+    const continued = line.text.endsWith('\\');
+    current.push(continued ? line.text.slice(0, -1) : line.text);
+    if (current.length === 1) start = index + 1;
+    if (!continued) {
+      commands.push({ number: start, args: argumentsOf(current.join(' ')) });
+      current = [];
+    }
+  });
+  if (current.length > 0) commands.push({ number: start, args: argumentsOf(current.join(' ')) });
   return commands;
 }
 
-/** Every line of every workflow file, with its file name and line number. */
-function workflowLines() {
+/** Every command of every workflow file, with its file name and line number. */
+function workflowCommands() {
   const files = readdirSync(WORKFLOW_DIR)
     .filter((name) => name.endsWith('.yml') || name.endsWith('.yaml'))
     .sort();
-  const lines = [];
+  const commands = [];
   for (const file of files) {
-    const content = readFileSync(join(WORKFLOW_DIR, file), 'utf8');
-    content.split('\n').forEach((raw, index) => {
-      lines.push({ file, number: index + 1, text: stripComment(raw) });
-    });
+    const lines = readFileSync(join(WORKFLOW_DIR, file), 'utf8')
+      .split('\n')
+      .map((text) => ({ text }));
+    for (const command of commandsOf(lines)) {
+      commands.push({ file, ...command });
+    }
   }
-  return lines;
+  return commands;
 }
 
 const violations = [];
 let checked = 0;
 
-for (const command of logicalCommands(workflowLines())) {
-  const tokens = tokenize(command.text);
-  if (tokens.length === 0) continue;
+for (const command of workflowCommands()) {
+  if (command.args.length === 0) continue;
   checked += 1;
-  const where = `${command.file}:${command.number}`;
-
-  if (NPM_INSTALL.test(command.text)) {
-    if (booleanOption(tokens, '--ignore-scripts') !== true) {
-      violations.push(`${where}: package install without --ignore-scripts`);
-    }
-  }
-
-  const isCurl = tokens.some((token) => CURL.test(token));
-  const isWget = tokens.some((token) => WGET.test(token));
-  if (!isCurl && !isWget) continue;
-
-  for (const url of urlArguments(tokens)) {
-    if (!url.toLowerCase().startsWith('https://')) {
-      violations.push(`${where}: download over a protocol other than HTTPS (${url})`);
-    }
-  }
-
-  if (isCurl) {
-    if (lastOptionValue(tokens, '--proto') !== HTTPS_ONLY) {
-      violations.push(`${where}: curl without --proto '=https'`);
-    }
-    if (followsRedirects(tokens) && lastOptionValue(tokens, '--proto-redir') !== HTTPS_ONLY) {
-      violations.push(`${where}: curl follows redirects without --proto-redir '=https'`);
-    }
-  }
-
-  if (isWget) {
-    if (lastOptionValue(tokens, '--max-redirect') !== '0') {
-      violations.push(`${where}: wget may follow redirects (--max-redirect=0 required)`);
-    }
-  }
+  const violation = violationOf(command.args);
+  if (violation) violations.push(`${command.file}:${command.number}: ${violation}`);
 }
 
 if (violations.length > 0) {
