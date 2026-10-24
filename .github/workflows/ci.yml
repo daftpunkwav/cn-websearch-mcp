@@ -111,10 +111,10 @@ jobs:
       - run: npm run lint
 
   # This workflow has no path filtering (single-package repo, every job runs
-  # on every push/PR), so edits to dependency-policy.json or the checker
-  # itself always re-trigger this job.
+  # on every push/PR), so edits to the policy files or the checkers
+  # themselves always re-trigger this job.
   deps-policy:
-    name: Dependency denylist (npm)
+    name: Policy checks (npm, workflow)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -124,6 +124,8 @@ jobs:
           persist-credentials: false
       # Reads package-lock.json plus package.json only; no npm install needed.
       - run: node scripts/ci/check_npm_deps_policy.mjs
+      # Reads .github/workflows only; no npm install needed.
+      - run: node scripts/ci/check_workflow_hardening.mjs
 
   gate:
     name: gate

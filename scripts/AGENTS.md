@@ -35,3 +35,12 @@ The script table lives in [README.md](README.md).
   Node 18 runs neither the TypeScript under `test/e2e/` nor the vitest runner.
 - It needs `dist/`, so it runs after `npm run build`.
 
+## ci/check_workflow_hardening.mjs
+
+- CI gate over `.github/workflows/`: an npm install must run with
+  `--ignore-scripts`, and a download that follows redirects must pin the
+  protocol to HTTPS.
+- The check is text-based. The repository has no YAML parser in its toolchain,
+  and a workflow line is where these flags live.
+- A workflow that needs a different protection changes this checker on
+  purpose, in the same commit as the workflow.
