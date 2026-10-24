@@ -67,7 +67,10 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
           cache: npm
-      - run: npm ci
+      # No lifecycle scripts: the toolchain's native pieces (unrs-resolver,
+      # esbuild) ship as prebuilt platform packages, so the install never
+      # executes third-party postinstall code.
+      - run: npm ci --ignore-scripts
       - run: npm run build
       # test/ and scripts/ are outside the build's tsconfig, so they need their own type check
       - run: npm run typecheck
