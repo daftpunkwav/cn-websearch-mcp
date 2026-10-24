@@ -8,6 +8,7 @@ Layout and coverage details live in [README.md](README.md).
 - When two sources share a file name, qualify the test by path: `test/index.test.ts` for `src/index.ts`, `test/providers-index.test.ts` for `src/providers/index.ts`.
 - One test file covers one module and stays self-contained.
 - `upstream-contract.test.ts` is the exception: it pins the channel wire contracts across `src/providers/`.
+- `check_workflow_hardening.test.ts` is the second exception: it covers the CI gate in `scripts/ci/`, which has no `src/` counterpart.
 - Subprocess journeys live in [e2e/](e2e/). Follow [e2e/AGENTS.md](e2e/AGENTS.md).
 
 ## Hermeticity

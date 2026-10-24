@@ -37,10 +37,11 @@ The script table lives in [README.md](README.md).
 
 ## ci/check_workflow_hardening.mjs
 
-- CI gate over `.github/workflows/`: an npm install must run with
-  `--ignore-scripts`, and a download that follows redirects must pin the
-  protocol to HTTPS.
+- CI gate over `.github/workflows/`: a package install must run with
+  `--ignore-scripts`, and a download must use HTTPS and must not follow a
+  redirect out of HTTPS.
 - The check is text-based. The repository has no YAML parser in its toolchain,
   and a workflow line is where these flags live.
+- `test/check_workflow_hardening.test.ts` covers it.
 - A workflow that needs a different protection changes this checker on
   purpose, in the same commit as the workflow.
