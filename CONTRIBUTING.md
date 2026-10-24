@@ -85,8 +85,9 @@ by the matrix rather than by measurement — see the `combinedSignal` comment in
 The floor constrains the development tree too, and the two floors differ.
 `vitest` 4 declares `engines.node: ^20.0.0 || ^22.0.0 || >=24.0.0`, so the
 Node 18 matrix row compiles and type-checks the shipped code while the test
-suite runs on the Node 20 and 22 rows. Running the suite locally needs Node 20
-or newer; running the server does not.
+suite runs on the Node 20 and 22 rows. Running the suite locally needs one of
+the Node versions vitest declares support for (`^20`, `^22` or `>=24`); running
+the server does not.
 
 The `overrides.vite` pin in `package.json` keeps a fresh `npm install` from
 resolving a dev toolchain the Node 18 row cannot run: every vite 7 release

@@ -24,7 +24,7 @@ npm install
 npm run build     # tsc → dist/
 ```
 
-Running the server needs Node >= 18; running the test suite needs Node >= 20.
+Running the server needs Node >= 18. The test suite needs a Node version vitest supports: `^20`, `^22` or `>=24`.
 
 Provide at least one channel API key — via environment variables, a `.env` file, or a JSON config file (see [Configuration](#configuration)). Channels without a key are skipped automatically.
 

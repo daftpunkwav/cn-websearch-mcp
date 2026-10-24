@@ -7,10 +7,10 @@
  * - Complete the MCP initialize handshake and read the advertised tool list
  * - Exit 0 when the server answers, 1 on any failure or timeout
  *
- * Why this exists: the vitest suite needs Node 20, so the Node 18 matrix row
- * compiles the package but cannot run the suite. This check runs the shipped
- * artifact on that runtime, so a regression in the server path fails CI
- * instead of reaching the people who install the package.
+ * Why this exists: the vitest suite supports Node ^20, ^22 and >=24, so the
+ * Node 18 matrix row compiles the package but cannot run the suite. This check
+ * runs the shipped artifact on that runtime, so a regression in the server
+ * path fails CI instead of reaching the people who install the package.
  *
  * It runs through tsx, like the other TypeScript scripts here: the TypeScript
  * under test/e2e/ needs the vitest runner, and Node 18 - the runtime this
@@ -43,11 +43,13 @@ function cleanEnv(): Record<string, string> {
   return env;
 }
 
-/** Reject when the awaited work outlives its budget. */
-async function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+/** Reject when the awaited work outlives the remaining budget. */
+async function withDeadline<T>(promise: Promise<T>, deadline: number, message: string): Promise<T> {
+  const remaining = deadline - Date.now();
+  if (remaining <= 0) throw new Error(message);
   let timer: NodeJS.Timeout | undefined;
   const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(message)), ms);
+    timer = setTimeout(() => reject(new Error(message)), remaining);
   });
   try {
     return await Promise.race([promise, timeout]);
@@ -78,17 +80,24 @@ async function main(): Promise<void> {
   transport.stderr?.pipe(errSink);
 
   const client = new Client({ name: 'handshake-check', version: '0.0.0' }, { capabilities: {} });
+  // One budget for the whole exchange: a server that answers `initialize` and
+  // then goes quiet must not park the check on an unanswered `tools/list`.
+  const deadline = Date.now() + HANDSHAKE_TIMEOUT_MS;
   try {
-    await withTimeout(
+    await withDeadline(
       client.connect(transport),
-      HANDSHAKE_TIMEOUT_MS,
+      deadline,
       `initialize handshake timed out after ${HANDSHAKE_TIMEOUT_MS}ms`,
     );
     const info = client.getServerVersion();
     if (info?.name !== 'cn-websearch-mcp') {
       throw new Error(`unexpected server name: ${JSON.stringify(info?.name ?? null)}`);
     }
-    const { tools } = await client.listTools();
+    const { tools } = await withDeadline(
+      client.listTools(),
+      deadline,
+      `tools/list timed out after ${HANDSHAKE_TIMEOUT_MS}ms`,
+    );
     if (!tools.some((tool) => tool.name === 'web_search')) {
       throw new Error(`web_search not advertised (tools: ${tools.map((tool) => tool.name).join(', ') || 'none'})`);
     }

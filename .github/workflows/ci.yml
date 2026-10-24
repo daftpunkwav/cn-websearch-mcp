@@ -72,10 +72,10 @@ jobs:
       # test/ and scripts/ are outside the build's tsconfig, so they need their own type check
       - run: npm run typecheck
       # e2e tests in test/e2e/ exercise dist/, so build must precede tests.
-      # The suite needs Node 20: vitest 4 declares engines.node
-      # ^20 || ^22 || >=24. The Node 18 row stops after the type check -
-      # it still builds the shipped code, which is what engines.node >=18
-      # promises to the people who install the package.
+      # The suite runs where vitest supports the runtime: ^20, ^22 or >=24.
+      # The matrix carries 18/20/22, so the Node 18 row stops after the type
+      # check - it still builds the shipped code, which is what engines.node
+      # >=18 promises to the people who install the package.
       - if: matrix.node >= 20
         run: npm run test:coverage
       # Compiling is not running: the Node 18 row starts the built artifact
