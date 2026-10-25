@@ -41,11 +41,9 @@ const OTHER_COMMANDS = new Set([
   'run', 'run-script', 'exec', 'test', 'start', 'stop', 'restart', 'publish', 'pack',
   'init', 'uninstall', 'remove', 'rm',
 ]);
-// A download client as a command word, with or without a path in front of it.
-const CURL = /^(?:.*[\\/])?curl(\.exe)?$/;
-const WGET = /^(?:.*[\\/])?wget(\.exe)?$/;
-// A URL in an argument, whatever its scheme.
-const URL = /[a-z][a-z0-9+.-]*:\/\/[^\s'"`]+/i;
+// The download clients the gate knows, by the name they run under.
+const CURL_NAMES = new Set(['curl', 'curl.exe']);
+const WGET_NAMES = new Set(['wget', 'wget.exe']);
 // The only protocol list the policy accepts: HTTPS and nothing else.
 const HTTPS_ONLY = '=https';
 
@@ -194,10 +192,32 @@ function workflowCommands() {
 }
 
 /**
+ * The name a command word runs under, without the path in front of it.
+ *
+ * @returns {string}
+ */
+function commandName(arg) {
+  return arg.split(/[\\/]/).pop() ?? arg;
+}
+
+/**
+ * The scheme of an argument that carries a URL, or an empty string when it
+ * carries none.
+ *
+ * @returns {string}
+ */
+function urlScheme(arg) {
+  const at = arg.indexOf('://');
+  return at <= 0 ? '' : arg.slice(0, at).toLowerCase();
+}
+
+/**
  * The value of the last occurrence of an option, in either the
  * `--option value` or the `--option=value` spelling. The last occurrence
  * wins, because that is how the client reads it. An option that is not
  * there reads as an empty value.
+ *
+ * @returns {string}
  */
 function optionValue(args, name) {
   let value = '';
@@ -216,6 +236,8 @@ function optionValue(args, name) {
 /**
  * Whether a boolean flag is set. The last occurrence decides, so
  * `--ignore-scripts=false` and `--no-ignore-scripts` switch it off again.
+ *
+ * @returns {boolean}
  */
 function flagEnabled(args, name) {
   const negated = `--no-${name.slice(2)}`;
@@ -269,9 +291,9 @@ function transfers(args) {
 /** The violation of a cleartext URL, or null when every URL is HTTPS. */
 function cleartextViolation(args) {
   for (const arg of args) {
-    const match = URL.exec(arg);
-    if (match && !match[0].toLowerCase().startsWith('https://')) {
-      return `download over a protocol other than HTTPS (${match[0]})`;
+    const scheme = urlScheme(arg);
+    if (scheme && scheme !== 'https') {
+      return `download over a protocol other than HTTPS (${arg})`;
     }
   }
   return null;
@@ -286,7 +308,9 @@ function installViolation(args) {
 
 /** Whether the command asks for TLS 1.2 or later. */
 function pinsTls(args) {
-  return args.some((arg) => /^--tls(v1\.[23]|max)(=|$)/.test(arg));
+  return args.some((arg) => (
+    arg === '--tlsv1.2' || arg === '--tlsv1.3' || arg.startsWith('--tls-max')
+  ));
 }
 
 /** The violation of one curl transfer, or null when it keeps its protections. */
@@ -319,7 +343,7 @@ function wgetViolation(args) {
   if (args.some((arg) => arg.startsWith('--input-file'))) {
     return 'wget reads its URLs from a file the gate cannot check';
   }
-  if (!args.some((arg) => URL.test(arg))) {
+  if (!args.some((arg) => urlScheme(arg) !== '')) {
     return 'wget without a URL the gate cannot check';
   }
   return null;
@@ -327,8 +351,8 @@ function wgetViolation(args) {
 
 /** The violation of a download, or null when it keeps its protections. */
 function downloadViolation(args) {
-  if (args.some((arg) => CURL.test(arg))) return curlViolation(args);
-  if (args.some((arg) => WGET.test(arg))) return wgetViolation(args);
+  if (args.some((arg) => CURL_NAMES.has(commandName(arg)))) return curlViolation(args);
+  if (args.some((arg) => WGET_NAMES.has(commandName(arg)))) return wgetViolation(args);
   return null;
 }
 
