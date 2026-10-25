@@ -48,21 +48,35 @@ const WGET_NAMES = new Set(['wget', 'wget.exe']);
 const HTTPS_ONLY = '=https';
 
 /**
- * The command with its comment removed: a '#' outside quotes starts one.
+ * The characters of a command with the quoting marked, so that a separator or
+ * a comment inside a quoted value is not mistaken for one.
  */
-function stripComment(text) {
+function* characters(text) {
   let quote = '';
-  for (let i = 0; i < text.length; i += 1) {
-    const char = text[i];
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
     if (quote) {
       if (char === quote) quote = '';
+      yield { char, index, quoted: true };
       continue;
     }
     if (char === '"' || char === "'") {
       quote = char;
+      yield { char, index, quoted: true };
       continue;
     }
-    if (char === '#' && (i === 0 || /\s/.test(text[i - 1]))) return text.slice(0, i);
+    yield { char, index, quoted: false };
+  }
+}
+
+/**
+ * The command with its comment removed: a '#' outside quotes starts one.
+ */
+function stripComment(text) {
+  for (const { char, index, quoted } of characters(text)) {
+    if (!quoted && char === '#' && (index === 0 || /\s/.test(text[index - 1]))) {
+      return text.slice(0, index);
+    }
   }
   return text;
 }
@@ -87,6 +101,11 @@ function argumentsOf(command) {
   return args;
 }
 
+/** Whether a character separates two commands in a shell line. */
+function isSeparator(char) {
+  return char === ';' || char === '&' || char === '|';
+}
+
 /**
  * The commands in a shell line: `a && b` runs two commands, and each one
  * has to carry its own protection.
@@ -94,23 +113,10 @@ function argumentsOf(command) {
 function splitCommands(text) {
   const parts = [];
   let current = '';
-  let quote = '';
-  for (let i = 0; i < text.length; i += 1) {
-    const char = text[i];
-    if (quote) {
-      current += char;
-      if (char === quote) quote = '';
-      continue;
-    }
-    if (char === '"' || char === "'") {
-      quote = char;
-      current += char;
-      continue;
-    }
-    if (char === ';' || char === '&' || char === '|') {
+  for (const { char, quoted } of characters(text)) {
+    if (!quoted && isSeparator(char)) {
       if (current.trim()) parts.push(current.trim());
       current = '';
-      if ((char === '&' || char === '|') && text[i + 1] === char) i += 1;
       continue;
     }
     current += char;
