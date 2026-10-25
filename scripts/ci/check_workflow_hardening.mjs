@@ -284,12 +284,18 @@ function installViolation(args) {
   return 'package install without --ignore-scripts';
 }
 
+/** Whether the command asks for TLS 1.2 or later. */
+function pinsTls(args) {
+  return args.some((arg) => /^--tls(v1\.[23]|max)(=|$)/.test(arg));
+}
+
 /** The violation of one curl transfer, or null when it keeps its protections. */
 function curlTransferViolation(args) {
   if (optionValue(args, '--proto') !== HTTPS_ONLY) return "curl without --proto '=https'";
   if (optionValue(args, '--config') !== '' || args.includes('-K')) {
     return 'curl reads its options from a file the gate cannot check';
   }
+  if (!pinsTls(args)) return 'curl without --tlsv1.2';
   if (followsRedirects(args) && optionValue(args, '--proto-redir') !== HTTPS_ONLY) {
     return "curl follows redirects without --proto-redir '=https'";
   }

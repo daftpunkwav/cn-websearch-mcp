@@ -133,13 +133,18 @@ const REJECTED: { name: string; workflow: string; message: string }[] = [
   },
   {
     name: 'a redirect chain that may leave HTTPS',
-    workflow: workflowWith("curl -sSfL --proto '=https' https://example.com/x"),
+    workflow: workflowWith("curl -sSfL --proto '=https' --tlsv1.2 https://example.com/x"),
     message: "--proto-redir '=https'",
   },
   {
     name: 'a redirect chain that trusts the location',
-    workflow: workflowWith("curl -sSfL --location-trusted --proto '=https' https://example.com/x"),
+    workflow: workflowWith("curl -sSfL --location-trusted --proto '=https' --tlsv1.2 https://example.com/x"),
     message: "--proto-redir '=https'",
+  },
+  {
+    name: 'a curl that may negotiate an older TLS version',
+    workflow: workflowWith("curl -sSf --proto '=https' https://example.com/x"),
+    message: '--tlsv1.2',
   },
   {
     name: 'a curl that reads its options from a file',
@@ -153,13 +158,13 @@ const REJECTED: { name: string; workflow: string; message: string }[] = [
   },
   {
     name: 'a second curl transfer without its own pins',
-    workflow: workflowWith("curl --proto '=https' --proto-redir '=https' https://a.example/x --next curl https://b.example/x"),
+    workflow: workflowWith("curl --proto '=https' --proto-redir '=https' --tlsv1.2 https://a.example/x --next curl https://b.example/x"),
     message: "--proto '=https'",
   },
   {
     name: 'a command split over two lines',
     workflow: workflowWithBody([
-      "curl -sSfL --proto '=https' \\",
+      "curl -sSfL --proto '=https' --tlsv1.2 \\",
       '  https://example.com/x',
     ]),
     message: "--proto-redir '=https'",
