@@ -85,143 +85,50 @@ function workflowFolded(lines: string[]): string {
   ].join('\n');
 }
 
-const REJECTED: { name: string; workflow: string; message: string }[] = [
-  {
-    name: 'a package install that runs lifecycle scripts',
-    workflow: workflowWith('npm ci'),
-    message: '--ignore-scripts',
-  },
-  {
-    name: 'an install alias that runs lifecycle scripts',
-    workflow: workflowWith('npm i pkg'),
-    message: '--ignore-scripts',
-  },
-  {
-    name: 'an install behind a global option',
-    workflow: workflowWith('npm --prefix ./app ci'),
-    message: '--ignore-scripts',
-  },
-  {
-    name: 'a rebuild that runs lifecycle scripts',
-    workflow: workflowWith('npm rebuild'),
-    message: '--ignore-scripts',
-  },
-  {
-    name: 'an install that switches the protection off again',
-    workflow: workflowWith('npm ci --ignore-scripts=false'),
-    message: '--ignore-scripts',
-  },
-  {
-    name: 'an install that switches the protection off with the negated form',
-    workflow: workflowWith('npm ci --ignore-scripts --no-ignore-scripts'),
-    message: '--ignore-scripts',
-  },
-  {
-    name: 'a download over cleartext HTTP',
-    workflow: workflowWith('curl -sSf http://example.com/x'),
-    message: 'other than HTTPS',
-  },
-  {
-    name: 'a cleartext URL in any command',
-    workflow: workflowWith('node scripts/fetch.js http://example.com/x'),
-    message: 'other than HTTPS',
-  },
-  {
-    name: 'a protocol list that also allows HTTP',
-    workflow: workflowWith("curl -sSf --proto '=https,http' https://example.com/x"),
-    message: "--proto '=https'",
-  },
-  {
-    name: 'a redirect chain that may leave HTTPS',
-    workflow: workflowWith("curl -sSfL --proto '=https' --tlsv1.2 https://example.com/x"),
-    message: "--proto-redir '=https'",
-  },
-  {
-    name: 'a redirect chain that trusts the location',
-    workflow: workflowWith("curl -sSfL --location-trusted --proto '=https' --tlsv1.2 https://example.com/x"),
-    message: "--proto-redir '=https'",
-  },
-  {
-    name: 'a curl that may negotiate an older TLS version',
-    workflow: workflowWith("curl -sSf --proto '=https' https://example.com/x"),
-    message: '--tlsv1.2',
-  },
-  {
-    name: 'a curl that reads its options from a file',
-    workflow: workflowWith("curl -sSf --proto '=https' --config curl.conf https://example.com/x"),
-    message: 'cannot check',
-  },
-  {
-    name: 'a curl that is not on the path',
-    workflow: workflowWith('/usr/bin/curl -sSf https://example.com/x'),
-    message: "--proto '=https'",
-  },
-  {
-    name: 'a second curl transfer without its own pins',
-    workflow: workflowWith("curl --proto '=https' --proto-redir '=https' --tlsv1.2 https://a.example/x --next curl https://b.example/x"),
-    message: "--proto '=https'",
-  },
-  {
-    name: 'a command split over two lines',
-    workflow: workflowWithBody([
-      "curl -sSfL --proto '=https' --tlsv1.2 \\",
-      '  https://example.com/x',
-    ]),
-    message: "--proto-redir '=https'",
-  },
-  {
-    name: 'a folded install that switches the protection off',
-    workflow: workflowFolded(['npm', 'ci --ignore-scripts=false']),
-    message: '--ignore-scripts',
-  },
-  {
-    name: 'a wget that may follow redirects',
-    workflow: workflowWith('wget https://example.com/x'),
-    message: '--max-redirect=0',
-  },
-  {
-    name: 'a wget whose URL the gate cannot read',
-    workflow: workflowWith('wget --max-redirect 0 "$URL"'),
-    message: 'cannot check',
-  },
-  {
-    name: 'a wget that reads its URLs from a file',
-    workflow: workflowWith('wget --max-redirect 0 --input-file=urls.txt'),
-    message: 'cannot check',
-  },
+// Each case is [name, workflow, the message the gate must report].
+const REJECTED: [string, string, string][] = [
+  ['a package install that runs lifecycle scripts', workflowWith('npm ci'), '--ignore-scripts'],
+  ['an install alias that runs lifecycle scripts', workflowWith('npm i pkg'), '--ignore-scripts'],
+  ['an install behind a global option', workflowWith('npm --prefix ./app ci'), '--ignore-scripts'],
+  ['a rebuild that runs lifecycle scripts', workflowWith('npm rebuild'), '--ignore-scripts'],
+  ['an install that switches the protection off again', workflowWith('npm ci --ignore-scripts=false'), '--ignore-scripts'],
+  ['an install that switches the protection off with the negated form', workflowWith('npm ci --ignore-scripts --no-ignore-scripts'), '--ignore-scripts'],
+  ['a download over cleartext HTTP', workflowWith('curl -sSf http://example.com/x'), 'other than HTTPS'],
+  ['a cleartext URL in any command', workflowWith('node scripts/fetch.js http://example.com/x'), 'other than HTTPS'],
+  ['a protocol list that also allows HTTP', workflowWith('curl -sSf --proto \'=https,http\' https://example.com/x'), '--proto \'=https\''],
+  ['a redirect chain that may leave HTTPS', workflowWith('curl -sSfL --proto \'=https\' --tlsv1.2 https://example.com/x'), '--proto-redir \'=https\''],
+  ['a redirect chain that trusts the location', workflowWith('curl -sSfL --location-trusted --proto \'=https\' --tlsv1.2 https://example.com/x'), '--proto-redir \'=https\''],
+  ['a curl that reads its options from a file', workflowWith("curl -sSf --proto '=https' --config curl.conf https://example.com/x"), 'cannot check'],
+  ['a curl that is not on the path', workflowWith('/usr/bin/curl -sSf https://example.com/x'), "--proto '=https'"],
+  ['a second curl transfer without its own pins', workflowWith("curl --proto '=https' --proto-redir '=https' --tlsv1.2 https://a.example/x --next curl https://b.example/x"), "--proto '=https'"],
+  ['a command split over two lines', workflowWithBody(["curl -sSfL --proto '=https' --tlsv1.2 \\", '  https://example.com/x']), "--proto-redir '=https'"],
+  ['a folded install that switches the protection off', workflowFolded(['npm', 'ci --ignore-scripts=false']), '--ignore-scripts'],
+  ['a wget that may follow redirects', workflowWith('wget https://example.com/x'), '--max-redirect=0'],
+  ['a wget whose URL the gate cannot read', workflowWith('wget --max-redirect 0 "$URL"'), 'cannot check'],
+  ['a wget that reads its URLs from a file', workflowWith('wget --max-redirect 0 --input-file=urls.txt'), 'cannot check'],
+  ['a curl that may negotiate an older TLS version', workflowWith("curl -sSf --proto '=https' https://example.com/x"), '--tlsv1.2'],
 ];
 
-const ACCEPTED: { name: string; workflow: string }[] = [
-  {
-    name: 'a workflow that keeps every protection',
-    workflow: workflowWithBody([
-      'npm ci --ignore-scripts',
-      "curl -sSfL --proto '=https' --proto-redir '=https' --tlsv1.2 -o /tmp/tool \\",
-      '  "https://example.com/tool.tgz"',
-    ]),
-  },
-  {
-    name: 'a wget that refuses redirects',
-    workflow: workflowWith('wget --max-redirect 0 https://example.com/x'),
-  },
-  {
-    name: 'a command that only appears in a comment',
-    workflow: workflowWith('# npm ci without the flag'),
-  },
-  {
-    name: 'an npm script that is not an install',
-    workflow: workflowWith('npm run ci'),
-  },
+// Each case is [name, workflow].
+const ACCEPTED: [string, string][] = [
+  ['a workflow that keeps every protection', workflowWithBody([
+    'npm ci --ignore-scripts',
+    "curl -sSfL --proto '=https' --proto-redir '=https' --tlsv1.2 -o /tmp/tool \\",
+    '  "https://example.com/tool.tgz"',
+  ])],
+  ['a wget that refuses redirects', workflowWith('wget --max-redirect 0 https://example.com/x')],
+  ['a command that only appears in a comment', workflowWith('# npm ci without the flag')],
+  ['an npm script that is not an install', workflowWith('npm run ci')],
 ];
 
 describe('workflow hardening gate', () => {
-  it.each(REJECTED)('rejects $name', ({ workflow, message }) => {
+  it.each(REJECTED)('rejects %s', (_name, workflow, message) => {
     const result = runChecker(workflow);
     expect(result.code).toBe(1);
     expect(result.stderr).toContain(message);
   });
 
-  it.each(ACCEPTED)('accepts $name', ({ workflow }) => {
+  it.each(ACCEPTED)('accepts %s', (_name, workflow) => {
     const result = runChecker(workflow);
     expect(result.code).toBe(0);
     expect(result.stdout).toContain('workflow hardening ok');

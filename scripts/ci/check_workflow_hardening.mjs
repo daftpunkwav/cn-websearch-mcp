@@ -67,6 +67,14 @@ function stripComment(text) {
   return text;
 }
 
+/** The value of an argument without the quotes around it. */
+function unquote(arg) {
+  const first = arg[0];
+  const last = arg[arg.length - 1];
+  const quoted = (first === '"' || first === "'") && (last === '"' || last === "'");
+  return quoted ? arg.slice(1, -1) : arg;
+}
+
 /**
  * The arguments of a command: the quotes around a value are dropped.
  */
@@ -74,7 +82,7 @@ function argumentsOf(command) {
   const args = [];
   for (const raw of command.split(/\s+/)) {
     if (!raw) continue;
-    args.push(raw.replace(/^["']/, '').replace(/["']$/, ''));
+    args.push(unquote(raw));
   }
   return args;
 }
