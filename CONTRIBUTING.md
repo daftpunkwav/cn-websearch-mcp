@@ -94,6 +94,18 @@ resolving a dev toolchain the Node 18 row cannot run: every vite 7 release
 declares `engines.node: ^20.19.0 || >=22.12.0`, while the pinned vite 6
 accepts `^18.0.0 || ^20.0.0 || >=22.0.0`.
 
+## Dependency versions
+
+Every version in `package.json` is an exact one - the dependency specs and the
+`overrides` entry alike. A range lets a fresh install resolve a version that
+nobody reviewed, which is the confusion a dependency hijack needs, and the
+installed tree is fixed by `package-lock.json` in any case. The upgrade flow
+rewrites the exact version when a new release is published, so nothing depends
+on a range to move forward.
+
+A dependency upgrade therefore touches two places: the version in
+`package.json` and the matching entry in `package-lock.json`.
+
 ## Install scripts
 
 `allowScripts` in `package.json` records, by exact version, which install
