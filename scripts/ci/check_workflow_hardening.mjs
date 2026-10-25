@@ -161,21 +161,16 @@ function foldScalars(lines) {
 }
 
 /**
- * The commands of a workflow file: a folded scalar is one command, a literal
- * block is one command per line, and a line that ends with a backslash
- * continues on the next one.
+ * The logical lines of a workflow file: a folded scalar is one line, and a
+ * line that ends with a backslash continues on the next one.
  */
-function commandsOf(lines) {
-  const commands = [];
+function logicalLines(lines) {
+  const logical = [];
   let buffer = null;
   let start = 0;
 
   const flush = () => {
-    if (buffer === null) return;
-    for (const part of splitCommands(buffer)) {
-      const args = argumentsOf(part);
-      if (args.length > 0) commands.push({ number: start, args });
-    }
+    if (buffer !== null) logical.push({ text: buffer, number: start });
     buffer = null;
   };
 
@@ -192,6 +187,22 @@ function commandsOf(lines) {
     if (!continued) flush();
   }
   flush();
+  return logical;
+}
+
+/**
+ * The commands of a workflow file: a folded scalar is one command, a literal
+ * block is one command per line, and a line that ends with a backslash
+ * continues on the next one.
+ */
+function commandsOf(lines) {
+  const commands = [];
+  for (const line of logicalLines(lines)) {
+    for (const part of splitCommands(line.text)) {
+      const args = argumentsOf(part);
+      if (args.length > 0) commands.push({ number: line.number, args });
+    }
+  }
   return commands;
 }
 
