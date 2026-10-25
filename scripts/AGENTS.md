@@ -4,7 +4,10 @@ The script table lives in [README.md](README.md).
 
 ## Boundary
 
-- Vitest does not collect these scripts, and the coverage include stays `src/**`.
+- Vitest does not collect these scripts, and the coverage include stays `src/**/*.ts`.
+  The glob stops at `.ts` on purpose: the v8 provider reports every file `include`
+  matches, so a broad `src/**` glob pulls the Markdown files next to the sources
+  into the report as uncovered files.
 - Never print API keys or credential-like strings.
 - `src/` and the vitest suite do not import these scripts.
 
