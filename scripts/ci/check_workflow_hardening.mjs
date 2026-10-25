@@ -111,6 +111,13 @@ function splitCommands(text) {
   return parts;
 }
 
+/** Whether a line opens a folded YAML scalar. */
+function opensFoldedScalar(text) {
+  const trimmed = text.trim();
+  return trimmed === 'run: >' || trimmed === '- run: >'
+    || trimmed === 'run: >-' || trimmed === '- run: >-';
+}
+
 /**
  * The lines of a workflow file with the folded scalars joined: a `run: >`
  * block is one command, while a literal `run: |` block keeps one command per
@@ -134,7 +141,7 @@ function foldScalars(lines) {
       indent = null;
     }
     folded.push({ ...line });
-    if (/^\s*(?:-\s*)?run:\s*>\s*$/.test(line.text)) indent = width;
+    if (opensFoldedScalar(line.text)) indent = width;
   }
   return folded;
 }
