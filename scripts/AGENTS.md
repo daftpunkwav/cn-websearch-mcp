@@ -42,6 +42,10 @@ The script table lives in [README.md](README.md).
   redirect out of HTTPS.
 - The check is text-based. The repository has no YAML parser in its toolchain,
   and a workflow line is where these flags live.
-- `test/check_workflow_hardening.test.ts` covers it.
+- What it cannot read from the text it rejects rather than accepts: a URL
+  assembled in code, a client it does not know, options in a file. The rest
+  of the gap is tracked in [#39](https://github.com/daftpunkwav/cn-websearch-mcp/issues/39).
+- `test/check_workflow_hardening.test.ts` covers it, including that the
+  workflow still runs the gate.
 - A workflow that needs a different protection changes this checker on
   purpose, in the same commit as the workflow.

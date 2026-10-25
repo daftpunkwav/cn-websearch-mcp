@@ -12,8 +12,12 @@
  *
  * Why: both protections are one edit away from being dropped by a later edit,
  * and nothing else in the build would notice that they were gone. The check
- * is text-based on purpose - the repository has no YAML parser in its
- * toolchain, and a workflow line is where these flags live.
+ * is text-based on purpose - the repository has no YAML parser in its toolchain,
+ * and a workflow line is where these flags live.
+ *
+ * What the gate cannot see is tracked in issue #39: a URL that is assembled in
+ * code, or a download client it does not know, is not a URL in the text of a
+ * workflow.
  */
 
 import { readdirSync, readFileSync } from 'node:fs';
@@ -25,29 +29,168 @@ const WORKFLOW_DIR = process.argv[2]
   ? resolve(process.argv[2])
   : join(REPO_ROOT, '.github', 'workflows');
 
-// The npm commands that install packages, including the aliases.
-const INSTALL_COMMANDS = new Set(['ci', 'install', 'i', 'add']);
-// A download client as a command word.
-const CURL = /^curl(\.exe)?$/;
-const WGET = /^wget(\.exe)?$/;
-// A URL argument, whatever its scheme.
-const URL = /^[a-z][a-z0-9+.-]*:\/\//i;
+// The npm commands that install packages or run dependency lifecycle scripts.
+const INSTALL_COMMANDS = new Set([
+  'ci', 'clean-install',
+  'i', 'in', 'ins', 'inst', 'insta', 'instal', 'install', 'isnt', 'isnta', 'isntal',
+  'cit', 'install-ci-test', 'install-test',
+  'rebuild', 'update',
+]);
+// The npm commands that never install, so a name behind them is not an install.
+const OTHER_COMMANDS = new Set([
+  'run', 'run-script', 'exec', 'test', 'start', 'stop', 'restart', 'publish', 'pack',
+  'init', 'uninstall', 'remove', 'rm',
+]);
+// A download client as a command word, with or without a path in front of it.
+const CURL = /^(?:.*[\\/])?curl(\.exe)?$/;
+const WGET = /^(?:.*[\\/])?wget(\.exe)?$/;
+// A URL in an argument, whatever its scheme.
+const URL = /[a-z][a-z0-9+.-]*:\/\/[^\s'"`]+/i;
 // The only protocol list the policy accepts: HTTPS and nothing else.
 const HTTPS_ONLY = '=https';
 
 /**
- * The arguments of a command: the quotes around a value are dropped, and
- * everything from a '#' on is a comment.
+ * The command with its comment removed: a '#' outside quotes starts one.
+ */
+function stripComment(text) {
+  let quote = '';
+  for (let i = 0; i < text.length; i += 1) {
+    const char = text[i];
+    if (quote) {
+      if (char === quote) quote = '';
+      continue;
+    }
+    if (char === '"' || char === "'") {
+      quote = char;
+      continue;
+    }
+    if (char === '#' && (i === 0 || /\s/.test(text[i - 1]))) return text.slice(0, i);
+  }
+  return text;
+}
+
+/**
+ * The arguments of a command: the quotes around a value are dropped.
  */
 function argumentsOf(command) {
   const args = [];
   for (const raw of command.split(/\s+/)) {
     if (!raw) continue;
-    const arg = raw.replace(/^["']/, '').replace(/["']$/, '');
-    if (arg.startsWith('#')) break;
-    args.push(arg);
+    args.push(raw.replace(/^["']/, '').replace(/["']$/, ''));
   }
   return args;
+}
+
+/**
+ * The commands in a shell line: `a && b` runs two commands, and each one
+ * has to carry its own protection.
+ */
+function splitCommands(text) {
+  const parts = [];
+  let current = '';
+  let quote = '';
+  for (let i = 0; i < text.length; i += 1) {
+    const char = text[i];
+    if (quote) {
+      current += char;
+      if (char === quote) quote = '';
+      continue;
+    }
+    if (char === '"' || char === "'") {
+      quote = char;
+      current += char;
+      continue;
+    }
+    if (char === ';' || char === '&' || char === '|') {
+      if (current.trim()) parts.push(current.trim());
+      current = '';
+      if ((char === '&' || char === '|') && text[i + 1] === char) i += 1;
+      continue;
+    }
+    current += char;
+  }
+  if (current.trim()) parts.push(current.trim());
+  return parts;
+}
+
+/**
+ * The lines of a workflow file with the folded scalars joined: a `run: >`
+ * block is one command, while a literal `run: |` block keeps one command per
+ * line.
+ */
+function foldScalars(lines) {
+  const folded = [];
+  let indent = null;
+  for (const line of lines) {
+    const width = line.text.length - line.text.trimStart().length;
+    if (indent !== null) {
+      if (line.text.trim() === '') {
+        folded.push(line);
+        continue;
+      }
+      if (width > indent) {
+        const previous = folded[folded.length - 1];
+        previous.text = `${previous.text} ${line.text.trim()}`;
+        continue;
+      }
+      indent = null;
+    }
+    folded.push({ ...line });
+    if (/^\s*(?:-\s*)?run:\s*>\s*$/.test(line.text)) indent = width;
+  }
+  return folded;
+}
+
+/**
+ * The commands of a workflow file: a folded scalar is one command, a literal
+ * block is one command per line, and a line that ends with a backslash
+ * continues on the next one.
+ */
+function commandsOf(lines) {
+  const commands = [];
+  let buffer = null;
+  let start = 0;
+
+  const flush = () => {
+    if (buffer === null) return;
+    for (const part of splitCommands(buffer)) {
+      const args = argumentsOf(part);
+      if (args.length > 0) commands.push({ number: start, args });
+    }
+    buffer = null;
+  };
+
+  for (const line of foldScalars(lines)) {
+    const text = stripComment(line.text);
+    const continued = /\\\s*$/.test(text);
+    const piece = continued ? text.replace(/\\\s*$/, '') : text;
+    if (buffer === null) {
+      buffer = piece;
+      start = line.number;
+    } else {
+      buffer = `${buffer} ${piece.trim()}`;
+    }
+    if (!continued) flush();
+  }
+  flush();
+  return commands;
+}
+
+/** Every command of every workflow file, with its file name and line number. */
+function workflowCommands() {
+  const files = readdirSync(WORKFLOW_DIR)
+    .filter((name) => name.endsWith('.yml') || name.endsWith('.yaml'))
+    .sort();
+  const commands = [];
+  for (const file of files) {
+    const lines = readFileSync(join(WORKFLOW_DIR, file), 'utf8')
+      .split('\n')
+      .map((text, index) => ({ text, number: index + 1 }));
+    for (const command of commandsOf(lines)) {
+      commands.push({ file, ...command });
+    }
+  }
+  return commands;
 }
 
 /**
@@ -72,12 +215,14 @@ function optionValue(args, name) {
 
 /**
  * Whether a boolean flag is set. The last occurrence decides, so
- * `--ignore-scripts=false` switches it off again.
+ * `--ignore-scripts=false` and `--no-ignore-scripts` switch it off again.
  */
 function flagEnabled(args, name) {
+  const negated = `--no-${name.slice(2)}`;
   let enabled = false;
   for (const arg of args) {
     if (arg === name) enabled = true;
+    else if (arg === negated) enabled = false;
     else if (arg.startsWith(`${name}=`)) enabled = arg.slice(name.length + 1) !== 'false';
   }
   return enabled;
@@ -85,12 +230,51 @@ function flagEnabled(args, name) {
 
 /** Whether the command asks the client to follow redirects. */
 function followsRedirects(args) {
-  return args.some((arg) => arg === '--location' || (/^-[A-Za-z]+$/.test(arg) && arg.includes('L')));
+  return args.some((arg) => (
+    arg === '--location'
+    || arg === '--location-trusted'
+    || arg.startsWith('--location-trusted=')
+    || (/^-[A-Za-z]+$/.test(arg) && arg.includes('L'))
+  ));
 }
 
-/** Whether the command installs packages. */
+/**
+ * Whether the command installs packages. The verb can sit behind npm's
+ * global options (`npm --prefix ./app ci`), while a name behind `npm run` is
+ * a script and not an install.
+ */
 function isInstall(args) {
-  return args.some((arg, index) => arg === 'npm' && INSTALL_COMMANDS.has(args[index + 1]));
+  const npmAt = args.indexOf('npm');
+  if (npmAt === -1) return false;
+  for (let i = npmAt + 1; i < args.length; i += 1) {
+    const arg = args[i];
+    if (arg.startsWith('-')) continue;
+    if (OTHER_COMMANDS.has(arg)) return false;
+    if (arg.includes('/')) continue;
+    if (INSTALL_COMMANDS.has(arg)) return true;
+  }
+  return false;
+}
+
+/** The transfers of a curl command: `--next` starts a new one. */
+function transfers(args) {
+  const parts = [[]];
+  for (const arg of args) {
+    if (arg === '--next') parts.push([]);
+    else parts[parts.length - 1].push(arg);
+  }
+  return parts;
+}
+
+/** The violation of a cleartext URL, or null when every URL is HTTPS. */
+function cleartextViolation(args) {
+  for (const arg of args) {
+    const match = URL.exec(arg);
+    if (match && !match[0].toLowerCase().startsWith('https://')) {
+      return `download over a protocol other than HTTPS (${match[0]})`;
+    }
+  }
+  return null;
 }
 
 /** The violation of a package install, or null when it keeps its protection. */
@@ -100,11 +284,23 @@ function installViolation(args) {
   return 'package install without --ignore-scripts';
 }
 
-/** The violation of a curl command, or null when it keeps its protections. */
-function curlViolation(args) {
+/** The violation of one curl transfer, or null when it keeps its protections. */
+function curlTransferViolation(args) {
   if (optionValue(args, '--proto') !== HTTPS_ONLY) return "curl without --proto '=https'";
+  if (optionValue(args, '--config') !== '' || args.includes('-K')) {
+    return 'curl reads its options from a file the gate cannot check';
+  }
   if (followsRedirects(args) && optionValue(args, '--proto-redir') !== HTTPS_ONLY) {
     return "curl follows redirects without --proto-redir '=https'";
+  }
+  return null;
+}
+
+/** The violation of a curl command, or null when it keeps its protections. */
+function curlViolation(args) {
+  for (const transfer of transfers(args)) {
+    const violation = curlTransferViolation(transfer);
+    if (violation) return violation;
   }
   return null;
 }
@@ -114,13 +310,17 @@ function wgetViolation(args) {
   if (optionValue(args, '--max-redirect') !== '0') {
     return 'wget may follow redirects (--max-redirect=0 required)';
   }
+  if (args.some((arg) => arg.startsWith('--input-file'))) {
+    return 'wget reads its URLs from a file the gate cannot check';
+  }
+  if (!args.some((arg) => URL.test(arg))) {
+    return 'wget without a URL the gate cannot check';
+  }
   return null;
 }
 
 /** The violation of a download, or null when it keeps its protections. */
 function downloadViolation(args) {
-  const cleartext = args.find((arg) => URL.test(arg) && !arg.toLowerCase().startsWith('https://'));
-  if (cleartext) return `download over a protocol other than HTTPS (${cleartext})`;
   if (args.some((arg) => CURL.test(arg))) return curlViolation(args);
   if (args.some((arg) => WGET.test(arg))) return wgetViolation(args);
   return null;
@@ -130,53 +330,15 @@ function downloadViolation(args) {
  * The violation a command carries, or null when it keeps every protection.
  */
 function violationOf(args) {
-  return installViolation(args) ?? downloadViolation(args);
-}
-
-/**
- * The commands of a workflow file: a line that ends with a backslash
- * continues on the next one, and the flags of such a command belong
- * together.
- */
-function commandsOf(lines) {
-  const commands = [];
-  let current = [];
-  let start = 0;
-  lines.forEach((line, index) => {
-    const continued = line.text.endsWith('\\');
-    current.push(continued ? line.text.slice(0, -1) : line.text);
-    if (current.length === 1) start = index + 1;
-    if (!continued) {
-      commands.push({ number: start, args: argumentsOf(current.join(' ')) });
-      current = [];
-    }
-  });
-  if (current.length > 0) commands.push({ number: start, args: argumentsOf(current.join(' ')) });
-  return commands;
-}
-
-/** Every command of every workflow file, with its file name and line number. */
-function workflowCommands() {
-  const files = readdirSync(WORKFLOW_DIR)
-    .filter((name) => name.endsWith('.yml') || name.endsWith('.yaml'))
-    .sort();
-  const commands = [];
-  for (const file of files) {
-    const lines = readFileSync(join(WORKFLOW_DIR, file), 'utf8')
-      .split('\n')
-      .map((text) => ({ text }));
-    for (const command of commandsOf(lines)) {
-      commands.push({ file, ...command });
-    }
-  }
-  return commands;
+  return cleartextViolation(args)
+    ?? installViolation(args)
+    ?? downloadViolation(args);
 }
 
 const violations = [];
 let checked = 0;
 
 for (const command of workflowCommands()) {
-  if (command.args.length === 0) continue;
   checked += 1;
   const violation = violationOf(command.args);
   if (violation) violations.push(`${command.file}:${command.number}: ${violation}`);
