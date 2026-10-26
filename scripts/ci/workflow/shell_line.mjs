@@ -44,13 +44,22 @@ export function* characters(text) {
 }
 
 /**
+ * Whether the character is whitespace: a trimmed character is empty, and an
+ * empty string is all a whitespace character leaves behind.
+ */
+function isWhitespace(char) {
+  return char !== undefined && char.trim().length === 0;
+}
+
+/**
  * Whether a character starts a comment: it is a '#' outside quotes, at the
  * start of the line or behind a space.
  */
 function startsComment(text, { char, index, quoted }) {
   if (quoted) return false;
   if (char !== '#') return false;
-  return index === 0 || /\s/.test(text[index - 1]);
+  if (index === 0) return true;
+  return isWhitespace(text[index - 1]);
 }
 
 /**
