@@ -9,6 +9,7 @@
  *   names the file and the line
  * - Assert that the workflow still runs the gate, so the check cannot be
  *   dropped without a failing test
+ * - Assert that every workflow file of the directory is checked
  *
  * Why these exist: the gate reads workflow files as text, so its decisions
  * come from pattern matching. A pattern that stops matching a missing
@@ -40,11 +41,13 @@ interface CheckerResult {
   stderr: string;
 }
 
-/** Run the checker against a workflow file written into a temp directory. */
-function runChecker(workflow: string): CheckerResult {
+/** Run the checker against the files written into a temp directory. */
+function runCheckerOn(files: Record<string, string>): CheckerResult {
   const dir = mkdtempSync(join(tmpdir(), 'cn-websearch-policy-'));
   try {
-    writeFileSync(join(dir, 'ci.yml'), workflow, 'utf8');
+    for (const [name, content] of Object.entries(files)) {
+      writeFileSync(join(dir, name), content, 'utf8');
+    }
     const result = spawnSync(process.execPath, [CHECKER, dir], { encoding: 'utf8' });
     return {
       code: result.status,
@@ -54,6 +57,11 @@ function runChecker(workflow: string): CheckerResult {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+}
+
+/** Run the checker against a workflow file written into a temp directory. */
+function runChecker(workflow: string): CheckerResult {
+  return runCheckerOn({ 'ci.yml': workflow });
 }
 
 /** A one-step workflow that runs the given command. */
@@ -138,5 +146,20 @@ describe('workflow hardening gate', () => {
     // Without this, dropping the step that runs the gate would leave the
     // policy job and the overall gate green.
     expect(readFileSync(WORKFLOW, 'utf8')).toContain('scripts/ci/check_workflow_hardening.mjs');
+  });
+
+  it('checks every workflow file of the directory', () => {
+    // A gate that reads one file would leave the other workflows unchecked.
+    const result = runCheckerOn({
+      'ci.yml': workflowWith('npm ci --ignore-scripts'),
+      'security.yml': workflowWith('npm ci'),
+    });
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain('security.yml:4');
+  });
+
+  it('leaves a file that is not a workflow file alone', () => {
+    const result = runCheckerOn({ 'notes.txt': 'npm ci' });
+    expect(result.code).toBe(0);
   });
 });
