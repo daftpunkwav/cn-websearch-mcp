@@ -41,10 +41,13 @@ export function followsRedirects(args) {
   return args.some((arg) => isRedirectOption(arg));
 }
 
-/** Whether the argument asks for TLS 1.2 or later. */
+/**
+ * Whether the argument asks for TLS 1.2 or later. A maximum version does
+ * not ask for a minimum: `--tls-max` caps the version and still allows an
+ * older one, so only the options that raise the floor count.
+ */
 function isTlsOption(arg) {
-  if (arg === '--tlsv1.2' || arg === '--tlsv1.3') return true;
-  return arg.startsWith('--tls-max');
+  return arg === '--tlsv1.2' || arg === '--tlsv1.3';
 }
 
 /** Whether the command asks for TLS 1.2 or later. */
