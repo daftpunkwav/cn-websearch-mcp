@@ -71,12 +71,22 @@ jobs:
       - run: npm run build
       # test/ and scripts/ are outside the build's tsconfig, so they need their own type check
       - run: npm run typecheck
-      # e2e tests in test/e2e/ exercise dist/, so build must precede tests
-      - run: npm run test:coverage
+      # e2e tests in test/e2e/ exercise dist/, so build must precede tests.
+      # The suite runs where vitest supports the runtime: ^20, ^22 or >=24.
+      # The matrix carries 18/20/22, so the Node 18 row stops after the type
+      # check - it still builds the shipped code, which is what engines.node
+      # >=18 promises to the people who install the package.
+      - if: matrix.node >= 20
+        run: npm run test:coverage
+      # Compiling is not running: the Node 18 row starts the built artifact
+      # and completes one MCP handshake, so a runtime regression on the
+      # oldest supported runtime fails here and not in an install.
+      - if: matrix.node == 18
+        run: npm run handshake-check
 
   # Style gate: Airbnb ESLint config over src/, test/, scripts/ and the root
   # config files. Single job (lint result does not vary by Node version the
-  # way runtime behavior can); the devDependency toolchain requires Node >= 18.18,
+  # way runtime behavior can); the lint toolchain requires Node >= 18.18,
   # so it runs on the newest matrix version rather than the floor.
   lint:
     name: Lint (Airbnb)

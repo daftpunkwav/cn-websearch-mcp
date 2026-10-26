@@ -14,4 +14,4 @@
 
 ## 覆盖率门槛
 
-`npm run test:coverage` 对 `src/` 强制 lines / functions / branches / statements 四项均不低于 95%(`vitest.config.ts`)。`src/types.ts` 只有契约与策略词表、没有分支逻辑,自身即为 100%;`test/` 与 `scripts/` 位于被统计的树之外,因为 `include` 限定为 `src/**`。覆盖率跌破门槛会导致运行失败——应补充或扩展单元测试,而不是调低阈值。
+`npm run test:coverage` 对 `src/` 强制 lines / functions / branches / statements 四项均不低于 95%(`vitest.config.ts`)。`src/types.ts` 只有契约与策略词表、没有分支逻辑,自身即为 100%;`test/` 与 `scripts/` 位于被统计的树之外,因为 `include` 限定为 `src/**/*.ts`。glob 特意停在 `.ts`:v8 provider 会把 `include` 命中的每个文件都算进去,`src/**` 会把源码旁边的 Markdown 文档当成未覆盖文件一并计入。覆盖率跌破门槛会导致运行失败——应补充或扩展单元测试,而不是调低阈值。

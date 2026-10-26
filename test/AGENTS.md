@@ -27,4 +27,4 @@ Layout and coverage details live in [README.md](README.md).
 - The MCP stdio journey spawns `dist/index.js` with `cleanEnv()` and `freshTempDir()`.
 - A test that changes `process.env` restores every key it changes.
 - File headers stay in English, with `@file` and `@description`.
-- In `vitest.config.ts`, keep the per-test timeout at 30 seconds and the coverage gate at 95% lines, functions, branches, and statements on `src/`.
+- In `vitest.config.ts`, keep the per-test timeout at 30 seconds and the coverage gate at 95% lines, functions, branches, and statements on `src/`. The coverage `include` stays `src/**/*.ts`: the v8 provider reports every file the glob matches, so a broad `src/**` glob would count the Markdown files next to the sources as uncovered.

@@ -24,6 +24,8 @@ npm install
 npm run build     # tsc → dist/
 ```
 
+运行 server 需要 Node >= 18;测试套件需要 vitest 支持的 Node 版本(`^20`、`^22` 或 `>=24`)。
+
 至少提供一把通道 API key——环境变量、`.env` 文件或 JSON 配置文件都行(见[配置](#配置))。没配 key 的通道自动跳过。
 
 ## 作为 MCP server 使用
