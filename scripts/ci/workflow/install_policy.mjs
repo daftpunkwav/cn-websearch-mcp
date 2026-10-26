@@ -16,12 +16,18 @@
 
 import { commandName, flagEnabled } from './command_options.mjs';
 
-// The npm commands that install packages or run dependency lifecycle scripts.
+// The npm commands that install packages or run dependency lifecycle scripts,
+// with the aliases npm resolves them from (npm/lib/utils/cmd-list.js).
 const INSTALL_COMMANDS = new Set([
-  'ci', 'clean-install',
-  'i', 'in', 'ins', 'inst', 'insta', 'instal', 'install', 'isnt', 'isnta', 'isntal',
-  'cit', 'install-ci-test', 'install-test',
-  'add', 'rebuild', 'update',
+  'ci', 'clean-install', 'ic', 'install-clean', 'isntall-clean',
+  'i', 'in', 'ins', 'inst', 'insta', 'instal', 'install', 'isnt', 'isnta', 'isntal', 'isntall',
+  'add',
+  'cit', 'install-ci-test', 'clean-install-test', 'sit',
+  'install-test', 'it',
+  'rebuild', 'rb',
+  'update', 'u', 'up', 'upgrade', 'udpate',
+  'dedupe', 'ddp',
+  'link', 'ln',
 ]);
 // The npm commands that never install, so a name behind them is not an install.
 const OTHER_COMMANDS = new Set([
