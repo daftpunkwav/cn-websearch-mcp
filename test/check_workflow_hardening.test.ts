@@ -98,6 +98,8 @@ const REJECTED: [string, string, string][] = [
   ['a package install that runs lifecycle scripts', workflowWith('npm ci'), '--ignore-scripts'],
   ['an install alias that runs lifecycle scripts', workflowWith('npm i pkg'), '--ignore-scripts'],
   ['an add that runs lifecycle scripts', workflowWith('npm add lodash'), '--ignore-scripts'],
+  ['an update alias that runs lifecycle scripts', workflowWith('npm up'), '--ignore-scripts'],
+  ['a dedupe that runs lifecycle scripts', workflowWith('npm dedupe'), '--ignore-scripts'],
   ['an install behind a global option', workflowWith('npm --prefix ./app ci'), '--ignore-scripts'],
   ['an install behind a path in front of npm', workflowWith('/usr/local/bin/npm ci'), '--ignore-scripts'],
   ['a rebuild that runs lifecycle scripts', workflowWith('npm rebuild'), '--ignore-scripts'],
