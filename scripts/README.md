@@ -24,6 +24,18 @@ in CI and can be run locally.
 | `ci/mcp-handshake-check.ts` | Runtime gate: spawns `dist/index.js` with a clean env and completes one MCP `initialize` handshake. It is the only place the shipped artifact runs on Node 18, the runtime the vitest suite no longer supports. Needs `dist/`, so it runs after `npm run build`. |
 | `ci/check_workflow_hardening.mjs` | Workflow gate: fails when a workflow installs packages without `--ignore-scripts`, or when a download in a workflow uses another protocol than HTTPS, or follows a redirect that may leave HTTPS. It reads `.github/workflows/` only, and rejects what it cannot read there - a URL assembled in code, a client it does not know, options in a file. |
 
+The workflow gate reads a workflow file through the modules under
+`ci/workflow/`, one responsibility each:
+
+| Module | Role |
+|---|---|
+| `ci/workflow/shell_line.mjs` | Reads a shell line as the commands it runs: the quoting, the comment, the arguments. |
+| `ci/workflow/workflow_lines.mjs` | Reads the lines of a workflow file as the commands they run: the folded scalars and the continued lines. |
+| `ci/workflow/command_options.mjs` | Reads the options of a command the way the client reads them: the last occurrence wins. |
+| `ci/workflow/install_policy.mjs` | Decides whether a package install keeps `--ignore-scripts`. |
+| `ci/workflow/download_policy.mjs` | Decides whether a download keeps HTTPS, its TLS version and its redirect protocol. |
+| `ci/workflow/workflow_files.mjs` | Reads the workflow files of a directory. |
+
 The live half of `smoke.ts` is not automatable, but its wiring is:
 `test/probe.test.ts` drives the same `createRuntime` → `chain` → `probeAll`
 path with synthetic keys and an injected fetch, so a probe that stopped

@@ -42,6 +42,11 @@ The script table lives in [README.md](README.md).
   redirect out of HTTPS.
 - The check is text-based. The repository has no YAML parser in its toolchain,
   and a workflow line is where these flags live.
+- The gate reads a workflow file through the modules under `ci/workflow/`, one
+  responsibility each: the shell text, the workflow lines, the command options,
+  the install policy, the download policy, and the reading of the files. A
+  rule that does not fit its module belongs in the module that owns the
+  decision, not in the entry.
 - What it cannot read from the text it rejects rather than accepts: a URL
   assembled in code, a client it does not know, options in a file. The rest
   of the gap is tracked in [#39](https://github.com/daftpunkwav/cn-websearch-mcp/issues/39).
