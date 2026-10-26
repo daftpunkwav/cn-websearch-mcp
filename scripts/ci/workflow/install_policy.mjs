@@ -14,20 +14,22 @@
  *   while a name behind `npm run` is a script and not an install.
  */
 
-import { flagEnabled } from './command_options.mjs';
+import { commandName, flagEnabled } from './command_options.mjs';
 
 // The npm commands that install packages or run dependency lifecycle scripts.
 const INSTALL_COMMANDS = new Set([
   'ci', 'clean-install',
   'i', 'in', 'ins', 'inst', 'insta', 'instal', 'install', 'isnt', 'isnta', 'isntal',
   'cit', 'install-ci-test', 'install-test',
-  'rebuild', 'update',
+  'add', 'rebuild', 'update',
 ]);
 // The npm commands that never install, so a name behind them is not an install.
 const OTHER_COMMANDS = new Set([
   'run', 'run-script', 'exec', 'test', 'start', 'stop', 'restart', 'publish', 'pack',
   'init', 'uninstall', 'remove', 'rm',
 ]);
+// The names the npm command runs under, with the path in front of it left off.
+const NPM_NAMES = new Set(['npm', 'npm.cmd']);
 
 /** Whether the argument is an option or a path, and not the verb itself. */
 function isNotTheVerb(arg) {
@@ -50,10 +52,11 @@ function installVerb(args) {
 /**
  * Whether the command installs packages. The verb can sit behind npm's
  * global options (`npm --prefix ./app ci`), while a name behind `npm run` is
- * a script and not an install.
+ * a script and not an install. The npm command itself can carry a path in
+ * front of it (`/usr/local/bin/npm ci`).
  */
 export function isInstall(args) {
-  const npmAt = args.indexOf('npm');
+  const npmAt = args.findIndex((arg) => NPM_NAMES.has(commandName(arg)));
   if (npmAt === -1) return false;
   return installVerb(args.slice(npmAt + 1)) !== null;
 }
