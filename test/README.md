@@ -20,6 +20,11 @@ keys are needed and no real upstream is contacted.
   pins is the wire contract each third-party API owns — the request an adapter
   builds and the mapping it performs on a full documented response body. See
   the file header for what these fixtures can and cannot detect.
+- `check_workflow_hardening.test.ts`: covers the workflow hardening gate in
+  `scripts/ci/`, the second file that does not mirror a `src/` module, because
+  the gate lives outside `src/`. It runs the checker as a subprocess against
+  fixture workflows written to a temp directory, and asserts the exit status
+  for a workflow that keeps every protection and for each way of dropping one.
 - [e2e/](e2e/): end-to-end tests that spawn the built `dist/index.js` as a
   real subprocess and speak MCP stdio framing or the CLI protocol. See
   [e2e/README.md](e2e/README.md).

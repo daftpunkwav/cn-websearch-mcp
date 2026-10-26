@@ -108,8 +108,12 @@ A dependency upgrade therefore touches two places: the version in
 
 ## Install scripts
 
+CI installs the tree with `npm ci --ignore-scripts`, so no install script runs
+there: the native pieces (`esbuild`, `unrs-resolver`) ship as prebuilt
+platform packages and resolve from the tree without their postinstall.
+
 `allowScripts` in `package.json` records, by exact version, which install
-scripts in the tree have been read. What an unlisted script does depends on
+scripts a local install may run. What an unlisted script does depends on
 the npm version: npm 11.16 and later run it and print a warning, so an entry
 there is an acknowledgement rather than a switch, while npm 12 blocks it and
 reports the blocked packages instead. A version outside a listed pin is

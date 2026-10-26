@@ -35,3 +35,22 @@ The script table lives in [README.md](README.md).
   Node 18 runs neither the TypeScript under `test/e2e/` nor the vitest runner.
 - It needs `dist/`, so it runs after `npm run build`.
 
+## ci/check_workflow_hardening.mjs
+
+- CI gate over `.github/workflows/`: a package install must run with
+  `--ignore-scripts`, and a download must use HTTPS and must not follow a
+  redirect out of HTTPS.
+- The check is text-based. The repository has no YAML parser in its toolchain,
+  and a workflow line is where these flags live.
+- The gate reads a workflow file through the modules under `ci/workflow/`, one
+  responsibility each: the shell text, the workflow lines, the command options,
+  the install policy, the download policy, and the reading of the files. A
+  rule that does not fit its module belongs in the module that owns the
+  decision, not in the entry.
+- What it cannot read from the text it rejects rather than accepts: a URL
+  assembled in code, a client it does not know, options in a file. The rest
+  of the gap is tracked in [#39](https://github.com/daftpunkwav/cn-websearch-mcp/issues/39).
+- `test/check_workflow_hardening.test.ts` covers it, including that the
+  workflow still runs the gate.
+- A workflow that needs a different protection changes this checker on
+  purpose, in the same commit as the workflow.

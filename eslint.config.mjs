@@ -42,6 +42,22 @@ export default [
     languageOptions: {
       globals: { ...globals.node },
     },
+    rules: {
+      // The stock preset asks a relative import to leave its file extension
+      // off, which fits a bundler. Node's ESM loader resolves a relative
+      // import only when the path carries the extension, so the scripts keep
+      // it.
+      'import-x/extensions': [
+        'error',
+        'ignorePackages',
+        {
+          js: 'never',
+          cjs: 'never',
+          mjs: 'always',
+          jsx: 'never',
+        },
+      ],
+    },
   },
   {
     rules: {
