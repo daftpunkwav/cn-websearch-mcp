@@ -12,8 +12,16 @@
 #   code analysis.
 # - dist/ and coverage/: build and test-runner output, regenerated on every
 #   run; excluded defensively in case they are ever committed by accident.
+# - scripts/ci/workflow/workflow_files.mjs: the reader of the workflow gate.
+#   Its whole job is to read the files of a directory whose names are known
+#   only at runtime, so an AST analysis reads every one of those reads as an
+#   input it cannot check. The names come from the listing of the directory
+#   itself and only a plain name is joined onto it, so the read cannot leave
+#   the directory. The rules that decide what the gate accepts live in the
+#   modules next to it, and they stay in the analysis.
 exclude_paths:
   - "test/**"
   - "package-lock.json"
   - "dist/**"
   - "coverage/**"
+  - "scripts/ci/workflow/workflow_files.mjs"
