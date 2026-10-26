@@ -97,7 +97,9 @@ function workflowFolded(lines: string[]): string {
 const REJECTED: [string, string, string][] = [
   ['a package install that runs lifecycle scripts', workflowWith('npm ci'), '--ignore-scripts'],
   ['an install alias that runs lifecycle scripts', workflowWith('npm i pkg'), '--ignore-scripts'],
+  ['an add that runs lifecycle scripts', workflowWith('npm add lodash'), '--ignore-scripts'],
   ['an install behind a global option', workflowWith('npm --prefix ./app ci'), '--ignore-scripts'],
+  ['an install behind a path in front of npm', workflowWith('/usr/local/bin/npm ci'), '--ignore-scripts'],
   ['a rebuild that runs lifecycle scripts', workflowWith('npm rebuild'), '--ignore-scripts'],
   ['an install that switches the protection off again', workflowWith('npm ci --ignore-scripts=false'), '--ignore-scripts'],
   ['an install that switches the protection off with the negated form', workflowWith('npm ci --ignore-scripts --no-ignore-scripts'), '--ignore-scripts'],
@@ -115,6 +117,7 @@ const REJECTED: [string, string, string][] = [
   ['a wget whose URL the gate cannot read', workflowWith('wget --max-redirect 0 "$URL"'), 'cannot check'],
   ['a wget that reads its URLs from a file', workflowWith('wget --max-redirect 0 --input-file=urls.txt'), 'cannot check'],
   ['a curl that may negotiate an older TLS version', workflowWith("curl -sSf --proto '=https' https://example.com/x"), '--tlsv1.2'],
+  ['a curl that caps the TLS version instead of pinning it', workflowWith("curl -sSf --proto '=https' --tls-max 1.2 https://example.com/x"), '--tlsv1.2'],
 ];
 
 // Each case is [name, workflow].
@@ -127,6 +130,7 @@ const ACCEPTED: [string, string][] = [
   ['a wget that refuses redirects', workflowWith('wget --max-redirect 0 https://example.com/x')],
   ['a command that only appears in a comment', workflowWith('# npm ci without the flag')],
   ['an npm script that is not an install', workflowWith('npm run ci')],
+  ['an install behind a path in front of npm that keeps its protection', workflowWith('/usr/local/bin/npm ci --ignore-scripts')],
 ];
 
 describe('workflow hardening gate', () => {
