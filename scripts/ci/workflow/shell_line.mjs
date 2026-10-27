@@ -195,6 +195,16 @@ function substitutionRanges(text) {
 }
 
 /**
+ * Whether the character separates two words of a command: a whitespace
+ * character outside quotes and outside a command substitution does.
+ */
+function separatesWords(char, quoted, substituted) {
+  if (quoted) return false;
+  if (substituted) return false;
+  return isWhitespace(char);
+}
+
+/**
  * The words of a command: whitespace outside quotes and outside a command
  * substitution separates them, so a quoted value and the text of a
  * substitution stay one word even when they carry a space.
@@ -204,7 +214,7 @@ function* words(command) {
   let word = '';
   let started = false;
   for (const { char, index, quoted } of characters(command)) {
-    if (!quoted && !substitutedAt(ranges, index) && char.trim().length === 0) {
+    if (separatesWords(char, quoted, substitutedAt(ranges, index))) {
       if (started) {
         yield word;
         word = '';
