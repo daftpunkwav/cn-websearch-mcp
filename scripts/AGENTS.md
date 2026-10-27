@@ -50,12 +50,16 @@ The script table lives in [README.md](README.md).
   decision, not in the entry.
 - What it cannot read from the text it rejects rather than accepts: a URL
   assembled in code, a URL that arrives through a variable or a file, a
-  client it does not know, and options in a file. The only residual is a URL
-  that no `://` in the text points at.
-- A URL that stands on its own as an argument is a value the client fetches,
-  so it is only accepted next to a client the gate can check (curl or wget)
-  or next to a program that reads the URL as a value: a package manager, a
-  source tree, or a program that prints it.
+  client it does not know, and options in a file.
+- A URL the text of a command carries is only accepted next to a client the
+  gate can check (curl or wget) or next to the program the command runs, when
+  that program reads the URL as a value: a package manager, a source tree, or
+  a program that prints it. A name behind the program is an argument of that
+  program and exempts nothing.
+- The one residual is a download under a client the gate does not know whose
+  URL the text does not spell out: a client the gate knows has to carry a URL
+  it can read, while a client it does not know gives the gate nothing to
+  reject when the URL arrives through a variable or a file.
 - The gate reads the `run:` key of a step. A `run:` key of another mapping,
   such as an input of an action, holds no command and is not read.
 - `test/check_workflow_hardening.test.ts` covers it, including that the

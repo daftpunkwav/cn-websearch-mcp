@@ -120,6 +120,46 @@ function workflowWithCarriageReturns(workflow: string): string {
   return workflow.replace(/\n/g, '\r\n');
 }
 
+/** A one-step workflow whose run value starts on the line below it. */
+function workflowRunOnNextLine(value: string): string {
+  return ['jobs:', '  a:', '    steps:', '      - run:', `          ${value}`, ''].join('\n');
+}
+
+/**
+ * A two-job workflow whose second steps: key carries a trailing comment. The
+ * first job keeps a plain steps: key, so the file reads as a workflow with a
+ * steps: list in it.
+ */
+function workflowStepsWithComment(command: string): string {
+  return [
+    'jobs:',
+    '  a:',
+    '    steps:',
+    '      - run: npm ci --ignore-scripts',
+    '  b:',
+    '    steps:  # the steps of the job',
+    `      - run: ${command}`,
+    '',
+  ].join('\n');
+}
+
+/** A one-step workflow whose sequence starts at the column of the steps: key. */
+function workflowSequenceAtKeyColumn(command: string): string {
+  return ['jobs:', '  a:', '    steps:', `    - run: ${command}`, ''].join('\n');
+}
+
+/** A one-step workflow whose run value is a quoted scalar over two lines. */
+function workflowQuotedOverTwoLines(first: string, second: string): string {
+  return [
+    'jobs:',
+    '  a:',
+    '    steps:',
+    `      - run: "${first}`,
+    `          ${second}"`,
+    '',
+  ].join('\n');
+}
+
 // Each case is [name, workflow, the message the gate must report].
 const REJECTED: [string, string, string][] = [
   ['a package install that runs lifecycle scripts', workflowWith('npm ci'), '--ignore-scripts'],
@@ -160,6 +200,12 @@ const REJECTED: [string, string, string][] = [
   // a template expression.
   ['a URL whose scheme comes from a variable', workflowWith(['echo "$', '{SCHEME}://example.com/x"'].join('')), 'scheme the gate cannot read'],
   ['a download in a workflow with Windows line endings', workflowWithCarriageReturns(workflowWith('curl -sSf http://example.com/x')), 'other than HTTPS'],
+  ['a download inside a quoted script', workflowWith('sh -c "curl -sSfL https://example.com/x"'), 'client the gate cannot check'],
+  ['a known program behind an unknown program', workflowWith('node fetch.js https://example.com/x vendor/git'), 'client the gate cannot check'],
+  ['a run value that starts on the line below it', workflowRunOnNextLine('npm ci'), '--ignore-scripts'],
+  ['a steps: key with a trailing comment', workflowStepsWithComment('npm ci'), '--ignore-scripts'],
+  ['a sequence at the column of the steps: key', workflowSequenceAtKeyColumn('npm ci'), '--ignore-scripts'],
+  ['a command in a quoted value that spans two lines', workflowQuotedOverTwoLines('npm ci', '&& echo done'), '--ignore-scripts'],
 ];
 
 // Each case is [name, workflow].
@@ -217,6 +263,17 @@ const ACCEPTED: [string, string][] = [
     '        shell: bash',
     '',
   ].join('\n')],
+  ['a run: key of a step that holds a nested mapping', [
+    'jobs:',
+    '  a:',
+    '    steps:',
+    '      - run:',
+    '          shell: bash',
+    '',
+  ].join('\n')],
+  ['a sequence at the column of the steps: key that keeps its protection', workflowSequenceAtKeyColumn('npm ci --ignore-scripts')],
+  ['a steps: key with a trailing comment that keeps its protection', workflowStepsWithComment('npm ci --ignore-scripts')],
+  ['an install behind an environment assignment that keeps its protection', workflowWith('FOO=1 npm ci --ignore-scripts')],
 ];
 
 describe('workflow hardening gate', () => {

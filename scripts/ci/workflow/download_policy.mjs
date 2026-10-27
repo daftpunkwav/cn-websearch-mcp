@@ -13,8 +13,10 @@
  *
  * Constraints:
  * - The download clients the gate knows are curl and wget. A client it does
- *   not know is not a download the gate can check, so a URL that stands on
- *   its own as an argument is only accepted next to a client the gate knows.
+ *   not know is not a download the gate can check, so a URL the text of the
+ *   command carries is only accepted next to a client the gate knows, or next
+ *   to the program the command runs when that program reads the URL as a
+ *   value.
  */
 
 import {
@@ -39,6 +41,10 @@ const KNOWN_PROGRAMS = new Set([
 const HTTPS_ONLY = '=https';
 // The curl options that ask the client to follow a redirect.
 const REDIRECT_OPTIONS = new Set(['--location', '--location-trusted']);
+// The name of an environment variable in an assignment.
+const ENV_ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
+// The opening of a command substitution.
+const COMMAND_SUBSTITUTION = /[$`]\(/;
 
 /** Whether the argument is a short option bundle that carries an 'L'. */
 function isShortBundleWithRedirect(arg) {
@@ -155,13 +161,35 @@ function runsClient(args, names) {
 }
 
 /**
+ * Whether the argument is an environment assignment. An assignment that
+ * carries a command substitution runs a command of its own, so it is not one.
+ */
+function isEnvAssignment(arg) {
+  if (!ENV_ASSIGNMENT.test(arg)) return false;
+  return !COMMAND_SUBSTITUTION.test(arg);
+}
+
+/**
+ * The program a command runs: the first argument that is not an environment
+ * assignment, under the name it runs with. A name behind the program is an
+ * argument of that program and names no program of its own.
+ */
+function programOf(args) {
+  for (const arg of args) {
+    if (isEnvAssignment(arg)) continue;
+    return commandName(arg);
+  }
+  return '';
+}
+
+/**
  * The violation of a download that runs a client the gate does not know, or
- * null when every program in the command is one the gate knows.
+ * null when the program the command runs is one the gate knows.
  */
 export function unknownClientViolation(args) {
   if (runsClient(args, KNOWN_CLIENTS)) return null;
-  if (runsClient(args, KNOWN_PROGRAMS)) return null;
-  if (urlArguments(args).length === 0) return null;
+  if (KNOWN_PROGRAMS.has(programOf(args))) return null;
+  if (!args.some((arg) => urlMarkers(arg).length > 0)) return null;
   return `download with a client the gate cannot check (${args[0]}): use curl or wget`;
 }
 

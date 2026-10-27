@@ -22,6 +22,8 @@
  * - The keys of a step sit at the column where the item of the steps: list
  *   starts. A run: key deeper than that belongs to a nested mapping, such as
  *   the inputs of an action, and holds no command.
+ * - A run: key with no value of its own holds a nested mapping when the line
+ *   below it starts one, and a plain scalar otherwise.
  */
 
 import { argumentsOf, splitCommands, stripComment } from './shell_line.mjs';
@@ -63,13 +65,32 @@ function listItemOf(line) {
 }
 
 /**
+ * Whether the line starts a mapping key: a name, a colon, and nothing but
+ * whitespace behind the colon.
+ */
+function startsMappingKey(line) {
+  return line !== null && /^\s*[\w.-]+:(\s|$)/.test(line.text);
+}
+
+/**
+ * The next line that carries content, or null when no line follows.
+ */
+function nextContentLine(lines, index) {
+  for (let next = index + 1; next < lines.length; next += 1) {
+    if (lines[next].text.trim() !== '') return lines[next];
+  }
+  return null;
+}
+
+/**
  * Whether the line holds the run: key of a step. A key with no value holds a
- * nested mapping, a key outside the steps: list of a job belongs to another
+ * nested mapping when the line below it starts one, and a plain scalar
+ * otherwise. A key outside the steps: list of a job belongs to another
  * mapping, and a key deeper than the keys of its item belongs to a nested
  * mapping of the step.
  */
-function isStepRunKey(context, key) {
-  if (key.value.trim() === '') return false;
+function isStepRunKey(context, key, nextContent) {
+  if (key.value.trim() === '' && startsMappingKey(nextContent)) return false;
   if (context.stepsColumn === null && context.hasSteps) return false;
   if (context.itemColumn === null) return true;
   return context.itemColumn === key.column;
@@ -177,8 +198,8 @@ function readRunScalar(lines, index, key) {
     };
   }
   const continuation = valueLines(lines, index, key.column);
-  const parts = [unquoteValue(value), ...continuation.content.map((entry) => entry.text.trim())];
-  const text = parts.filter((part) => part !== '').join(' ');
+  const parts = [value, ...continuation.content.map((entry) => entry.text.trim())];
+  const text = unquoteValue(parts.filter((part) => part !== '').join(' '));
   return { lines: [{ text, number: lines[index].number }], end: continuation.end };
 }
 
@@ -191,26 +212,30 @@ function workflowContext(lines) {
     stepsColumn: null,
     itemColumn: null,
     marker: null,
-    hasSteps: lines.some((line) => line.text.trim() === 'steps:'),
+    hasSteps: lines.some((line) => stripComment(line.text).trim() === 'steps:'),
   };
 }
 
 /**
  * The place of a line after it has been read: a line left of the steps: list
- * ends the list, and a line left of the item ends the item.
+ * ends the list, and a line left of the item ends the item. A sequence may
+ * start at the column of the key it belongs to, so a line at that column
+ * ends the list only when it starts no item.
  */
 function contextOfLine(line, context) {
   if (line.text.trim() === '') return context;
   const width = indentWidth(line.text);
-  if (context.stepsColumn !== null && width <= context.stepsColumn) {
-    context.stepsColumn = null;
+  const item = listItemOf(line);
+  if (context.stepsColumn !== null) {
+    const leaves = width < context.stepsColumn
+      || (width === context.stepsColumn && item === null);
+    if (leaves) context.stepsColumn = null;
   }
   if (context.marker !== null && width < context.marker) {
     context.marker = null;
     context.itemColumn = null;
   }
-  if (line.text.trim() === 'steps:') context.stepsColumn = width;
-  const item = listItemOf(line);
+  if (stripComment(line.text).trim() === 'steps:') context.stepsColumn = width;
   if (item) {
     context.marker = item.marker;
     context.itemColumn = item.content;
@@ -232,7 +257,7 @@ function runScalars(lines) {
     const line = lines[index];
     const key = runKeyOf(line);
     const place = contextOfLine(line, context);
-    if (!key || !isStepRunKey(place, key)) {
+    if (!key || !isStepRunKey(place, key, nextContentLine(lines, index))) {
       index += 1;
       continue;
     }
