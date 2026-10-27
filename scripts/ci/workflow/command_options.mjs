@@ -17,8 +17,10 @@
  *   can read, and a scheme the gate cannot read is not a scheme at all.
  */
 
-/** Whether a character may hold in a URL scheme, per RFC 3986. */
-const SCHEME_CHARACTER = /[A-Za-z0-9+.-]/;
+/** The characters that may hold in a URL scheme, per RFC 3986. */
+const SCHEME_CHARACTERS = new Set(
+  'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+.-',
+);
 
 /**
  * The command word of an argument: the word between the brackets of a command
@@ -50,7 +52,7 @@ export function commandName(arg) {
  */
 function schemeBefore(arg, at) {
   let start = at;
-  while (start > 0 && SCHEME_CHARACTER.test(arg[start - 1])) start -= 1;
+  while (start > 0 && SCHEME_CHARACTERS.has(arg[start - 1])) start -= 1;
   if (start === at) return '';
   return arg.slice(start, at).toLowerCase();
 }
