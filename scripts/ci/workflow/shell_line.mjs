@@ -59,20 +59,14 @@ export function* characters(text) {
   for (let index = 0; index < text.length; index += 1) {
     const char = text[index];
     if (isEscape(text, index, quote)) {
-      yield {
-        char, index, quoted: true, quote, escaped: true,
-      };
+      yield { char, index, quoted: true };
       index += 1;
-      yield {
-        char: text[index], index, quoted: true, quote, escaped: true,
-      };
+      yield { char: text[index], index, quoted: true };
       continue;
     }
     const state = quoting(quote, char);
     quote = state.quote;
-    yield {
-      char, index, quoted: state.quoted, quote, escaped: false,
-    };
+    yield { char, index, quoted: state.quoted };
   }
 }
 
@@ -115,11 +109,14 @@ export function unquote(arg) {
 }
 
 /**
- * Whether the character sits in text the shell holds as it is written: an
- * escaped character and a single-quoted value are both literal.
+ * The quote that is open after the character: a quote opens a value and its
+ * closing quote ends it. A single-quoted value holds every character as it
+ * is written, so nothing in it is expanded.
  */
-function isLiteral(quote, escaped) {
-  return escaped || quote === "'";
+function quoteAfter(quote, char) {
+  if (quote === "'") return char === "'" ? '' : "'";
+  if (quote === '"') return char === '"' ? '' : '"';
+  return char === '"' || char === "'" ? char : '';
 }
 
 /** Whether the character opens a command substitution. */
@@ -127,9 +124,40 @@ function opensSubstitution(char, text, index) {
   return char === '$' && text[index + 1] === '(';
 }
 
-/** Whether the character closes a command substitution. */
-function closesSubstitution(char, depth) {
-  return char === ')' && depth > 0;
+/**
+ * The index of the parenthesis that closes the command substitution that
+ * opens at the given index, or -1 when the text holds no closing
+ * parenthesis. The text of a substitution is read on its own, because the
+ * quoting inside it belongs to it and not to the text around it.
+ */
+function closingSubstitution(text, start) {
+  let quote = '';
+  let depth = 1;
+  for (let index = start; index < text.length; index += 1) {
+    const char = text[index];
+    if (isEscape(text, index, quote)) {
+      index += 1;
+      continue;
+    }
+    const literal = quote === "'";
+    quote = quoteAfter(quote, char);
+    if (literal) continue;
+    if (opensSubstitution(char, text, index)) {
+      const close = closingSubstitution(text, index + 2);
+      if (close === -1) return -1;
+      index = close;
+      continue;
+    }
+    if (char === '(') {
+      depth += 1;
+      continue;
+    }
+    if (char === ')') {
+      depth -= 1;
+      if (depth === 0) return index;
+    }
+  }
+  return -1;
 }
 
 /**
@@ -138,20 +166,24 @@ function closesSubstitution(char, depth) {
  */
 function parenthesisRanges(text) {
   const ranges = [];
-  let depth = 0;
-  let start = 0;
-  for (const {
-    char, index, quote, escaped,
-  } of characters(text)) {
-    if (isLiteral(quote, escaped)) continue;
-    if (opensSubstitution(char, text, index)) {
-      if (depth === 0) start = index + 2;
-      depth += 1;
+  let quote = '';
+  let index = 0;
+  while (index < text.length) {
+    if (isEscape(text, index, quote)) {
+      index += 2;
       continue;
     }
-    if (!closesSubstitution(char, depth)) continue;
-    depth -= 1;
-    if (depth === 0) ranges.push({ start, end: index });
+    const char = text[index];
+    const literal = quote === "'";
+    quote = quoteAfter(quote, char);
+    if (literal || !opensSubstitution(char, text, index)) {
+      index += 1;
+      continue;
+    }
+    const close = closingSubstitution(text, index + 2);
+    if (close === -1) break;
+    ranges.push({ start: index + 2, end: close });
+    index = close + 1;
   }
   return ranges;
 }
@@ -162,12 +194,17 @@ function parenthesisRanges(text) {
  */
 function backquoteRanges(text) {
   const ranges = [];
+  let quote = '';
   let open = -1;
-  for (const {
-    char, index, quote, escaped,
-  } of characters(text)) {
-    if (isLiteral(quote, escaped)) continue;
-    if (char !== '`') continue;
+  for (let index = 0; index < text.length; index += 1) {
+    if (isEscape(text, index, quote)) {
+      index += 1;
+      continue;
+    }
+    const char = text[index];
+    const literal = quote === "'";
+    quote = quoteAfter(quote, char);
+    if (literal || char !== '`') continue;
     if (open === -1) {
       open = index;
       continue;
