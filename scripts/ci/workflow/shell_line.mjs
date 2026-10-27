@@ -169,7 +169,7 @@ function substitutionRanges(text) {
 /**
  * The words of a command: whitespace outside quotes and outside a command
  * substitution separates them, so a quoted value and the text of a
- * substitution stay one word even  when they carry a space.
+ * substitution stay one word even when they carry a space.
  */
 function* words(command) {
   const ranges = substitutionRanges(command);
