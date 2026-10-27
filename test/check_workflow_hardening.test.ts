@@ -213,6 +213,7 @@ const REJECTED: [string, string, string][] = [
   ['a steps: key with a trailing comment', workflowStepsWithComment('npm ci'), '--ignore-scripts'],
   ['a sequence at the column of the steps: key', workflowSequenceAtKeyColumn('npm ci'), '--ignore-scripts'],
   ['a command in a quoted value that spans two lines', workflowQuotedOverTwoLines('npm ci', '&& echo done'), '--ignore-scripts'],
+  ['a client behind an unknown program', workflowWith("node fetch.js https://example.com/x curl --proto '=https' --tlsv1.2"), 'client the gate cannot check'],
 ];
 
 // Each case is [name, workflow].

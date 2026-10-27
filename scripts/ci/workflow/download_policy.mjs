@@ -155,11 +155,6 @@ export function wgetViolation(args) {
   return null;
 }
 
-/** Whether the command runs one of the given clients. */
-function runsClient(args, names) {
-  return args.some((arg) => names.has(commandName(arg)));
-}
-
 /**
  * Whether the argument is an environment assignment. An assignment that
  * carries a command substitution runs a command of its own, so it is not one.
@@ -187,16 +182,18 @@ function programOf(args) {
  * null when the program the command runs is one the gate knows.
  */
 export function unknownClientViolation(args) {
-  if (runsClient(args, KNOWN_CLIENTS)) return null;
-  if (KNOWN_PROGRAMS.has(programOf(args))) return null;
+  const program = programOf(args);
+  if (KNOWN_CLIENTS.has(program)) return null;
+  if (KNOWN_PROGRAMS.has(program)) return null;
   if (!args.some((arg) => urlMarkers(arg).length > 0)) return null;
   return `download with a client the gate cannot check (${args[0]}): use curl or wget`;
 }
 
 /** The violation of a download, or null when it keeps its protections. */
 export function downloadViolation(args) {
-  if (runsClient(args, CURL_NAMES)) return curlViolation(args);
-  if (runsClient(args, WGET_NAMES)) return wgetViolation(args);
+  const program = programOf(args);
+  if (CURL_NAMES.has(program)) return curlViolation(args);
+  if (WGET_NAMES.has(program)) return wgetViolation(args);
   return unknownClientViolation(args);
 }
 
