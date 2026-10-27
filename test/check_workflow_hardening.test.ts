@@ -120,9 +120,16 @@ function workflowWithCarriageReturns(workflow: string): string {
   return workflow.replace(/\n/g, '\r\n');
 }
 
-/** A one-step workflow whose run value starts on the line below it. */
-function workflowRunOnNextLine(value: string): string {
-  return ['jobs:', '  a:', '    steps:', '      - run:', `          ${value}`, ''].join('\n');
+/** A one-step workflow whose run value holds the given lines below an empty key. */
+function workflowEmptyRunValue(lines: string[]): string {
+  return [
+    'jobs:',
+    '  a:',
+    '    steps:',
+    '      - run:',
+    ...lines.map((line) => `          ${line}`),
+    '',
+  ].join('\n');
 }
 
 /**
@@ -202,7 +209,7 @@ const REJECTED: [string, string, string][] = [
   ['a download in a workflow with Windows line endings', workflowWithCarriageReturns(workflowWith('curl -sSf http://example.com/x')), 'other than HTTPS'],
   ['a download inside a quoted script', workflowWith('sh -c "curl -sSfL https://example.com/x"'), 'client the gate cannot check'],
   ['a known program behind an unknown program', workflowWith('node fetch.js https://example.com/x vendor/git'), 'client the gate cannot check'],
-  ['a run value that starts on the line below it', workflowRunOnNextLine('npm ci'), '--ignore-scripts'],
+  ['a run value that starts on the line below it', workflowEmptyRunValue(['npm ci']), '--ignore-scripts'],
   ['a steps: key with a trailing comment', workflowStepsWithComment('npm ci'), '--ignore-scripts'],
   ['a sequence at the column of the steps: key', workflowSequenceAtKeyColumn('npm ci'), '--ignore-scripts'],
   ['a command in a quoted value that spans two lines', workflowQuotedOverTwoLines('npm ci', '&& echo done'), '--ignore-scripts'],
@@ -263,38 +270,10 @@ const ACCEPTED: [string, string][] = [
     '        shell: bash',
     '',
   ].join('\n')],
-  ['a run: key of a step that holds a nested mapping', [
-    'jobs:',
-    '  a:',
-    '    steps:',
-    '      - run:',
-    '          shell: bash',
-    '',
-  ].join('\n')],
-  ['a run: key of a step that holds a nested mapping with a quoted key', [
-    'jobs:',
-    '  a:',
-    '    steps:',
-    '      - run:',
-    '          "shell": bash',
-    '',
-  ].join('\n')],
-  ['a run: key of a step that holds a sequence', [
-    'jobs:',
-    '  a:',
-    '    steps:',
-    '      - run:',
-    '          - echo hi',
-    '',
-  ].join('\n')],
-  ['a run: key of a step whose next line is a mapping key with a colon in it', [
-    'jobs:',
-    '  a:',
-    '    steps:',
-    '      - run:',
-    '          echo hello: world',
-    '',
-  ].join('\n')],
+  ['a run: key of a step that holds a nested mapping', workflowEmptyRunValue(['shell: bash'])],
+  ['a run: key of a step that holds a nested mapping with a quoted key', workflowEmptyRunValue(['"shell": bash'])],
+  ['a run: key of a step that holds a sequence', workflowEmptyRunValue(['- echo hi'])],
+  ['a run: key of a step whose next line is a mapping key with a colon in it', workflowEmptyRunValue(['echo hello: world'])],
   ['a sequence at the column of the steps: key that keeps its protection', workflowSequenceAtKeyColumn('npm ci --ignore-scripts')],
   ['a steps: key with a trailing comment that keeps its protection', workflowStepsWithComment('npm ci --ignore-scripts')],
   ['an install behind an environment assignment that keeps its protection', workflowWith('FOO=1 npm ci --ignore-scripts')],

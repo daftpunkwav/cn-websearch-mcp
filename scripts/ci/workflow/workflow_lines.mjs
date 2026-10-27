@@ -237,6 +237,16 @@ function workflowContext(lines) {
 }
 
 /**
+ * Whether the line leaves the steps: list: it is left of the list, or it sits
+ * at the column of the list and starts no item.
+ */
+function leavesStepsList(context, width, item) {
+  if (context.stepsColumn === null) return false;
+  if (width < context.stepsColumn) return true;
+  return width === context.stepsColumn && item === null;
+}
+
+/**
  * The place of a line after it has been read: a line left of the steps: list
  * ends the list, and a line left of the item ends the item. A sequence may
  * start at the column of the key it belongs to, so a line at that column
@@ -246,11 +256,7 @@ function contextOfLine(line, context) {
   if (line.text.trim() === '') return context;
   const width = indentWidth(line.text);
   const item = listItemOf(line);
-  if (context.stepsColumn !== null) {
-    const leaves = width < context.stepsColumn
-      || (width === context.stepsColumn && item === null);
-    if (leaves) context.stepsColumn = null;
-  }
+  if (leavesStepsList(context, width, item)) context.stepsColumn = null;
   if (context.marker !== null && width < context.marker) {
     context.marker = null;
     context.itemColumn = null;
