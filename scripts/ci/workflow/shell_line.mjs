@@ -36,6 +36,17 @@ function quoting(quote, char) {
 }
 
 /**
+ * Whether the character at the index escapes the character behind it. A
+ * backslash inside single quotes is a backslash, and a backslash at the end
+ * of the text escapes nothing.
+ */
+function isEscape(text, index, quote) {
+  if (text[index] !== '\\') return false;
+  if (quote === "'") return false;
+  return index + 1 < text.length;
+}
+
+/**
  * Every character of the text, with the quoting it sits in: a character
  * inside a quoted value is marked, so that a separator or a comment inside
  * a value is not mistaken for one. An escaped character is marked as well,
@@ -47,7 +58,7 @@ export function* characters(text) {
   let quote = '';
   for (let index = 0; index < text.length; index += 1) {
     const char = text[index];
-    if (char === '\\' && quote !== "'" && index + 1 < text.length) {
+    if (isEscape(text, index, quote)) {
       yield {
         char, index, quoted: true, quote, escaped: true,
       };
