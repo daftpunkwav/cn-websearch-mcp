@@ -212,7 +212,8 @@ function substitutionTexts(text) {
 
 /**
  * The commands the command substitutions of a text run: the text between the
- * brackets of every substitution, read as the commands it runs.
+ * brackets of every substitution, read as the commands it runs. A
+ * substitution inside a substitution runs a command of its own too.
  */
 export function substitutedCommands(text) {
   const commands = [];
@@ -221,6 +222,7 @@ export function substitutedCommands(text) {
       const args = argumentsOf(part);
       if (args.length > 0) commands.push(args);
     }
+    commands.push(...substitutedCommands(inner));
   }
   return commands;
 }

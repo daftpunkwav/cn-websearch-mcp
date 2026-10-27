@@ -218,6 +218,7 @@ const REJECTED: [string, string, string][] = [
   ['a command behind a comment that carries a colon', workflowEmptyRunValue(['# note: this installs', 'npm ci']), '--ignore-scripts'],
   ['a curl inside a command substitution of a known program', workflowWith('echo "$(curl -sSfL https://example.com/x)"'), "--proto '=https'"],
   ['an install inside a command substitution of a known program', workflowWith('echo "$(npm ci)"'), '--ignore-scripts'],
+  ['a curl inside a nested command substitution', workflowWith('echo "$(echo $(curl -sSfL https://example.com/x))"'), "--proto '=https'"],
 ];
 
 // Each case is [name, workflow].
