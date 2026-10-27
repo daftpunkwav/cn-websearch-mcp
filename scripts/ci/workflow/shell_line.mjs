@@ -38,15 +38,30 @@ function quoting(quote, char) {
 /**
  * Every character of the text, with the quoting it sits in: a character
  * inside a quoted value is marked, so that a separator or a comment inside
- * a value is not mistaken for one.
+ * a value is not mistaken for one. An escaped character is marked as well,
+ * because a backslash holds the character behind it as it is written. The
+ * quote that is open after the character comes with it, so that a reader can
+ * tell a single-quoted value from a double-quoted one.
  */
 export function* characters(text) {
   let quote = '';
   for (let index = 0; index < text.length; index += 1) {
     const char = text[index];
+    if (char === '\\' && quote !== "'" && index + 1 < text.length) {
+      yield {
+        char, index, quoted: true, quote, escaped: true,
+      };
+      index += 1;
+      yield {
+        char: text[index], index, quoted: true, quote, escaped: true,
+      };
+      continue;
+    }
     const state = quoting(quote, char);
     quote = state.quote;
-    yield { char, index, quoted: state.quoted };
+    yield {
+      char, index, quoted: state.quoted, quote, escaped: false,
+    };
   }
 }
 
@@ -89,14 +104,79 @@ export function unquote(arg) {
 }
 
 /**
- * The words of a command: whitespace outside quotes separates them, so a
- * quoted value stays one word even when it carries a space.
+ * The ranges of the substitutions that sit between parentheses: the text
+ * between the brackets of every `$(...)`.
+ */
+function parenthesisRanges(text) {
+  const ranges = [];
+  let depth = 0;
+  let start = 0;
+  for (const {
+    char, index, quote, escaped,
+  } of characters(text)) {
+    if (escaped || quote === "'") continue;
+    if (char === '$' && text[index + 1] === '(') {
+      if (depth === 0) start = index + 2;
+      depth += 1;
+      continue;
+    }
+    if (char === ')' && depth > 0) {
+      depth -= 1;
+      if (depth === 0) ranges.push({ start, end: index });
+    }
+  }
+  return ranges;
+}
+
+/**
+ * The ranges of the substitutions that sit between backquotes: the text
+ * between the backquotes of every backquoted command.
+ */
+function backquoteRanges(text) {
+  const ranges = [];
+  let open = -1;
+  for (const {
+    char, index, quote, escaped,
+  } of characters(text)) {
+    if (escaped || quote === "'") continue;
+    if (char !== '`') continue;
+    if (open === -1) {
+      open = index;
+      continue;
+    }
+    ranges.push({ start: open + 1, end: index });
+    open = -1;
+  }
+  return ranges;
+}
+
+/** Whether the character at the index sits inside a command substitution. */
+function substitutedAt(ranges, index) {
+  return ranges.some((range) => index > range.start && index < range.end);
+}
+
+/**
+ * The ranges of the command substitutions of a text: the text between the
+ * brackets of every substitution, with the index it starts at and the index
+ * it ends at. A substitution inside single quotes is text, because single
+ * quotes hold every character as it is written; a substitution inside double
+ * quotes is one, because double quotes still expand it.
+ */
+function substitutionRanges(text) {
+  return [...parenthesisRanges(text), ...backquoteRanges(text)];
+}
+
+/**
+ * The words of a command: whitespace outside quotes and outside a command
+ * substitution separates them, so a quoted value and the text of a
+ * substitution stay one word even  when they carry a space.
  */
 function* words(command) {
+  const ranges = substitutionRanges(command);
   let word = '';
   let started = false;
-  for (const { char, quoted } of characters(command)) {
-    if (!quoted && char.trim().length === 0) {
+  for (const { char, index, quoted } of characters(command)) {
+    if (!quoted && !substitutedAt(ranges, index) && char.trim().length === 0) {
       if (started) {
         yield word;
         word = '';
@@ -147,77 +227,14 @@ export function splitCommands(text) {
 }
 
 /**
- * The index of the parenthesis that closes the one that opens at the given
- * index, or -1 when the text holds no closing parenthesis.
- */
-function closingParenthesis(text, start) {
-  let depth = 1;
-  let quote = '';
-  for (let index = start; index < text.length; index += 1) {
-    const char = text[index];
-    if (quote !== '') {
-      if (char === quote) quote = '';
-      continue;
-    }
-    if (QUOTE_CHARACTERS.has(char)) {
-      quote = char;
-      continue;
-    }
-    if (char === '(') depth += 1;
-    if (char === ')') {
-      depth -= 1;
-      if (depth === 0) return index;
-    }
-  }
-  return -1;
-}
-
-/**
- * The texts between the brackets of the command substitutions of a text. A
- * substitution inside single quotes is text, because single quotes hold every
- * character as it is written; a substitution inside double quotes is one,
- * because double quotes still expand it.
- */
-function substitutionTexts(text) {
-  const texts = [];
-  let quote = '';
-  for (let index = 0; index < text.length; index += 1) {
-    const char = text[index];
-    if (quote !== '') {
-      if (char === quote) {
-        quote = '';
-        continue;
-      }
-      if (quote === "'") continue;
-    } else if (QUOTE_CHARACTERS.has(char)) {
-      quote = char;
-      continue;
-    }
-    if (char === '`') {
-      const close = text.indexOf('`', index + 1);
-      if (close === -1) break;
-      texts.push(text.slice(index + 1, close));
-      index = close;
-      continue;
-    }
-    if (char === '$' && text[index + 1] === '(') {
-      const close = closingParenthesis(text, index + 2);
-      if (close === -1) break;
-      texts.push(text.slice(index + 2, close));
-      index = close;
-    }
-  }
-  return texts;
-}
-
-/**
  * The commands the command substitutions of a text run: the text between the
  * brackets of every substitution, read as the commands it runs. A
  * substitution inside a substitution runs a command of its own too.
  */
 export function substitutedCommands(text) {
   const commands = [];
-  for (const inner of substitutionTexts(text)) {
+  for (const range of substitutionRanges(text)) {
+    const inner = text.slice(range.start, range.end);
     for (const part of splitCommands(inner)) {
       const args = argumentsOf(part);
       if (args.length > 0) commands.push(args);

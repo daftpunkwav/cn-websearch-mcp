@@ -43,8 +43,6 @@ const HTTPS_ONLY = '=https';
 const REDIRECT_OPTIONS = new Set(['--location', '--location-trusted']);
 // The name of an environment variable in an assignment.
 const ENV_ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
-// The opening of a command substitution.
-const COMMAND_SUBSTITUTION = /[$`]\(/;
 
 /** Whether the argument is a short option bundle that carries an 'L'. */
 function isShortBundleWithRedirect(arg) {
@@ -166,15 +164,12 @@ function isEnvAssignment(arg) {
  * The program a command runs: the first argument that is not an environment
  * assignment, under the name it runs with. A name behind the program is an
  * argument of that program and names no program of its own. An assignment
- * runs no program of its own: a command substitution in its value runs a
- * command, and that command is a command of its own.
+ * runs no program of its own, and a command substitution in its value runs a
+ * command, which is a command of its own.
  */
 function programOf(args) {
   for (const arg of args) {
-    if (isEnvAssignment(arg)) {
-      if (COMMAND_SUBSTITUTION.test(arg)) return '';
-      continue;
-    }
+    if (isEnvAssignment(arg)) continue;
     return commandName(arg);
   }
   return '';
