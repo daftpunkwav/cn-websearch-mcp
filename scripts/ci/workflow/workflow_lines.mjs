@@ -22,11 +22,13 @@
  * - The keys of a step sit at the column where the item of the steps: list
  *   starts. A run: key deeper than that belongs to a nested mapping, such as
  *   the inputs of an action, and holds no command.
- * - A run: key with no value of its own holds a nested mapping when the line
- *   below it starts one, and a plain scalar otherwise.
+ * - A run: key with no value of its own holds a nested mapping or a sequence
+ *   when the line below it starts one, and a plain scalar otherwise.
  */
 
-import { argumentsOf, splitCommands, stripComment } from './shell_line.mjs';
+import {
+  argumentsOf, characters, splitCommands, stripComment,
+} from './shell_line.mjs';
 
 // The indicator of a YAML block scalar: `|` keeps the lines, `>` folds them.
 const BLOCK_INDICATOR = /^[|>][0-9+-]*$/;
@@ -65,11 +67,29 @@ function listItemOf(line) {
 }
 
 /**
- * Whether the line starts a mapping key: a name, a colon, and nothing but
- * whitespace behind the colon.
+ * Whether the line starts a mapping key: a colon outside quotes that is
+ * followed by whitespace or by the end of the line. A plain scalar cannot
+ * carry such a colon, so a line that holds one is a key and its value.
  */
 function startsMappingKey(line) {
-  return line !== null && /^\s*[\w.-]+:(\s|$)/.test(line.text);
+  if (line === null) return false;
+  for (const { char, index, quoted } of characters(line.text)) {
+    if (quoted || char !== ':') continue;
+    const next = line.text[index + 1];
+    if (next === undefined || next.trim() === '') return true;
+  }
+  return false;
+}
+
+/**
+ * Whether the line below a key with no value holds a plain scalar: it starts
+ * no mapping key and no sequence item. A line that starts neither is a value
+ * of its own kind, and the key holds a mapping or a sequence then.
+ */
+function holdsPlainScalar(line) {
+  if (line === null) return false;
+  if (startsMappingKey(line)) return false;
+  return listItemOf(line) === null;
 }
 
 /**
@@ -84,13 +104,13 @@ function nextContentLine(lines, index) {
 
 /**
  * Whether the line holds the run: key of a step. A key with no value holds a
- * nested mapping when the line below it starts one, and a plain scalar
- * otherwise. A key outside the steps: list of a job belongs to another
+ * nested mapping or a sequence when the line below it starts one, and a plain
+ * scalar otherwise. A key outside the steps: list of a job belongs to another
  * mapping, and a key deeper than the keys of its item belongs to a nested
  * mapping of the step.
  */
 function isStepRunKey(context, key, nextContent) {
-  if (key.value.trim() === '' && startsMappingKey(nextContent)) return false;
+  if (key.value.trim() === '' && !holdsPlainScalar(nextContent)) return false;
   if (context.stepsColumn === null && context.hasSteps) return false;
   if (context.itemColumn === null) return true;
   return context.itemColumn === key.column;
