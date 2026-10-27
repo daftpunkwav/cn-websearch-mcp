@@ -59,20 +59,14 @@ export function* characters(text) {
   for (let index = 0; index < text.length; index += 1) {
     const char = text[index];
     if (isEscape(text, index, quote)) {
-      yield {
-        char, index, quoted: true, quote, escaped: true,
-      };
+      yield { char, index, quoted: true };
       index += 1;
-      yield {
-        char: text[index], index, quoted: true, quote, escaped: true,
-      };
+      yield { char: text[index], index, quoted: true };
       continue;
     }
     const state = quoting(quote, char);
     quote = state.quote;
-    yield {
-      char, index, quoted: state.quoted, quote, escaped: false,
-    };
+    yield { char, index, quoted: state.quoted };
   }
 }
 
@@ -114,6 +108,17 @@ export function unquote(arg) {
   return arg.slice(1, -1);
 }
 
+/**
+ * The quote that is open after the character: a quote opens a value and its
+ * closing quote ends it. A single-quoted value holds every character as it
+ * is written, so nothing in it is expanded.
+ */
+function quoteAfter(quote, char) {
+  if (quote === "'") return char === "'" ? '' : "'";
+  if (quote === '"') return char === '"' ? '' : '"';
+  return char === '"' || char === "'" ? char : '';
+}
+
 /** Whether the character opens a command substitution. */
 function opensSubstitution(char, text, index) {
   return char === '$' && text[index + 1] === '(';
@@ -141,41 +146,49 @@ function closingSubstitution(text, start) {
 }
 
 /**
- * The ranges of the substitutions that sit between parentheses: the text
- * between the brackets of every `$(...)`.
+ * The range of the substitution that starts at the given index, or null when
+ * no substitution starts there.
  */
-function parenthesisRanges(text) {
-  const ranges = [];
-  for (const {
-    char, index, quote, escaped,
-  } of characters(text)) {
-    if (escaped || quote === "'") continue;
-    if (!opensSubstitution(char, text, index)) continue;
+function substitutionAt(text, index, char) {
+  if (opensSubstitution(char, text, index)) {
     const close = closingSubstitution(text, index + 2);
-    if (close === -1) break;
-    ranges.push({ start: index + 2, end: close });
+    return close === -1 ? null : { start: index + 2, end: close };
   }
-  return ranges;
+  if (char !== '`') return null;
+  const close = text.indexOf('`', index + 1);
+  return close === -1 ? null : { start: index + 1, end: close };
 }
 
 /**
- * The ranges of the substitutions that sit between backquotes: the text
- * between the backquotes of every backquoted command.
+ * The ranges of the command substitutions of a text: the text between the
+ * brackets of every `$(...)` and between the backquotes of every backquoted
+ * command. The text of a substitution is read on its own, so a nested
+ * substitution is read with the quote state that begins inside the one that
+ * holds it.
  */
-function backquoteRanges(text) {
+function substitutionRanges(text) {
   const ranges = [];
-  let open = -1;
-  for (const {
-    char, index, quote, escaped,
-  } of characters(text)) {
-    if (escaped || quote === "'") continue;
-    if (char !== '`') continue;
-    if (open === -1) {
-      open = index;
+  let quote = '';
+  let index = 0;
+  while (index < text.length) {
+    if (isEscape(text, index, quote)) {
+      index += 2;
       continue;
     }
-    ranges.push({ start: open + 1, end: index });
-    open = -1;
+    const char = text[index];
+    const literal = quote === "'";
+    quote = quoteAfter(quote, char);
+    if (literal) {
+      index += 1;
+      continue;
+    }
+    const range = substitutionAt(text, index, char);
+    if (range === null) {
+      index += 1;
+      continue;
+    }
+    ranges.push(range);
+    index = range.end + 1;
   }
   return ranges;
 }
@@ -183,17 +196,6 @@ function backquoteRanges(text) {
 /** Whether the character at the index sits inside a command substitution. */
 function substitutedAt(ranges, index) {
   return ranges.some((range) => index > range.start && index < range.end);
-}
-
-/**
- * The ranges of the command substitutions of a text: the text between the
- * brackets of every substitution, with the index it starts at and the index
- * it ends at. A substitution inside single quotes is text, because single
- * quotes hold every character as it is written; a substitution inside double
- * quotes is one, because double quotes still expand it.
- */
-function substitutionRanges(text) {
-  return [...parenthesisRanges(text), ...backquoteRanges(text)];
 }
 
 /**
@@ -279,6 +281,7 @@ export function substitutedCommands(text) {
       const args = argumentsOf(part);
       if (args.length > 0) commands.push(args);
     }
+    commands.push(...substitutedCommands(inner));
   }
   return commands;
 }

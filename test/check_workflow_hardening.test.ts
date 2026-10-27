@@ -223,6 +223,8 @@ const REJECTED: [string, string, string][] = [
   ['a client after an escaped parenthesis in a substitution', workflowWith('echo "$(printf \\) ; curl -sSfL https://example.com/x)"'), "--proto '=https'"],
   ['a client after a quoted parenthesis in a substitution', workflowWith("echo \"$(printf ')' ; curl -sSfL https://example.com/x)\""), "--proto '=https'"],
   ['a client after a group in a substitution', workflowWith('echo "$( (printf ok) ; curl -sSfL https://example.com/x)"'), "--proto '=https'"],
+  ['an install inside a nested substitution', workflowWith('echo "$(echo "$(npm ci)")"'), '--ignore-scripts'],
+  ['an install inside a nested backquote', workflowWith('echo "$(echo "`npm ci`")"'), '--ignore-scripts'],
 ];
 
 // Each case is [name, workflow].
@@ -291,6 +293,8 @@ const ACCEPTED: [string, string][] = [
   ['a curl inside a command substitution that keeps its protection', workflowWith('echo "$(curl -sSfL --proto \'=https\' --proto-redir \'=https\' --tlsv1.2 https://example.com/x)"')],
   ['a client after an escaped parenthesis that keeps its protection', workflowWith("echo \"$(printf \\) ; curl -sSfL --proto '=https' --proto-redir '=https' --tlsv1.2 https://example.com/x)\"")],
   ['a client after a quoted parenthesis that keeps its protection', workflowWith("echo \"$(printf ')' ; curl -sSfL --proto '=https' --proto-redir '=https' --tlsv1.2 https://example.com/x)\"")],
+  ['a nested substitution that is only text', workflowWith("echo \"$(printf '$(npm ci)')\"")],
+  ['a nested backquote that is only text', workflowWith("echo \"$(printf '`npm ci`')\"")],
 ];
 
 describe('workflow hardening gate', () => {
