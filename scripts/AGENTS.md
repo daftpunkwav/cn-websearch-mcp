@@ -40,16 +40,24 @@ The script table lives in [README.md](README.md).
 - CI gate over `.github/workflows/`: a package install must run with
   `--ignore-scripts`, and a download must use HTTPS and must not follow a
   redirect out of HTTPS.
-- The check is text-based. The repository has no YAML parser in its toolchain,
-  and a workflow line is where these flags live.
+- The gate reads the `run:` scalar of every step as YAML, and reads the shell
+  in it as the commands it runs. The repository has no YAML parser in its
+  toolchain, so the reader covers the shapes a step takes and nothing more.
 - The gate reads a workflow file through the modules under `ci/workflow/`, one
   responsibility each: the shell text, the workflow lines, the command options,
   the install policy, the download policy, and the reading of the files. A
   rule that does not fit its module belongs in the module that owns the
   decision, not in the entry.
 - What it cannot read from the text it rejects rather than accepts: a URL
-  assembled in code, a client it does not know, options in a file. The rest
-  of the gap is tracked in [#39](https://github.com/daftpunkwav/cn-websearch-mcp/issues/39).
+  assembled in code, a URL that arrives through a variable or a file, a
+  client it does not know, and options in a file. The only residual is a URL
+  that no `://` in the text points at.
+- A URL that stands on its own as an argument is a value the client fetches,
+  so it is only accepted next to a client the gate can check (curl or wget)
+  or next to a program that reads the URL as a value: a package manager, a
+  source tree, or a program that prints it.
+- The gate reads the `run:` key of a step. A `run:` key of another mapping,
+  such as an input of an action, holds no command and is not read.
 - `test/check_workflow_hardening.test.ts` covers it, including that the
   workflow still runs the gate.
 - A workflow that needs a different protection changes this checker on

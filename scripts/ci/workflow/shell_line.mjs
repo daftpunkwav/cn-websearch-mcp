@@ -11,6 +11,9 @@
  * Constraints:
  * - This module reads text only. It knows nothing about workflow files and
  *   nothing about the policy that is applied to a command.
+ * - A quoted value is one argument, even when it carries a space. A value
+ *   that is quoted is a value the client reads whole, and a URL written
+ *   inside a quoted script is a URL the gate has to see.
  */
 
 /** The characters that open and close a quoted value. */
@@ -82,13 +85,35 @@ export function unquote(arg) {
 }
 
 /**
- * The arguments of a command: the quotes around a value are dropped.
+ * The words of a command: whitespace outside quotes separates them, so a
+ * quoted value stays one word even when it carries a space.
+ */
+function* words(command) {
+  let word = '';
+  let started = false;
+  for (const { char, quoted } of characters(command)) {
+    if (!quoted && char.trim().length === 0) {
+      if (started) {
+        yield word;
+        word = '';
+        started = false;
+      }
+      continue;
+    }
+    word += char;
+    started = true;
+  }
+  if (started) yield word;
+}
+
+/**
+ * The arguments of a command: the quotes around a value are dropped, and a
+ * quoted value stays one argument.
  */
 export function argumentsOf(command) {
   const args = [];
-  for (const raw of command.split(/\s+/)) {
-    if (!raw) continue;
-    args.push(unquote(raw));
+  for (const word of words(command)) {
+    args.push(unquote(word));
   }
   return args;
 }

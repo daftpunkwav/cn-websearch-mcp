@@ -7,6 +7,11 @@
  * - Assert that a workflow which keeps every protection passes
  * - Assert that each way of dropping a protection fails, with a message that
  *   names the file and the line
+ * - Assert that a download the gate cannot read fails, whether the URL is
+ *   assembled in code, arrives through a variable, or runs under a client the
+ *   gate does not know
+ * - Assert that the run: scalar of a step is read as YAML, in every form it
+ *   can take
  * - Assert that the workflow still runs the gate, so the check cannot be
  *   dropped without a failing test
  * - Assert that every workflow file of the directory is checked
@@ -82,15 +87,37 @@ function workflowWithBody(lines: string[]): string {
 }
 
 /** A one-step workflow whose run block is a folded scalar. */
-function workflowFolded(lines: string[]): string {
+function workflowFolded(lines: string[], indicator = '>'): string {
   return [
     'jobs:',
     '  a:',
     '    steps:',
-    '      - run: >',
+    `      - run: ${indicator}`,
     ...lines.map((line) => `          ${line}`),
     '',
   ].join('\n');
+}
+
+/** A one-step workflow whose run value is a quoted scalar. */
+function workflowQuoted(value: string): string {
+  return ['jobs:', '  a:', '    steps:', `      - run: "${value}"`, ''].join('\n');
+}
+
+/** A one-step workflow whose run value continues on the lines below it. */
+function workflowContinued(lines: string[]): string {
+  return [
+    'jobs:',
+    '  a:',
+    '    steps:',
+    '      - run: npm ci',
+    ...lines.map((line) => `          ${line}`),
+    '',
+  ].join('\n');
+}
+
+/** A workflow that carries the line endings of Windows. */
+function workflowWithCarriageReturns(workflow: string): string {
+  return workflow.replace(/\n/g, '\r\n');
 }
 
 // Each case is [name, workflow, the message the gate must report].
@@ -120,6 +147,19 @@ const REJECTED: [string, string, string][] = [
   ['a wget that reads its URLs from a file', workflowWith('wget --max-redirect 0 --input-file=urls.txt'), 'cannot check'],
   ['a curl that may negotiate an older TLS version', workflowWith("curl -sSf --proto '=https' https://example.com/x"), '--tlsv1.2'],
   ['a curl that caps the TLS version instead of pinning it', workflowWith("curl -sSf --proto '=https' --tls-max 1.2 https://example.com/x"), '--tlsv1.2'],
+  ['a curl whose URL arrives through a variable', workflowWith("curl \"$URL\" --proto '=https' --tlsv1.2"), 'curl without a URL the gate cannot check'],
+  ['a curl without a URL at all', workflowWith("curl --proto '=https' --tlsv1.2"), 'curl without a URL the gate cannot check'],
+  ['a URL whose scheme is assembled in code', workflowWith("python -c \"urlopen('http' + '://' + host)\""), 'scheme the gate cannot read'],
+  ['a URL that is assembled in code', workflowWith("python -c \"urllib.request.urlopen('http://' + host)\""), 'other than HTTPS'],
+  ['a download with a client the gate does not know', workflowWith('aria2c https://example.com/x'), 'client the gate cannot check'],
+  ['a download written with a script', workflowWith('node scripts/fetch.js https://example.com/x'), 'client the gate cannot check'],
+  ['an install behind an environment assignment', workflowWith('FOO=1 npm ci'), '--ignore-scripts'],
+  ['a curl inside a command substitution', workflowWith("V=$(curl -sSfL --proto '=https' --tlsv1.2 https://example.com/x)"), "--proto-redir '=https'"],
+  ['a URL whose scheme sits behind a brace', workflowWith("python -c \"u.urlopen(f'{scheme}://{host}')\""), 'scheme the gate cannot read'],
+  // The scheme of the URL is written in parts, so the string does not read as
+  // a template expression.
+  ['a URL whose scheme comes from a variable', workflowWith(['echo "$', '{SCHEME}://example.com/x"'].join('')), 'scheme the gate cannot read'],
+  ['a download in a workflow with Windows line endings', workflowWithCarriageReturns(workflowWith('curl -sSf http://example.com/x')), 'other than HTTPS'],
 ];
 
 // Each case is [name, workflow].
@@ -133,6 +173,50 @@ const ACCEPTED: [string, string][] = [
   ['a command that only appears in a comment', workflowWith('# npm ci without the flag')],
   ['an npm script that is not an install', workflowWith('npm run ci')],
   ['an install behind a path in front of npm that keeps its protection', workflowWith('/usr/local/bin/npm ci --ignore-scripts')],
+  ['a registry the gate reads as a value', workflowWith('npm ci --registry https://registry.npmjs.org --ignore-scripts')],
+  ['a folded block that joins its lines', workflowFolded([
+    'curl -sSfL --proto \'=https\' --proto-redir \'=https\' --tlsv1.2',
+    'https://example.com/x',
+  ])],
+  ['a folded block that keeps its trailing newlines', workflowFolded([
+    "curl -sSfL --proto '=https' --proto-redir '=https' --tlsv1.2",
+    'https://example.com/x',
+  ], '>+')],
+  ['a quoted run value', workflowQuoted('npm ci --ignore-scripts')],
+  ['a run value that continues on the next line', workflowContinued(['--ignore-scripts'])],
+  ['a URL outside the run: scalar of a step', [
+    'jobs:',
+    '  a:',
+    '    env:',
+    '      URL: http://example.com/x',
+    '    steps:',
+    '      - run: npm ci --ignore-scripts',
+    '',
+  ].join('\n')],
+  ['a registry of another package manager', workflowWith('pnpm install --registry https://r.example/ --ignore-scripts')],
+  ['a curl whose URL its --url option names', workflowWith("curl -sSfL --proto '=https' --proto-redir '=https' --tlsv1.2 --url=https://example.com/x")],
+  ['a URL that a program prints', workflowWith('echo "https://example.com/x"')],
+  ['a source tree that git clones', workflowWith('git clone https://example.com/x')],
+  ['a run: key that is an input of an action', [
+    'jobs:',
+    '  a:',
+    '    steps:',
+    '      - uses: actions/checkout@v4',
+    '        with:',
+    '          run: npm ci',
+    '      - run: npm ci --ignore-scripts',
+    '',
+  ].join('\n')],
+  ['a run: key that holds a nested mapping', [
+    'jobs:',
+    '  a:',
+    '    steps:',
+    '      - run: npm ci --ignore-scripts',
+    '    defaults:',
+    '      run:',
+    '        shell: bash',
+    '',
+  ].join('\n')],
 ];
 
 describe('workflow hardening gate', () => {
