@@ -214,6 +214,8 @@ const REJECTED: [string, string, string][] = [
   ['a sequence at the column of the steps: key', workflowSequenceAtKeyColumn('npm ci'), '--ignore-scripts'],
   ['a command in a quoted value that spans two lines', workflowQuotedOverTwoLines('npm ci', '&& echo done'), '--ignore-scripts'],
   ['a client behind an unknown program', workflowWith("node fetch.js https://example.com/x curl --proto '=https' --tlsv1.2"), 'client the gate cannot check'],
+  ['a command behind a comment in the run value', workflowEmptyRunValue(['# a comment', 'npm ci']), '--ignore-scripts'],
+  ['a command behind a comment that carries a colon', workflowEmptyRunValue(['# note: this installs', 'npm ci']), '--ignore-scripts'],
 ];
 
 // Each case is [name, workflow].

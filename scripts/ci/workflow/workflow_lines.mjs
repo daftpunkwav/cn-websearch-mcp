@@ -69,13 +69,15 @@ function listItemOf(line) {
 /**
  * Whether the line starts a mapping key: a colon outside quotes that is
  * followed by whitespace or by the end of the line. A plain scalar cannot
- * carry such a colon, so a line that holds one is a key and its value.
+ * carry such a colon, so a line that holds one is a key and its value. The
+ * comment of the line is no part of it, so a colon in a comment names no key.
  */
 function startsMappingKey(line) {
   if (line === null) return false;
-  for (const { char, index, quoted } of characters(line.text)) {
+  const text = stripComment(line.text);
+  for (const { char, index, quoted } of characters(text)) {
     if (quoted || char !== ':') continue;
-    const next = line.text[index + 1];
+    const next = text[index + 1];
     if (next === undefined || next.trim() === '') return true;
   }
   return false;
@@ -218,7 +220,9 @@ function readRunScalar(lines, index, key) {
     };
   }
   const continuation = valueLines(lines, index, key.column);
-  const parts = [value, ...continuation.content.map((entry) => entry.text.trim())];
+  const parts = [value, ...continuation.content
+    .filter((entry) => stripComment(entry.text).trim() !== '')
+    .map((entry) => entry.text.trim())];
   const text = unquoteValue(parts.filter((part) => part !== '').join(' '));
   return { lines: [{ text, number: lines[index].number }], end: continuation.end };
 }
