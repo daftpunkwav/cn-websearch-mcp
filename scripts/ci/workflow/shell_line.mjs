@@ -59,14 +59,20 @@ export function* characters(text) {
   for (let index = 0; index < text.length; index += 1) {
     const char = text[index];
     if (isEscape(text, index, quote)) {
-      yield { char, index, quoted: true };
+      yield {
+        char, index, quoted: true, quote, escaped: true,
+      };
       index += 1;
-      yield { char: text[index], index, quoted: true };
+      yield {
+        char: text[index], index, quoted: true, quote, escaped: true,
+      };
       continue;
     }
     const state = quoting(quote, char);
     quote = state.quote;
-    yield { char, index, quoted: state.quoted };
+    yield {
+      char, index, quoted: state.quoted, quote, escaped: false,
+    };
   }
 }
 
@@ -108,17 +114,6 @@ export function unquote(arg) {
   return arg.slice(1, -1);
 }
 
-/**
- * The quote that is open after the character: a quote opens a value and its
- * closing quote ends it. A single-quoted value holds every character as it
- * is written, so nothing in it is expanded.
- */
-function quoteAfter(quote, char) {
-  if (quote === "'") return char === "'" ? '' : "'";
-  if (quote === '"') return char === '"' ? '' : '"';
-  return char === '"' || char === "'" ? char : '';
-}
-
 /** Whether the character opens a command substitution. */
 function opensSubstitution(char, text, index) {
   return char === '$' && text[index + 1] === '(';
@@ -131,31 +126,16 @@ function opensSubstitution(char, text, index) {
  * quoting inside it belongs to it and not to the text around it.
  */
 function closingSubstitution(text, start) {
-  let quote = '';
   let depth = 1;
-  for (let index = start; index < text.length; index += 1) {
-    const char = text[index];
-    if (isEscape(text, index, quote)) {
-      index += 1;
-      continue;
-    }
-    const literal = quote === "'";
-    quote = quoteAfter(quote, char);
-    if (literal) continue;
-    if (opensSubstitution(char, text, index)) {
-      const close = closingSubstitution(text, index + 2);
-      if (close === -1) return -1;
-      index = close;
-      continue;
-    }
+  for (const { char, index, quoted } of characters(text.slice(start))) {
+    if (quoted) continue;
     if (char === '(') {
       depth += 1;
       continue;
     }
-    if (char === ')') {
-      depth -= 1;
-      if (depth === 0) return index;
-    }
+    if (char !== ')') continue;
+    depth -= 1;
+    if (depth === 0) return start + index;
   }
   return -1;
 }
@@ -166,24 +146,14 @@ function closingSubstitution(text, start) {
  */
 function parenthesisRanges(text) {
   const ranges = [];
-  let quote = '';
-  let index = 0;
-  while (index < text.length) {
-    if (isEscape(text, index, quote)) {
-      index += 2;
-      continue;
-    }
-    const char = text[index];
-    const literal = quote === "'";
-    quote = quoteAfter(quote, char);
-    if (literal || !opensSubstitution(char, text, index)) {
-      index += 1;
-      continue;
-    }
+  for (const {
+    char, index, quote, escaped,
+  } of characters(text)) {
+    if (escaped || quote === "'") continue;
+    if (!opensSubstitution(char, text, index)) continue;
     const close = closingSubstitution(text, index + 2);
     if (close === -1) break;
     ranges.push({ start: index + 2, end: close });
-    index = close + 1;
   }
   return ranges;
 }
@@ -194,17 +164,12 @@ function parenthesisRanges(text) {
  */
 function backquoteRanges(text) {
   const ranges = [];
-  let quote = '';
   let open = -1;
-  for (let index = 0; index < text.length; index += 1) {
-    if (isEscape(text, index, quote)) {
-      index += 1;
-      continue;
-    }
-    const char = text[index];
-    const literal = quote === "'";
-    quote = quoteAfter(quote, char);
-    if (literal || char !== '`') continue;
+  for (const {
+    char, index, quote, escaped,
+  } of characters(text)) {
+    if (escaped || quote === "'") continue;
+    if (char !== '`') continue;
     if (open === -1) {
       open = index;
       continue;
@@ -314,7 +279,6 @@ export function substitutedCommands(text) {
       const args = argumentsOf(part);
       if (args.length > 0) commands.push(args);
     }
-    commands.push(...substitutedCommands(inner));
   }
   return commands;
 }
