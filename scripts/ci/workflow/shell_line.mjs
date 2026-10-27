@@ -104,6 +104,24 @@ export function unquote(arg) {
 }
 
 /**
+ * Whether the character sits in text the shell holds as it is written: an
+ * escaped character and a single-quoted value are both literal.
+ */
+function isLiteral(quote, escaped) {
+  return escaped || quote === "'";
+}
+
+/** Whether the character opens a command substitution. */
+function opensSubstitution(char, text, index) {
+  return char === '$' && text[index + 1] === '(';
+}
+
+/** Whether the character closes a command substitution. */
+function closesSubstitution(char, depth) {
+  return char === ')' && depth > 0;
+}
+
+/**
  * The ranges of the substitutions that sit between parentheses: the text
  * between the brackets of every `$(...)`.
  */
@@ -114,16 +132,15 @@ function parenthesisRanges(text) {
   for (const {
     char, index, quote, escaped,
   } of characters(text)) {
-    if (escaped || quote === "'") continue;
-    if (char === '$' && text[index + 1] === '(') {
+    if (isLiteral(quote, escaped)) continue;
+    if (opensSubstitution(char, text, index)) {
       if (depth === 0) start = index + 2;
       depth += 1;
       continue;
     }
-    if (char === ')' && depth > 0) {
-      depth -= 1;
-      if (depth === 0) ranges.push({ start, end: index });
-    }
+    if (!closesSubstitution(char, depth)) continue;
+    depth -= 1;
+    if (depth === 0) ranges.push({ start, end: index });
   }
   return ranges;
 }
@@ -138,7 +155,7 @@ function backquoteRanges(text) {
   for (const {
     char, index, quote, escaped,
   } of characters(text)) {
-    if (escaped || quote === "'") continue;
+    if (isLiteral(quote, escaped)) continue;
     if (char !== '`') continue;
     if (open === -1) {
       open = index;
