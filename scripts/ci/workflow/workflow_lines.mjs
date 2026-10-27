@@ -27,7 +27,7 @@
  */
 
 import {
-  argumentsOf, characters, splitCommands, stripComment,
+  argumentsOf, characters, splitCommands, stripComment, substitutedCommands,
 } from './shell_line.mjs';
 
 // The indicator of a YAML block scalar: `|` keeps the lines, `>` folds them.
@@ -340,6 +340,9 @@ function commandsOfLine(line) {
   for (const part of splitCommands(line.text)) {
     const args = argumentsOf(part);
     if (args.length > 0) commands.push({ number: line.number, args });
+  }
+  for (const args of substitutedCommands(line.text)) {
+    commands.push({ number: line.number, args });
   }
   return commands;
 }

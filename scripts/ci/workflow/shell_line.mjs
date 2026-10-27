@@ -7,6 +7,7 @@
  * - Cut the trailing comment off a line
  * - Split a line into the commands it chains
  * - Split a command into its arguments, without the quotes around them
+ * - Read the commands a command substitution runs
  *
  * Constraints:
  * - This module reads text only. It knows nothing about workflow files and
@@ -14,6 +15,9 @@
  * - A quoted value is one argument, even when it carries a space. A value
  *   that is quoted is a value the client reads whole, and a URL written
  *   inside a quoted script is a URL the gate has to see.
+ * - A command substitution runs a command of its own, so the text it holds
+ *   is read as the commands it runs. A substitution inside single quotes is
+ *   text, because single quotes hold every character as it is written.
  */
 
 /** The characters that open and close a quoted value. */
@@ -140,4 +144,83 @@ export function splitCommands(text) {
   }
   parts.push(current.trim());
   return parts.filter((part) => part !== '');
+}
+
+/**
+ * The index of the parenthesis that closes the one that opens at the given
+ * index, or -1 when the text holds no closing parenthesis.
+ */
+function closingParenthesis(text, start) {
+  let depth = 1;
+  let quote = '';
+  for (let index = start; index < text.length; index += 1) {
+    const char = text[index];
+    if (quote !== '') {
+      if (char === quote) quote = '';
+      continue;
+    }
+    if (QUOTE_CHARACTERS.has(char)) {
+      quote = char;
+      continue;
+    }
+    if (char === '(') depth += 1;
+    if (char === ')') {
+      depth -= 1;
+      if (depth === 0) return index;
+    }
+  }
+  return -1;
+}
+
+/**
+ * The texts between the brackets of the command substitutions of a text. A
+ * substitution inside single quotes is text, because single quotes hold every
+ * character as it is written; a substitution inside double quotes is one,
+ * because double quotes still expand it.
+ */
+function substitutionTexts(text) {
+  const texts = [];
+  let quote = '';
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    if (quote !== '') {
+      if (char === quote) {
+        quote = '';
+        continue;
+      }
+      if (quote === "'") continue;
+    } else if (QUOTE_CHARACTERS.has(char)) {
+      quote = char;
+      continue;
+    }
+    if (char === '`') {
+      const close = text.indexOf('`', index + 1);
+      if (close === -1) break;
+      texts.push(text.slice(index + 1, close));
+      index = close;
+      continue;
+    }
+    if (char === '$' && text[index + 1] === '(') {
+      const close = closingParenthesis(text, index + 2);
+      if (close === -1) break;
+      texts.push(text.slice(index + 2, close));
+      index = close;
+    }
+  }
+  return texts;
+}
+
+/**
+ * The commands the command substitutions of a text run: the text between the
+ * brackets of every substitution, read as the commands it runs.
+ */
+export function substitutedCommands(text) {
+  const commands = [];
+  for (const inner of substitutionTexts(text)) {
+    for (const part of splitCommands(inner)) {
+      const args = argumentsOf(part);
+      if (args.length > 0) commands.push(args);
+    }
+  }
+  return commands;
 }

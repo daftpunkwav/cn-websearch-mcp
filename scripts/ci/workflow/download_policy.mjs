@@ -156,22 +156,25 @@ export function wgetViolation(args) {
 }
 
 /**
- * Whether the argument is an environment assignment. An assignment that
- * carries a command substitution runs a command of its own, so it is not one.
+ * Whether the argument is an environment assignment.
  */
 function isEnvAssignment(arg) {
-  if (!ENV_ASSIGNMENT.test(arg)) return false;
-  return !COMMAND_SUBSTITUTION.test(arg);
+  return ENV_ASSIGNMENT.test(arg);
 }
 
 /**
  * The program a command runs: the first argument that is not an environment
  * assignment, under the name it runs with. A name behind the program is an
- * argument of that program and names no program of its own.
+ * argument of that program and names no program of its own. An assignment
+ * runs no program of its own: a command substitution in its value runs a
+ * command, and that command is a command of its own.
  */
 function programOf(args) {
   for (const arg of args) {
-    if (isEnvAssignment(arg)) continue;
+    if (isEnvAssignment(arg)) {
+      if (COMMAND_SUBSTITUTION.test(arg)) return '';
+      continue;
+    }
     return commandName(arg);
   }
   return '';
@@ -183,6 +186,7 @@ function programOf(args) {
  */
 export function unknownClientViolation(args) {
   const program = programOf(args);
+  if (program === '') return null;
   if (KNOWN_CLIENTS.has(program)) return null;
   if (KNOWN_PROGRAMS.has(program)) return null;
   if (!args.some((arg) => urlMarkers(arg).length > 0)) return null;

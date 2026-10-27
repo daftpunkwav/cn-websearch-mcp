@@ -216,6 +216,8 @@ const REJECTED: [string, string, string][] = [
   ['a client behind an unknown program', workflowWith("node fetch.js https://example.com/x curl --proto '=https' --tlsv1.2"), 'client the gate cannot check'],
   ['a command behind a comment in the run value', workflowEmptyRunValue(['# a comment', 'npm ci']), '--ignore-scripts'],
   ['a command behind a comment that carries a colon', workflowEmptyRunValue(['# note: this installs', 'npm ci']), '--ignore-scripts'],
+  ['a curl inside a command substitution of a known program', workflowWith('echo "$(curl -sSfL https://example.com/x)"'), "--proto '=https'"],
+  ['an install inside a command substitution of a known program', workflowWith('echo "$(npm ci)"'), '--ignore-scripts'],
 ];
 
 // Each case is [name, workflow].
@@ -280,6 +282,8 @@ const ACCEPTED: [string, string][] = [
   ['a sequence at the column of the steps: key that keeps its protection', workflowSequenceAtKeyColumn('npm ci --ignore-scripts')],
   ['a steps: key with a trailing comment that keeps its protection', workflowStepsWithComment('npm ci --ignore-scripts')],
   ['an install behind an environment assignment that keeps its protection', workflowWith('FOO=1 npm ci --ignore-scripts')],
+  ['a substitution that is only text', workflowWith("echo '$(curl https://example.com/x)'")],
+  ['a curl inside a command substitution that keeps its protection', workflowWith('echo "$(curl -sSfL --proto \'=https\' --proto-redir \'=https\' --tlsv1.2 https://example.com/x)"')],
 ];
 
 describe('workflow hardening gate', () => {

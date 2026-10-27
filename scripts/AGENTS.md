@@ -62,6 +62,9 @@ The script table lives in [README.md](README.md).
   reject when the URL arrives through a variable or a file.
 - The gate reads the `run:` key of a step. A `run:` key of another mapping,
   such as an input of an action, holds no command and is not read.
+- A command substitution runs a command of its own, so the commands it holds
+  are checked as well. A substitution inside single quotes is text, because
+  single quotes hold every character as it is written.
 - `test/check_workflow_hardening.test.ts` covers it, including that the
   workflow still runs the gate.
 - A workflow that needs a different protection changes this checker on
