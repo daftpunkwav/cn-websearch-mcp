@@ -40,16 +40,33 @@ The script table lives in [README.md](README.md).
 - CI gate over `.github/workflows/`: a package install must run with
   `--ignore-scripts`, and a download must use HTTPS and must not follow a
   redirect out of HTTPS.
-- The check is text-based. The repository has no YAML parser in its toolchain,
-  and a workflow line is where these flags live.
+- The gate reads the `run:` scalar of every step as YAML, and reads the shell
+  in it as the commands it runs. The repository has no YAML parser in its
+  toolchain, so the reader covers the shapes a step takes and nothing more.
 - The gate reads a workflow file through the modules under `ci/workflow/`, one
   responsibility each: the shell text, the workflow lines, the command options,
   the install policy, the download policy, and the reading of the files. A
   rule that does not fit its module belongs in the module that owns the
   decision, not in the entry.
 - What it cannot read from the text it rejects rather than accepts: a URL
-  assembled in code, a client it does not know, options in a file. The rest
-  of the gap is tracked in [#39](https://github.com/daftpunkwav/cn-websearch-mcp/issues/39).
+  assembled in code, a URL that arrives through a variable or a file, a
+  client it does not know, and options in a file.
+- A URL the text of a command carries is only accepted next to a client the
+  gate can check (curl or wget) or next to the program the command runs, when
+  that program reads the URL as a value: a package manager, a source tree, or
+  a program that prints it. A name behind the program is an argument of that
+  program and exempts nothing.
+- The one residual is a download under a client the gate does not know whose
+  URL the text does not spell out: a client the gate knows has to carry a URL
+  it can read, while a client it does not know gives the gate nothing to
+  reject when the URL arrives through a variable or a file.
+- The gate reads the `run:` key of a step. A `run:` key of another mapping,
+  such as an input of an action, holds no command and is not read.
+- A command substitution runs a command of its own, so the commands it holds
+  are checked as well. A substitution inside single quotes is text, because
+  single quotes hold every character as it is written.
+- The reader follows the substitutions of a run: scalar to a depth of a
+  hundred, so a run: scalar that nests them deeper cannot exhaust the stack.
 - `test/check_workflow_hardening.test.ts` covers it, including that the
   workflow still runs the gate.
 - A workflow that needs a different protection changes this checker on

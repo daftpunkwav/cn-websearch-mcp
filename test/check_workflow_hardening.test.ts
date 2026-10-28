@@ -7,6 +7,11 @@
  * - Assert that a workflow which keeps every protection passes
  * - Assert that each way of dropping a protection fails, with a message that
  *   names the file and the line
+ * - Assert that a download the gate cannot read fails, whether the URL is
+ *   assembled in code, arrives through a variable, or runs under a client the
+ *   gate does not know
+ * - Assert that the run: scalar of a step is read as YAML, in every form it
+ *   can take
  * - Assert that the workflow still runs the gate, so the check cannot be
  *   dropped without a failing test
  * - Assert that every workflow file of the directory is checked
@@ -82,13 +87,82 @@ function workflowWithBody(lines: string[]): string {
 }
 
 /** A one-step workflow whose run block is a folded scalar. */
-function workflowFolded(lines: string[]): string {
+function workflowFolded(lines: string[], indicator = '>'): string {
   return [
     'jobs:',
     '  a:',
     '    steps:',
-    '      - run: >',
+    `      - run: ${indicator}`,
     ...lines.map((line) => `          ${line}`),
+    '',
+  ].join('\n');
+}
+
+/** A one-step workflow whose run value is a quoted scalar. */
+function workflowQuoted(value: string): string {
+  return ['jobs:', '  a:', '    steps:', `      - run: "${value}"`, ''].join('\n');
+}
+
+/** A one-step workflow whose run value continues on the lines below it. */
+function workflowContinued(lines: string[]): string {
+  return [
+    'jobs:',
+    '  a:',
+    '    steps:',
+    '      - run: npm ci',
+    ...lines.map((line) => `          ${line}`),
+    '',
+  ].join('\n');
+}
+
+/** A workflow that carries the line endings of Windows. */
+function workflowWithCarriageReturns(workflow: string): string {
+  return workflow.replace(/\n/g, '\r\n');
+}
+
+/** A one-step workflow whose run value holds the given lines below an empty key. */
+function workflowEmptyRunValue(lines: string[]): string {
+  return [
+    'jobs:',
+    '  a:',
+    '    steps:',
+    '      - run:',
+    ...lines.map((line) => `          ${line}`),
+    '',
+  ].join('\n');
+}
+
+/**
+ * A two-job workflow whose second steps: key carries a trailing comment. The
+ * first job keeps a plain steps: key, so the file reads as a workflow with a
+ * steps: list in it.
+ */
+function workflowStepsWithComment(command: string): string {
+  return [
+    'jobs:',
+    '  a:',
+    '    steps:',
+    '      - run: npm ci --ignore-scripts',
+    '  b:',
+    '    steps:  # the steps of the job',
+    `      - run: ${command}`,
+    '',
+  ].join('\n');
+}
+
+/** A one-step workflow whose sequence starts at the column of the steps: key. */
+function workflowSequenceAtKeyColumn(command: string): string {
+  return ['jobs:', '  a:', '    steps:', `    - run: ${command}`, ''].join('\n');
+}
+
+/** A one-step workflow whose run value is a quoted scalar over two lines. */
+function workflowQuotedOverTwoLines(first: string, second: string): string {
+  return [
+    'jobs:',
+    '  a:',
+    '    steps:',
+    `      - run: "${first}`,
+    `          ${second}"`,
     '',
   ].join('\n');
 }
@@ -120,6 +194,37 @@ const REJECTED: [string, string, string][] = [
   ['a wget that reads its URLs from a file', workflowWith('wget --max-redirect 0 --input-file=urls.txt'), 'cannot check'],
   ['a curl that may negotiate an older TLS version', workflowWith("curl -sSf --proto '=https' https://example.com/x"), '--tlsv1.2'],
   ['a curl that caps the TLS version instead of pinning it', workflowWith("curl -sSf --proto '=https' --tls-max 1.2 https://example.com/x"), '--tlsv1.2'],
+  ['a curl whose URL arrives through a variable', workflowWith("curl \"$URL\" --proto '=https' --tlsv1.2"), 'curl without a URL the gate cannot check'],
+  ['a curl without a URL at all', workflowWith("curl --proto '=https' --tlsv1.2"), 'curl without a URL the gate cannot check'],
+  ['a URL whose scheme is assembled in code', workflowWith("python -c \"urlopen('http' + '://' + host)\""), 'scheme the gate cannot read'],
+  ['a URL that is assembled in code', workflowWith("python -c \"urllib.request.urlopen('http://' + host)\""), 'other than HTTPS'],
+  ['a download with a client the gate does not know', workflowWith('aria2c https://example.com/x'), 'client the gate cannot check'],
+  ['a download written with a script', workflowWith('node scripts/fetch.js https://example.com/x'), 'client the gate cannot check'],
+  ['an install behind an environment assignment', workflowWith('FOO=1 npm ci'), '--ignore-scripts'],
+  ['a curl inside a command substitution', workflowWith("V=$(curl -sSfL --proto '=https' --tlsv1.2 https://example.com/x)"), "--proto-redir '=https'"],
+  ['a URL whose scheme sits behind a brace', workflowWith("python -c \"u.urlopen(f'{scheme}://{host}')\""), 'scheme the gate cannot read'],
+  // The scheme of the URL is written in parts, so the string does not read as
+  // a template expression.
+  ['a URL whose scheme comes from a variable', workflowWith(['echo "$', '{SCHEME}://example.com/x"'].join('')), 'scheme the gate cannot read'],
+  ['a download in a workflow with Windows line endings', workflowWithCarriageReturns(workflowWith('curl -sSf http://example.com/x')), 'other than HTTPS'],
+  ['a download inside a quoted script', workflowWith('sh -c "curl -sSfL https://example.com/x"'), 'client the gate cannot check'],
+  ['a known program behind an unknown program', workflowWith('node fetch.js https://example.com/x vendor/git'), 'client the gate cannot check'],
+  ['a run value that starts on the line below it', workflowEmptyRunValue(['npm ci']), '--ignore-scripts'],
+  ['a steps: key with a trailing comment', workflowStepsWithComment('npm ci'), '--ignore-scripts'],
+  ['a sequence at the column of the steps: key', workflowSequenceAtKeyColumn('npm ci'), '--ignore-scripts'],
+  ['a command in a quoted value that spans two lines', workflowQuotedOverTwoLines('npm ci', '&& echo done'), '--ignore-scripts'],
+  ['a client behind an unknown program', workflowWith("node fetch.js https://example.com/x curl --proto '=https' --tlsv1.2"), 'client the gate cannot check'],
+  ['a command behind a comment in the run value', workflowEmptyRunValue(['# a comment', 'npm ci']), '--ignore-scripts'],
+  ['a command behind a comment that carries a colon', workflowEmptyRunValue(['# note: this installs', 'npm ci']), '--ignore-scripts'],
+  ['a curl inside a command substitution of a known program', workflowWith('echo "$(curl -sSfL https://example.com/x)"'), "--proto '=https'"],
+  ['an install inside a command substitution of a known program', workflowWith('echo "$(npm ci)"'), '--ignore-scripts'],
+  ['a curl inside a nested command substitution', workflowWith('echo "$(echo $(curl -sSfL https://example.com/x))"'), "--proto '=https'"],
+  ['a client after an assignment that carries a substitution', workflowWith('FOO=$(printf ok) curl -sSfL https://example.com/x'), "--proto '=https'"],
+  ['a client after an escaped parenthesis in a substitution', workflowWith('echo "$(printf \\) ; curl -sSfL https://example.com/x)"'), "--proto '=https'"],
+  ['a client after a quoted parenthesis in a substitution', workflowWith("echo \"$(printf ')' ; curl -sSfL https://example.com/x)\""), "--proto '=https'"],
+  ['a client after a group in a substitution', workflowWith('echo "$( (printf ok) ; curl -sSfL https://example.com/x)"'), "--proto '=https'"],
+  ['an install inside a nested substitution', workflowWith('echo "$(echo "$(npm ci)")"'), '--ignore-scripts'],
+  ['an install inside a nested backquote', workflowWith('echo "$(echo "`npm ci`")"'), '--ignore-scripts'],
 ];
 
 // Each case is [name, workflow].
@@ -133,6 +238,66 @@ const ACCEPTED: [string, string][] = [
   ['a command that only appears in a comment', workflowWith('# npm ci without the flag')],
   ['an npm script that is not an install', workflowWith('npm run ci')],
   ['an install behind a path in front of npm that keeps its protection', workflowWith('/usr/local/bin/npm ci --ignore-scripts')],
+  ['a registry the gate reads as a value', workflowWith('npm ci --registry https://registry.npmjs.org --ignore-scripts')],
+  ['a folded block that joins its lines', workflowFolded([
+    'curl -sSfL --proto \'=https\' --proto-redir \'=https\' --tlsv1.2',
+    'https://example.com/x',
+  ])],
+  ['a folded block that keeps its trailing newlines', workflowFolded([
+    "curl -sSfL --proto '=https' --proto-redir '=https' --tlsv1.2",
+    'https://example.com/x',
+  ], '>+')],
+  ['a quoted run value', workflowQuoted('npm ci --ignore-scripts')],
+  ['a run value that continues on the next line', workflowContinued(['--ignore-scripts'])],
+  ['a URL outside the run: scalar of a step', [
+    'jobs:',
+    '  a:',
+    '    env:',
+    '      URL: http://example.com/x',
+    '    steps:',
+    '      - run: npm ci --ignore-scripts',
+    '',
+  ].join('\n')],
+  ['a registry of another package manager', workflowWith('pnpm install --registry https://r.example/ --ignore-scripts')],
+  ['a curl whose URL its --url option names', workflowWith("curl -sSfL --proto '=https' --proto-redir '=https' --tlsv1.2 --url=https://example.com/x")],
+  ['a URL that a program prints', workflowWith('echo "https://example.com/x"')],
+  ['a source tree that git clones', workflowWith('git clone https://example.com/x')],
+  ['a run: key that is an input of an action', [
+    'jobs:',
+    '  a:',
+    '    steps:',
+    '      - uses: actions/checkout@v4',
+    '        with:',
+    '          run: npm ci',
+    '      - run: npm ci --ignore-scripts',
+    '',
+  ].join('\n')],
+  ['a run: key that holds a nested mapping', [
+    'jobs:',
+    '  a:',
+    '    steps:',
+    '      - run: npm ci --ignore-scripts',
+    '    defaults:',
+    '      run:',
+    '        shell: bash',
+    '',
+  ].join('\n')],
+  ['a run: key of a step that holds a nested mapping', workflowEmptyRunValue(['shell: bash'])],
+  ['a run: key of a step that holds a nested mapping with a quoted key', workflowEmptyRunValue(['"shell": bash'])],
+  ['a run: key of a step that holds a sequence', workflowEmptyRunValue(['- echo hi'])],
+  ['a run: key of a step whose next line is a mapping key with a colon in it', workflowEmptyRunValue(['echo hello: world'])],
+  ['a sequence at the column of the steps: key that keeps its protection', workflowSequenceAtKeyColumn('npm ci --ignore-scripts')],
+  ['a steps: key with a trailing comment that keeps its protection', workflowStepsWithComment('npm ci --ignore-scripts')],
+  ['an install behind an environment assignment that keeps its protection', workflowWith('FOO=1 npm ci --ignore-scripts')],
+  ['a substitution that is only text', workflowWith("echo '$(curl https://example.com/x)'")],
+  ['a curl inside a command substitution that keeps its protection', workflowWith('echo "$(curl -sSfL --proto \'=https\' --proto-redir \'=https\' --tlsv1.2 https://example.com/x)"')],
+  ['a client after an escaped parenthesis that keeps its protection', workflowWith("echo \"$(printf \\) ; curl -sSfL --proto '=https' --proto-redir '=https' --tlsv1.2 https://example.com/x)\"")],
+  ['a client after a quoted parenthesis that keeps its protection', workflowWith("echo \"$(printf ')' ; curl -sSfL --proto '=https' --proto-redir '=https' --tlsv1.2 https://example.com/x)\"")],
+  ['a nested substitution that is only text', workflowWith("echo \"$(printf '$(npm ci)')\"")],
+  ['a nested backquote that is only text', workflowWith("echo \"$(printf '`npm ci`')\"")],
+  ['a run value that nests substitutions deeper than the reader follows', workflowWith(
+    `echo ${'$(printf '.repeat(120)}npm ci${')'.repeat(120)}`,
+  )],
 ];
 
 describe('workflow hardening gate', () => {

@@ -7,25 +7,87 @@
  *   `--option=value` spelling
  * - Read a boolean flag, with the negated spelling switching it off again
  * - Read the name a command word runs under
- * - Read the scheme of an argument that carries a URL
+ * - Read the URLs an argument carries and the scheme of each one
  *
  * Constraints:
  * - The last occurrence of an option wins, because that is how the client
  *   reads it.
+ * - The scheme of a URL is the run of scheme characters that ends at its
+ *   `://`. A URL whose scheme is written in pieces has no scheme the gate
+ *   can read, and a scheme the gate cannot read is not a scheme at all.
  */
 
-/** The name a command word runs under, without the path in front of it. */
+/** The characters that may hold in a URL scheme, per RFC 3986. */
+const SCHEME_CHARACTERS = new Set(
+  'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+.-',
+);
+
+/**
+ * The command word of an argument: the word between the brackets of a command
+ * substitution, or the argument itself.
+ */
+function commandWordOf(arg) {
+  const open = arg.search(/[$`]\(/);
+  if (open === -1) return arg;
+  const inner = arg.slice(open + 2);
+  const close = inner.search(/[)`]/);
+  const word = close === -1 ? inner : inner.slice(0, close);
+  return word.split(/\s+/)[0];
+}
+
+/**
+ * The name a command word runs under, without the path in front of it. A
+ * command substitution carries the command word between its brackets, so the
+ * word of the substituted command is the name the client runs under.
+ */
 export function commandName(arg) {
-  return arg.split(/[\\/]/).pop() ?? arg;
+  const bare = commandWordOf(arg);
+  return bare.split(/[\\/]/).pop() ?? bare;
+}
+
+/**
+ * The scheme that ends at the `://` of a URL, or an empty string when the
+ * gate cannot read one. The scheme is the run of scheme characters that ends
+ * at the URL, so a URL whose scheme is written in pieces has none.
+ */
+function schemeBefore(arg, at) {
+  let start = at;
+  while (start > 0 && SCHEME_CHARACTERS.has(arg[start - 1])) start -= 1;
+  if (start === at) return '';
+  return arg.slice(start, at).toLowerCase();
+}
+
+/**
+ * The URL markers of an argument: every `://` it carries, with the scheme
+ * that ends at it. A marker without a scheme belongs to a URL whose scheme
+ * is written in pieces.
+ */
+export function urlMarkers(arg) {
+  const markers = [];
+  let from = 0;
+  for (;;) {
+    const at = arg.indexOf('://', from);
+    if (at === -1) return markers;
+    markers.push({ at, scheme: schemeBefore(arg, at) });
+    from = at + 3;
+  }
 }
 
 /**
  * The scheme of an argument that carries a URL, or an empty string when it
  * carries none.
  */
-export function urlScheme(arg) {
-  const at = arg.indexOf('://');
-  return at <= 0 ? '' : arg.slice(0, at).toLowerCase();
+function urlScheme(arg) {
+  const marker = urlMarkers(arg)[0];
+  return marker ? marker.scheme : '';
+}
+
+/**
+ * Whether the argument is a URL of its own: it starts with a scheme the gate
+ * can read.
+ */
+export function isUrlArgument(arg) {
+  return urlScheme(arg) !== '' && /^[A-Za-z][A-Za-z0-9+.-]*:\/\//.test(arg);
 }
 
 /** Whether the argument is the option with its value attached. */
