@@ -65,6 +65,8 @@ The script table lives in [README.md](README.md).
 - A command substitution runs a command of its own, so the commands it holds
   are checked as well. A substitution inside single quotes is text, because
   single quotes hold every character as it is written.
+- The reader follows the substitutions of a run: scalar to a depth of a
+  hundred, so a run: scalar that nests them deeper cannot exhaust the stack.
 - `test/check_workflow_hardening.test.ts` covers it, including that the
   workflow still runs the gate.
 - A workflow that needs a different protection changes this checker on

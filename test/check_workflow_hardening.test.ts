@@ -295,6 +295,9 @@ const ACCEPTED: [string, string][] = [
   ['a client after a quoted parenthesis that keeps its protection', workflowWith("echo \"$(printf ')' ; curl -sSfL --proto '=https' --proto-redir '=https' --tlsv1.2 https://example.com/x)\"")],
   ['a nested substitution that is only text', workflowWith("echo \"$(printf '$(npm ci)')\"")],
   ['a nested backquote that is only text', workflowWith("echo \"$(printf '`npm ci`')\"")],
+  ['a run value that nests substitutions deeper than the reader follows', workflowWith(
+    `echo ${'$(printf '.repeat(120)}npm ci${')'.repeat(120)}`,
+  )],
 ];
 
 describe('workflow hardening gate', () => {

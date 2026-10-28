@@ -22,6 +22,9 @@
 
 /** The characters that open and close a quoted value. */
 const QUOTE_CHARACTERS = new Set(['"', "'"]);
+// The depth of the substitutions the reader follows: a run scalar that nests
+// them deeper than this is read as far as the limit reaches.
+const MAX_SUBSTITUTION_DEPTH = 100;
 
 /**
  * The quoting of a character: whether it sits in a quoted value, and the
@@ -273,15 +276,16 @@ export function splitCommands(text) {
  * brackets of every substitution, read as the commands it runs. A
  * substitution inside a substitution runs a command of its own too.
  */
-export function substitutedCommands(text) {
+export function substitutedCommands(text, level = 0) {
   const commands = [];
+  if (level > MAX_SUBSTITUTION_DEPTH) return commands;
   for (const range of substitutionRanges(text)) {
     const inner = text.slice(range.start, range.end);
     for (const part of splitCommands(inner)) {
       const args = argumentsOf(part);
       if (args.length > 0) commands.push(args);
     }
-    commands.push(...substitutedCommands(inner));
+    commands.push(...substitutedCommands(inner, level + 1));
   }
   return commands;
 }
