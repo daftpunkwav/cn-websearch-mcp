@@ -167,6 +167,11 @@ function workflowQuotedOverTwoLines(first: string, second: string): string {
   ].join('\n');
 }
 
+/** A one-step workflow whose item is written as a flow mapping. */
+function workflowFlowItem(item: string): string {
+  return ['jobs:', '  a:', '    steps:', `      - ${item}`, ''].join('\n');
+}
+
 // Each case is [name, workflow, the message the gate must report].
 const REJECTED: [string, string, string][] = [
   ['a package install that runs lifecycle scripts', workflowWith('npm ci'), '--ignore-scripts'],
@@ -225,6 +230,14 @@ const REJECTED: [string, string, string][] = [
   ['a client after a group in a substitution', workflowWith('echo "$( (printf ok) ; curl -sSfL https://example.com/x)"'), "--proto '=https'"],
   ['an install inside a nested substitution', workflowWith('echo "$(echo "$(npm ci)")"'), '--ignore-scripts'],
   ['an install inside a nested backquote', workflowWith('echo "$(echo "`npm ci`")"'), '--ignore-scripts'],
+  ['a step written as a flow mapping', workflowFlowItem('{ name: install, run: npm ci }'), '--ignore-scripts'],
+  ['a step written as a flow mapping without spaces in it', workflowFlowItem('{run: npm ci}'), '--ignore-scripts'],
+  ['a cleartext URL in a flow mapping', workflowFlowItem('{ run: curl -sSf http://example.com/x }'), 'other than HTTPS'],
+  ['a flow mapping whose run value is quoted', workflowFlowItem('{ run: "npm ci" }'), '--ignore-scripts'],
+  ['a flow mapping whose run value ends at a comma', workflowFlowItem('{ run: npm ci, name: install }'), '--ignore-scripts'],
+  ['a flow mapping whose entry value is quoted with a comma in it', workflowFlowItem('{ name: "install, once", run: npm ci }'), '--ignore-scripts'],
+  ['a flow mapping whose value carries an apostrophe', workflowFlowItem('{ name: it\'s fine, run: npm ci }'), '--ignore-scripts'],
+  ['a command behind a comment in a flow mapping', workflowFlowItem('{ run: npm ci } # install'), '--ignore-scripts'],
 ];
 
 // Each case is [name, workflow].
@@ -298,6 +311,21 @@ const ACCEPTED: [string, string][] = [
   ['a run value that nests substitutions deeper than the reader follows', workflowWith(
     `echo ${'$(printf '.repeat(120)}npm ci${')'.repeat(120)}`,
   )],
+  ['a step written as a flow mapping that keeps its protection', workflowFlowItem('{ name: install, run: npm ci --ignore-scripts }')],
+  ['a flow mapping whose quoted run value keeps its protection', workflowFlowItem('{ run: "npm ci --ignore-scripts" }')],
+  ['a run: entry of a mapping nested in a flow mapping', workflowFlowItem('{ with: { run: npm ci }, run: npm ci --ignore-scripts }')],
+  ['a flow mapping whose run value is followed by a sequence entry', workflowFlowItem('{ run: npm ci --ignore-scripts, ids: [1, 2] }')],
+  ['a flow mapping with a run: entry outside the steps: list', [
+    'jobs:',
+    '  a:',
+    '    strategy:',
+    '      matrix:',
+    '        include:',
+    '          - { run: npm ci }',
+    '    steps:',
+    '      - run: npm ci --ignore-scripts',
+    '',
+  ].join('\n')],
 ];
 
 describe('workflow hardening gate', () => {

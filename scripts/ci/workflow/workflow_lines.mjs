@@ -4,6 +4,8 @@
  *
  * Responsibilities:
  * - Find the run: key of every step of a workflow file
+ * - Read a step whose item is a flow mapping: find the run: entry of the
+ *   mapping and read its value the way the block form is read
  * - Read the scalar the key holds: a plain or a quoted value, a literal block
  *   or a folded block
  * - Join the lines of a folded block into one line, and keep the lines of a
@@ -24,6 +26,9 @@
  *   the inputs of an action, and holds no command.
  * - A run: key with no value of its own holds a nested mapping or a sequence
  *   when the line below it starts one, and a plain scalar otherwise.
+ * - A flow mapping is read on the line it starts. The value of its run:
+ *   entry ends at the comma or the brace that closes the entry, and a
+ *   quoted value ends at its closing quote.
  */
 
 import {
@@ -202,6 +207,121 @@ function unquoteValue(text) {
   return inner.replace(/''/g, "'");
 }
 
+/** Whether the character is the whitespace a flow mapping may carry. */
+function isFlowSpace(char) {
+  return char === ' ' || char === '\t';
+}
+
+/**
+ * The index behind the closing quote of the quoted value that starts at the
+ * given index, or -1 when the line holds no closing quote. A backslash in a
+ * double-quoted value holds the character behind it as it is written, and
+ * two single quotes hold a single one.
+ */
+function closingQuoteOf(text, start) {
+  const quote = text[start];
+  for (let index = start + 1; index < text.length; index += 1) {
+    if (quote === '"' && text[index] === '\\') {
+      index += 1;
+      continue;
+    }
+    if (text[index] !== quote) continue;
+    if (quote === "'" && text[index + 1] === "'") {
+      index += 1;
+      continue;
+    }
+    return index + 1;
+  }
+  return -1;
+}
+
+/**
+ * The value of a flow entry, cut where the entry ends: a quoted value ends
+ * at its closing quote, and a plain value at the comma or the brace that
+ * closes the entry.
+ */
+function flowValueAfter(text, start) {
+  let index = start;
+  while (index < text.length && isFlowSpace(text[index])) index += 1;
+  if (text[index] === '"' || text[index] === "'") {
+    const end = closingQuoteOf(text, index);
+    if (end !== -1) return unquoteValue(text.slice(index, end));
+  }
+  let end = text.length;
+  for (let cursor = index; cursor < text.length; cursor += 1) {
+    if (text[cursor] === ',' || text[cursor] === '}') {
+      end = cursor;
+      break;
+    }
+  }
+  return text.slice(index, end).trim();
+}
+
+/**
+ * The value of the run: entry of the flow mapping that starts at the given
+ * index, or null when the mapping carries no run: entry of its own. Only an
+ * entry of the mapping itself names the command of the step: an entry of a
+ * mapping nested in it belongs to another key, the way a run: key deeper
+ * than the item belongs to a nested mapping of the step. A quote opens a
+ * value where an entry or a value starts, so an apostrophe inside a plain
+ * value is a character of the value and not the start of one.
+ */
+function flowRunValueAt(text, start) {
+  let depth = 0;
+  let entry = -1;
+  let boundary = false;
+  for (let index = start; index < text.length; index += 1) {
+    const char = text[index];
+    if (isFlowSpace(char)) continue;
+    if (char === '{' || char === '[') {
+      depth += 1;
+      if (depth === 1) entry = index + 1;
+      boundary = true;
+      continue;
+    }
+    if (char === '}' || char === ']') {
+      depth -= 1;
+      if (depth === 0) return null;
+      boundary = true;
+      continue;
+    }
+    if ((char === '"' || char === "'") && boundary) {
+      const end = closingQuoteOf(text, index);
+      if (end === -1) return null;
+      index = end - 1;
+      boundary = false;
+      continue;
+    }
+    if (char === ':') {
+      if (depth === 1 && text.slice(entry, index).trim() === 'run') {
+        return flowValueAfter(text, index + 1);
+      }
+      boundary = true;
+      continue;
+    }
+    if (char === ',') {
+      if (depth === 1) entry = index + 1;
+      boundary = true;
+      continue;
+    }
+    boundary = false;
+  }
+  return null;
+}
+
+/**
+ * The value of the run: entry of a step written as a flow mapping, or null
+ * when the line starts no such step. The item of the steps: list carries the
+ * mapping, and a mapping outside the steps: list of a workflow holds no
+ * command.
+ */
+function flowStepRunValue(line, context) {
+  if (context.stepsColumn === null && context.hasSteps) return null;
+  const item = listItemOf(line);
+  if (item === null) return null;
+  return flowRunValueAt(line.text, item.content);
+}
+
 /**
  * The lines of the scalar a run: key holds, and the line the next key starts
  * on. A literal block keeps one line per line, a folded block becomes one
@@ -277,7 +397,8 @@ function contextOfLine(line, context) {
  * The lines of every run: scalar of a workflow file, with the number each
  * line carries. A literal block keeps one line per line, a folded block
  * becomes one line, and a value that continues on the lines below it is
- * joined with them.
+ * joined with them. A step written as a flow mapping holds its value on the
+ * line the item starts.
  */
 function runScalars(lines) {
   const scalars = [];
@@ -287,13 +408,15 @@ function runScalars(lines) {
     const line = lines[index];
     const key = runKeyOf(line);
     const place = contextOfLine(line, context);
-    if (!key || !isStepRunKey(place, key, nextContentLine(lines, index))) {
-      index += 1;
+    if (key && isStepRunKey(place, key, nextContentLine(lines, index))) {
+      const scalar = readRunScalar(lines, index, key);
+      scalars.push(scalar.lines);
+      index = scalar.end;
       continue;
     }
-    const scalar = readRunScalar(lines, index, key);
-    scalars.push(scalar.lines);
-    index = scalar.end;
+    const flow = flowStepRunValue(line, place);
+    if (flow !== null) scalars.push([{ text: flow, number: line.number }]);
+    index += 1;
   }
   return scalars;
 }
