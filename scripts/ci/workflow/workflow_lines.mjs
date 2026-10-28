@@ -212,27 +212,62 @@ function isFlowSpace(char) {
   return char === ' ' || char === '\t';
 }
 
+/** Whether the character opens a quoted value. */
+function isFlowQuote(char) {
+  return char === '"' || char === "'";
+}
+
+/** Whether the character opens a structure nested in the flow mapping. */
+function opensFlow(char) {
+  return char === '{' || char === '[';
+}
+
+/** Whether the character closes a structure nested in the flow mapping. */
+function closesFlow(char) {
+  return char === '}' || char === ']';
+}
+
+/** Whether the character is one of the marks a flow entry is built from. */
+function isFlowStructure(char) {
+  return opensFlow(char) || closesFlow(char) || char === ':' || char === ',';
+}
+
 /**
  * The index behind the closing quote of the quoted value that starts at the
- * given index, or -1 when the line holds no closing quote. A backslash in a
- * double-quoted value holds the character behind it as it is written, and
- * two single quotes hold a single one.
+ * given index. A backslash in a double-quoted value holds the character
+ * behind it as it is written, and two single quotes hold a single one. A
+ * value with no closing quote runs to the end of the text.
  */
 function closingQuoteOf(text, start) {
   const quote = text[start];
-  for (let index = start + 1; index < text.length; index += 1) {
-    if (quote === '"' && text[index] === '\\') {
-      index += 1;
+  let index = start + 1;
+  while (index < text.length) {
+    const char = text[index];
+    if (quote === '"' && char === '\\') {
+      index += 2;
       continue;
     }
-    if (text[index] !== quote) continue;
-    if (quote === "'" && text[index + 1] === "'") {
-      index += 1;
-      continue;
+    if (char === quote) {
+      if (quote === "'" && text[index + 1] === "'") {
+        index += 2;
+        continue;
+      }
+      return index + 1;
     }
-    return index + 1;
+    index += 1;
   }
-  return -1;
+  return text.length;
+}
+
+/**
+ * The place a plain flow value ends: the comma or the brace that closes the
+ * entry, or the end of the text.
+ */
+function plainFlowValueEnd(text, start) {
+  for (let index = start; index < text.length; index += 1) {
+    if (text[index] === ',' || text[index] === '}') return index;
+  }
+  return text.length;
 }
 
 /**
@@ -243,68 +278,67 @@ function closingQuoteOf(text, start) {
 function flowValueAfter(text, start) {
   let index = start;
   while (index < text.length && isFlowSpace(text[index])) index += 1;
-  if (text[index] === '"' || text[index] === "'") {
-    const end = closingQuoteOf(text, index);
-    if (end !== -1) return unquoteValue(text.slice(index, end));
+  if (isFlowQuote(text[index])) {
+    return unquoteValue(text.slice(index, closingQuoteOf(text, index)));
   }
-  let end = text.length;
-  for (let cursor = index; cursor < text.length; cursor += 1) {
-    if (text[cursor] === ',' || text[cursor] === '}') {
-      end = cursor;
-      break;
+  return text.slice(index, plainFlowValueEnd(text, index)).trim();
+}
+
+/**
+ * The entries of the flow mapping that starts at the given index, as the
+ * text of each one, or null when the mapping is not wholly on the line. A
+ * quoted span or a structure nested in the body belongs to the entry that
+ * carries it, so a comma inside either separates no entries. A quote opens
+ * a span where an entry or a value starts, so an apostrophe inside a plain
+ * value stays a character of the value.
+ */
+function flowEntryTexts(text, start) {
+  const entries = [];
+  let depth = 0;
+  let entry = -1;
+  let boundary = false;
+  let index = start;
+  while (index < text.length) {
+    const char = text[index];
+    if (isFlowSpace(char)) {
+      index += 1;
+      continue;
     }
+    if (isFlowQuote(char) && boundary) {
+      index = closingQuoteOf(text, index);
+      boundary = false;
+      continue;
+    }
+    if (opensFlow(char)) {
+      depth += 1;
+      entry = depth === 1 ? index + 1 : entry;
+    } else if (closesFlow(char) && depth === 1) {
+      return [...entries, text.slice(entry, index)];
+    } else if (closesFlow(char)) {
+      depth -= 1;
+    } else if (char === ',' && depth === 1) {
+      entries.push(text.slice(entry, index));
+      entry = index + 1;
+    }
+    boundary = isFlowStructure(char);
+    index += 1;
   }
-  return text.slice(index, end).trim();
+  return null;
 }
 
 /**
  * The value of the run: entry of the flow mapping that starts at the given
- * index, or null when the mapping carries no run: entry of its own. Only an
- * entry of the mapping itself names the command of the step: an entry of a
- * mapping nested in it belongs to another key, the way a run: key deeper
- * than the item belongs to a nested mapping of the step. A quote opens a
- * value where an entry or a value starts, so an apostrophe inside a plain
- * value is a character of the value and not the start of one.
+ * index, or null when the mapping carries no run: entry of its own. Only
+ * the first colon of an entry separates its key from its value, so an entry
+ * of a mapping nested in the body belongs to another key and never matches.
  */
 function flowRunValueAt(text, start) {
-  let depth = 0;
-  let entry = -1;
-  let boundary = false;
-  for (let index = start; index < text.length; index += 1) {
-    const char = text[index];
-    if (isFlowSpace(char)) continue;
-    if (char === '{' || char === '[') {
-      depth += 1;
-      if (depth === 1) entry = index + 1;
-      boundary = true;
-      continue;
-    }
-    if (char === '}' || char === ']') {
-      depth -= 1;
-      if (depth === 0) return null;
-      boundary = true;
-      continue;
-    }
-    if ((char === '"' || char === "'") && boundary) {
-      const end = closingQuoteOf(text, index);
-      if (end === -1) return null;
-      index = end - 1;
-      boundary = false;
-      continue;
-    }
-    if (char === ':') {
-      if (depth === 1 && text.slice(entry, index).trim() === 'run') {
-        return flowValueAfter(text, index + 1);
-      }
-      boundary = true;
-      continue;
-    }
-    if (char === ',') {
-      if (depth === 1) entry = index + 1;
-      boundary = true;
-      continue;
-    }
-    boundary = false;
+  const entries = flowEntryTexts(text, start);
+  if (entries === null) return null;
+  for (const entry of entries) {
+    const colon = entry.indexOf(':');
+    if (colon === -1) continue;
+    if (entry.slice(0, colon).trim() === 'run') return flowValueAfter(entry, colon + 1);
   }
   return null;
 }
