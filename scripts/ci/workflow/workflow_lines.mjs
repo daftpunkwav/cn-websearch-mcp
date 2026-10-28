@@ -247,14 +247,15 @@ function closingQuoteOf(text, start) {
       index += 2;
       continue;
     }
-    if (char === quote) {
-      if (quote === "'" && text[index + 1] === "'") {
-        index += 2;
-        continue;
-      }
-      return index + 1;
+    if (char !== quote) {
+      index += 1;
+      continue;
     }
-    index += 1;
+    if (quote === "'" && text[index + 1] === "'") {
+      index += 2;
+      continue;
+    }
+    return index + 1;
   }
   return text.length;
 }
@@ -285,17 +286,17 @@ function flowValueAfter(text, start) {
 }
 
 /**
- * The entries of the flow mapping that starts at the given index, as the
- * text of each one, or null when the mapping is not wholly on the line. A
- * quoted span or a structure nested in the body belongs to the entry that
- * carries it, so a comma inside either separates no entries. A quote opens
- * a span where an entry or a value starts, so an apostrophe inside a plain
- * value stays a character of the value.
+ * The places the entries of the flow mapping that starts at the given index
+ * are cut at: every comma of the body and the brace that closes the
+ * mapping, or null when the mapping is not wholly on the line. A quoted
+ * span or a structure nested in the body belongs to the entry that carries
+ * it, so a comma inside either cuts no entry. A quote opens a span where an
+ * entry or a value starts, so an apostrophe inside a plain value stays a
+ * character of the value.
  */
-function flowEntryTexts(text, start) {
-  const entries = [];
+function flowEntryCuts(text, start) {
+  const cuts = [];
   let depth = 0;
-  let entry = -1;
   let boundary = false;
   let index = start;
   while (index < text.length) {
@@ -309,21 +310,34 @@ function flowEntryTexts(text, start) {
       boundary = false;
       continue;
     }
+    if (closesFlow(char) && depth === 1) {
+      return [...cuts, index];
+    }
     if (opensFlow(char)) {
       depth += 1;
-      entry = depth === 1 ? index + 1 : entry;
-    } else if (closesFlow(char) && depth === 1) {
-      return [...entries, text.slice(entry, index)];
     } else if (closesFlow(char)) {
       depth -= 1;
-    } else if (char === ',' && depth === 1) {
-      entries.push(text.slice(entry, index));
-      entry = index + 1;
     }
     boundary = isFlowStructure(char);
     index += 1;
   }
   return null;
+}
+
+/**
+ * The entries of the flow mapping that starts at the given index, as the
+ * text of each one, or null when the mapping is not wholly on the line.
+ */
+function flowEntryTexts(text, start) {
+  const cuts = flowEntryCuts(text, start);
+  if (cuts === null) return null;
+  const entries = [];
+  let entry = start + 1;
+  for (const cut of cuts) {
+    entries.push(text.slice(entry, cut));
+    entry = cut + 1;
+  }
+  return entries;
 }
 
 /**
