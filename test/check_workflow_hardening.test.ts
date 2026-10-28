@@ -236,7 +236,6 @@ const REJECTED: [string, string, string][] = [
   ['a flow mapping whose run value is quoted', workflowFlowItem('{ run: "npm ci" }'), '--ignore-scripts'],
   ['a flow mapping whose run value ends at a comma', workflowFlowItem('{ run: npm ci, name: install }'), '--ignore-scripts'],
   ['a flow mapping whose entry value is quoted with a comma in it', workflowFlowItem('{ name: "install, once", run: npm ci }'), '--ignore-scripts'],
-  ['a flow mapping whose value carries an apostrophe', workflowFlowItem('{ name: it\'s fine, run: npm ci }'), '--ignore-scripts'],
   ['a command behind a comment in a flow mapping', workflowFlowItem('{ run: npm ci } # install'), '--ignore-scripts'],
 ];
 

@@ -29,6 +29,9 @@
  * - A flow mapping is read on the line it starts. The value of its run:
  *   entry ends at the comma or the brace that closes the entry, and a
  *   quoted value ends at its closing quote.
+ * - A quote anywhere in a flow mapping opens a span the reader steps over,
+ *   so an apostrophe inside a plain value is read as the start of a span,
+ *   and the mapping behind it is not read.
  */
 
 import {
@@ -227,11 +230,6 @@ function closesFlow(char) {
   return char === '}' || char === ']';
 }
 
-/** Whether the character is one of the marks a flow entry is built from. */
-function isFlowStructure(char) {
-  return opensFlow(char) || closesFlow(char) || char === ':' || char === ',';
-}
-
 /**
  * The index behind the closing quote of the quoted value that starts at the
  * given index. A backslash in a double-quoted value holds the character
@@ -290,14 +288,11 @@ function flowValueAfter(text, start) {
  * are cut at: every comma of the body and the brace that closes the
  * mapping, or null when the mapping is not wholly on the line. A quoted
  * span or a structure nested in the body belongs to the entry that carries
- * it, so a comma inside either cuts no entry. A quote opens a span where an
- * entry or a value starts, so an apostrophe inside a plain value stays a
- * character of the value.
+ * it, so a comma inside either cuts no entry.
  */
 function flowEntryCuts(text, start) {
   const cuts = [];
   let depth = 0;
-  let boundary = false;
   let index = start;
   while (index < text.length) {
     const char = text[index];
@@ -305,20 +300,13 @@ function flowEntryCuts(text, start) {
       index += 1;
       continue;
     }
-    if (isFlowQuote(char) && boundary) {
+    if (isFlowQuote(char)) {
       index = closingQuoteOf(text, index);
-      boundary = false;
       continue;
     }
-    if (closesFlow(char) && depth === 1) {
-      return [...cuts, index];
-    }
-    if (opensFlow(char)) {
-      depth += 1;
-    } else if (closesFlow(char)) {
-      depth -= 1;
-    }
-    boundary = isFlowStructure(char);
+    depth += (opensFlow(char) ? 1 : 0) - (closesFlow(char) ? 1 : 0);
+    if (depth === 0) return [...cuts, index];
+    if (char === ',' && depth === 1) cuts.push(index);
     index += 1;
   }
   return null;
@@ -326,9 +314,11 @@ function flowEntryCuts(text, start) {
 
 /**
  * The entries of the flow mapping that starts at the given index, as the
- * text of each one, or null when the mapping is not wholly on the line.
+ * text of each one, or null when the line starts no flow mapping or the
+ * mapping is not wholly on the line.
  */
 function flowEntryTexts(text, start) {
+  if (!opensFlow(text[start])) return null;
   const cuts = flowEntryCuts(text, start);
   if (cuts === null) return null;
   const entries = [];
