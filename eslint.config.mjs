@@ -60,6 +60,17 @@ export default [
     },
   },
   {
+    // TypeScript sources run under NodeNext resolution: a relative import must
+    // carry the runtime .js extension or Node's ESM loader cannot resolve it to
+    // the .ts source. The stock preset's js: 'never' assumes bundler-style
+    // resolution and flags every such import; import-x 4.18 dropped the old
+    // TypeScript-aware exemption, so the convention is stated explicitly here.
+    files: ['**/*.ts'],
+    rules: {
+      'import-x/extensions': ['error', 'ignorePackages', { js: 'always' }],
+    },
+  },
+  {
     rules: {
       // Restore upstream airbnb-base's max-len ignores (URLs, string and
       // template literals, regex literals). airbnb-extended ships the rule
