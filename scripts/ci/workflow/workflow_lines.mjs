@@ -199,6 +199,32 @@ function foldedLines(content, indent) {
   return logical;
 }
 
+/** The characters the short YAML double-quoted escapes stand for. */
+const ESCAPED_CHARACTERS = new Map([
+  ['0', '\0'], ['a', '\x07'], ['b', '\b'], ['t', '\t'], ['n', '\n'],
+  ['v', '\v'], ['f', '\f'], ['r', '\r'], ['e', '\x1b'], [' ', ' '],
+  ['"', '"'], ['/', '/'], ['\\', '\\'], ['N', '\x85'], ['_', '\xa0'],
+  ['L', '\u2028'], ['P', '\u2029'],
+]);
+
+/**
+ * The text a double-quoted value holds: every YAML escape in it stands for
+ * the character it names, so a key or a value written with escapes is read
+ * as the text the client reads. An escape the table does not name stays as
+ * it is written.
+ */
+function decodeEscapes(text) {
+  return text.replace(
+    /\\(0|a|b|t|n|v|f|r|e| |"|\/|\\|N|_|L|P|x[0-9a-fA-F]{2}|u[0-9a-fA-F]{4}|U[0-9a-fA-F]{8})/g,
+    (escape, spelling) => {
+      if (spelling[0] === 'x' || spelling[0] === 'u' || spelling[0] === 'U') {
+        return String.fromCodePoint(parseInt(spelling.slice(1), 16));
+      }
+      return ESCAPED_CHARACTERS.get(spelling) ?? escape;
+    },
+  );
+}
+
 /** The value of a quoted scalar, without the quotes around it. */
 function unquoteValue(text) {
   if (text.length < 2) return text;
@@ -206,7 +232,7 @@ function unquoteValue(text) {
   if (quote !== '"' && quote !== "'") return text;
   if (text[text.length - 1] !== quote) return text;
   const inner = text.slice(1, -1);
-  if (quote === '"') return inner.replace(/\\(["\\])/g, '$1');
+  if (quote === '"') return decodeEscapes(inner);
   return inner.replace(/''/g, "'");
 }
 
