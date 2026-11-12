@@ -236,6 +236,22 @@ const REJECTED: [string, string, string][] = [
   ['a flow mapping whose run value is quoted', workflowFlowItem('{ run: "npm ci" }'), '--ignore-scripts'],
   ['a flow mapping whose run value ends at a comma', workflowFlowItem('{ run: npm ci, name: install }'), '--ignore-scripts'],
   ['a flow mapping whose entry value is quoted with a comma in it', workflowFlowItem('{ name: "install, once", run: npm ci }'), '--ignore-scripts'],
+  ['a flow mapping whose plain value carries an apostrophe', workflowFlowItem("{ name: install it's fine, run: npm ci }"), '--ignore-scripts'],
+  ['a flow mapping whose value with an apostrophe follows the run entry', workflowFlowItem("{ run: npm ci, name: install it's fine }"), '--ignore-scripts'],
+  ['a flow mapping whose run value is quoted with single quotes', workflowFlowItem("{ run: 'npm ci' }"), '--ignore-scripts'],
+  ['a flow mapping whose quoted sequence value carries a closing brace', workflowFlowItem("{ ids: ['a}b'], run: npm ci }"), '--ignore-scripts'],
+  ['a flow mapping whose plain value carries a colon before an apostrophe', workflowFlowItem("{ name: a:'b, run: npm ci }"), '--ignore-scripts'],
+  ['a flow mapping whose anchored value carries a closing brace', workflowFlowItem("{ name: &x 'a}b', run: npm ci }"), '--ignore-scripts'],
+  ['a flow mapping whose run value is tagged', workflowFlowItem("{ run: !!str 'npm ci' }"), '--ignore-scripts'],
+  ['a flow mapping whose quoted value follows its colon directly', workflowFlowItem("{ name:'a}b', run: npm ci }"), '--ignore-scripts'],
+  ['a flow mapping whose quoted value with a comma follows its colon directly', workflowFlowItem("{ name:'a,b', run: npm ci }"), '--ignore-scripts'],
+  ['a flow mapping whose anchored value ends at a comma', workflowFlowItem('{ name: &x, run: npm ci }'), '--ignore-scripts'],
+  ['a flow mapping whose run value is anchored', workflowFlowItem("{ run: &x 'npm ci' }"), '--ignore-scripts'],
+  ['a flow mapping whose run key is quoted', workflowFlowItem("{ 'run': npm ci }"), '--ignore-scripts'],
+  ['a flow mapping whose quoted run key holds the colon directly', workflowFlowItem("{'run': npm ci}"), '--ignore-scripts'],
+  ['a flow mapping whose run key escapes a letter', workflowFlowItem('{ "\\u0072un": npm ci }'), '--ignore-scripts'],
+  ['a flow mapping whose run value escapes a letter', workflowFlowItem('{ run: "npm \\u0063i" }'), '--ignore-scripts'],
+  ['a flow mapping whose run value escapes beyond the code points', workflowFlowItem('{ run: "npm \\UFFFFFFFF ci" }'), '--ignore-scripts'],
   ['a command behind a comment in a flow mapping', workflowFlowItem('{ run: npm ci } # install'), '--ignore-scripts'],
 ];
 
@@ -313,6 +329,22 @@ const ACCEPTED: [string, string][] = [
   ['a step written as a flow mapping that keeps its protection', workflowFlowItem('{ name: install, run: npm ci --ignore-scripts }')],
   ['a flow mapping whose quoted run value keeps its protection', workflowFlowItem('{ run: "npm ci --ignore-scripts" }')],
   ['a run: entry of a mapping nested in a flow mapping', workflowFlowItem('{ with: { run: npm ci }, run: npm ci --ignore-scripts }')],
+  ['a flow mapping whose plain value carries an apostrophe and keeps its protection', workflowFlowItem("{ name: install it's fine, run: npm ci --ignore-scripts }")],
+  ['a flow mapping whose value with an apostrophe follows a run entry that keeps its protection', workflowFlowItem("{ run: npm ci --ignore-scripts, name: install it's fine }")],
+  ['a flow mapping whose quoted sequence value carries a closing brace and keeps its protection', workflowFlowItem("{ ids: ['a}b'], run: npm ci --ignore-scripts }")],
+  ['a flow mapping whose plain value carries a colon before an apostrophe and keeps its protection', workflowFlowItem("{ name: a:'b, run: npm ci --ignore-scripts }")],
+  ['a flow mapping whose anchored value carries a closing brace and keeps its protection', workflowFlowItem("{ name: &x 'a}b', run: npm ci --ignore-scripts }")],
+  ['a flow mapping whose tagged run value keeps its protection', workflowFlowItem("{ run: !!str 'npm ci --ignore-scripts' }")],
+  ['a flow mapping whose quoted value follows its colon directly and keeps its protection', workflowFlowItem("{ name:'a}b', run: npm ci --ignore-scripts }")],
+  ['a flow mapping whose quoted value with a comma follows its colon directly and keeps its protection', workflowFlowItem("{ name:'a,b', run: npm ci --ignore-scripts }")],
+  ['a flow mapping whose anchored value ends at a comma and keeps its protection', workflowFlowItem('{ name: &x, run: npm ci --ignore-scripts }')],
+  ['a flow mapping whose run key is quoted and keeps its protection', workflowFlowItem("{ 'run': npm ci --ignore-scripts }")],
+  ['a flow mapping whose quoted run key holds the colon directly and keeps its protection', workflowFlowItem("{'run': npm ci --ignore-scripts}")],
+  ['a flow mapping whose run key escapes a letter and keeps its protection', workflowFlowItem('{ "\\u0072un": npm ci --ignore-scripts }')],
+  ['a quoted run value that escapes a letter and keeps its protection', workflowQuoted('npm \\u0063i --ignore-scripts')],
+  ['a flow mapping whose run value escapes beyond the code points and keeps its protection', workflowFlowItem('{ run: "npm \\UFFFFFFFF ci --ignore-scripts" }')],
+  ['a flow mapping whose plain value carries a double quote in the middle', workflowFlowItem('{ name: say "hi", run: npm ci --ignore-scripts }')],
+  ['a flow mapping whose quoted key sits apart from its colon', workflowFlowItem("{ 'run' : npm ci --ignore-scripts }")],
   ['a flow mapping whose run value is followed by a sequence entry', workflowFlowItem('{ run: npm ci --ignore-scripts, ids: [1, 2] }')],
   ['a flow mapping with a run: entry outside the steps: list', [
     'jobs:',
@@ -359,5 +391,24 @@ describe('workflow hardening gate', () => {
   it('leaves a file that is not a workflow file alone', () => {
     const result = runCheckerOn({ 'notes.txt': 'npm ci' });
     expect(result.code).toBe(0);
+  });
+
+  it('reads the alias a flow run value holds as its value', () => {
+    // An alias is a value of its own, not a property of the node behind it,
+    // so the reader counts the command even though the alias is all the
+    // line spells out.
+    const result = runChecker(workflowFlowItem('{ run: *cmd }'));
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain('1 commands checked');
+  });
+
+  it('reads the value behind a quoted run key that holds a colon', () => {
+    // The colon behind the quoted key is the separator of the entry even
+    // though a plain character follows it, so the colon inside the plain
+    // value stays inside the value instead of opening a quoted span that
+    // swallows the rest of the mapping.
+    const result = runChecker(workflowFlowItem("{ 'run': a:'b, name: x }"));
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain('1 commands checked');
   });
 });
