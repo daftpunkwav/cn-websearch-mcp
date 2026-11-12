@@ -232,14 +232,16 @@ function closesFlow(char) {
 
 /**
  * Whether the character starts a node of the flow collection: an entry or a
- * value starts behind `{`, `[` or `,`, and behind a `:` that whitespace or a
- * quote follows, while the entry holds no separator yet. A colon that
- * stands behind the separator of its entry stays inside the plain value
- * that carries it, and so does a colon a plain character follows.
+ * value starts behind `{`, `[` or `,`, and behind a `:` that follows a
+ * quoted key, that whitespace or a quote follows, or that the entry holds
+ * no separator behind yet. A colon that stands behind the separator of its
+ * entry stays inside the plain value that carries it, and so does a colon a
+ * plain character follows.
  */
-function startsNode(char, next, entrySplit) {
+function startsNode(char, next, entrySplit, afterQuotedKey) {
   return char === '{' || char === '[' || char === ','
-    || (char === ':' && !entrySplit && (isFlowSpace(next) || isFlowQuote(next)));
+    || (char === ':' && !entrySplit
+      && (afterQuotedKey || isFlowSpace(next) || isFlowQuote(next)));
 }
 
 /** Whether the character starts an anchor or a tag property. */
@@ -367,9 +369,11 @@ function flowEntryCuts(text, start) {
   const cuts = [];
   let depth = 0;
   // Whether the next character stands where a node of the mapping starts,
-  // and whether the entry holds its key: value separator already.
+  // whether the entry holds its key: value separator already, and whether
+  // the quoted span behind the whitespace is the key the colon follows.
   let atNodeStart = true;
   let entrySplit = false;
+  let quotedBefore = false;
   let index = start;
   while (index < text.length) {
     const char = text[index];
@@ -380,15 +384,17 @@ function flowEntryCuts(text, start) {
     if (opensQuotedSpan(char, atNodeStart)) {
       index = closingQuoteOf(text, index);
       atNodeStart = false;
+      quotedBefore = true;
       continue;
     }
     if (opensNodeProperty(char, atNodeStart)) {
       index = nodePropertyEnd(text, index);
       continue;
     }
-    const nodeStart = startsNode(char, text[index + 1], entrySplit);
+    const nodeStart = startsNode(char, text[index + 1], entrySplit, quotedBefore);
     atNodeStart = nodeStart;
     if (nodeStart) entrySplit = char === ':';
+    quotedBefore = false;
     depth += flowDepthDelta(char);
     if (depth === 0) return [...cuts, index];
     if (char === ',' && depth === 1) cuts.push(index);
@@ -420,6 +426,8 @@ function flowEntryTexts(text, start) {
  * index, or null when the mapping carries no run: entry of its own. Only
  * the first colon of an entry separates its key from its value, so an entry
  * of a mapping nested in the body belongs to another key and never matches.
+ * The key may be quoted, so the quotes around it are dropped before it is
+ * compared.
  */
 function flowRunValueAt(text, start) {
   const entries = flowEntryTexts(text, start);
@@ -427,7 +435,8 @@ function flowRunValueAt(text, start) {
   for (const entry of entries) {
     const colon = entry.indexOf(':');
     if (colon === -1) continue;
-    if (entry.slice(0, colon).trim() === 'run') return flowValueAfter(entry, colon + 1);
+    const key = unquoteValue(entry.slice(0, colon).trim());
+    if (key === 'run') return flowValueAfter(entry, colon + 1);
   }
   return null;
 }

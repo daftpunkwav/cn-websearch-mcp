@@ -247,6 +247,8 @@ const REJECTED: [string, string, string][] = [
   ['a flow mapping whose quoted value with a comma follows its colon directly', workflowFlowItem("{ name:'a,b', run: npm ci }"), '--ignore-scripts'],
   ['a flow mapping whose anchored value ends at a comma', workflowFlowItem('{ name: &x, run: npm ci }'), '--ignore-scripts'],
   ['a flow mapping whose run value is anchored', workflowFlowItem("{ run: &x 'npm ci' }"), '--ignore-scripts'],
+  ['a flow mapping whose run key is quoted', workflowFlowItem("{ 'run': npm ci }"), '--ignore-scripts'],
+  ['a flow mapping whose quoted run key holds the colon directly', workflowFlowItem("{'run': npm ci}"), '--ignore-scripts'],
   ['a command behind a comment in a flow mapping', workflowFlowItem('{ run: npm ci } # install'), '--ignore-scripts'],
 ];
 
@@ -333,6 +335,8 @@ const ACCEPTED: [string, string][] = [
   ['a flow mapping whose quoted value follows its colon directly and keeps its protection', workflowFlowItem("{ name:'a}b', run: npm ci --ignore-scripts }")],
   ['a flow mapping whose quoted value with a comma follows its colon directly and keeps its protection', workflowFlowItem("{ name:'a,b', run: npm ci --ignore-scripts }")],
   ['a flow mapping whose anchored value ends at a comma and keeps its protection', workflowFlowItem('{ name: &x, run: npm ci --ignore-scripts }')],
+  ['a flow mapping whose run key is quoted and keeps its protection', workflowFlowItem("{ 'run': npm ci --ignore-scripts }")],
+  ['a flow mapping whose quoted run key holds the colon directly and keeps its protection', workflowFlowItem("{'run': npm ci --ignore-scripts}")],
   ['a flow mapping whose run value is followed by a sequence entry', workflowFlowItem('{ run: npm ci --ignore-scripts, ids: [1, 2] }')],
   ['a flow mapping with a run: entry outside the steps: list', [
     'jobs:',
@@ -386,6 +390,16 @@ describe('workflow hardening gate', () => {
     // so the reader counts the command even though the alias is all the
     // line spells out.
     const result = runChecker(workflowFlowItem('{ run: *cmd }'));
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain('1 commands checked');
+  });
+
+  it('reads the value behind a quoted run key that holds a colon', () => {
+    // The colon behind the quoted key is the separator of the entry even
+    // though a plain character follows it, so the colon inside the plain
+    // value stays inside the value instead of opening a quoted span that
+    // swallows the rest of the mapping.
+    const result = runChecker(workflowFlowItem("{ 'run': a:'b, name: x }"));
     expect(result.code).toBe(0);
     expect(result.stdout).toContain('1 commands checked');
   });
