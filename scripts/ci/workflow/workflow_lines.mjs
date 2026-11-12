@@ -232,28 +232,34 @@ function closesFlow(char) {
 
 /**
  * Whether the character starts a node of the flow collection: an entry or a
- * value starts behind `{`, `[` or `,`, and behind a `:` that whitespace (or
- * the end of the text) follows. A colon a plain character follows stays
- * inside the plain value that carries it.
+ * value starts behind `{`, `[` or `,`, and behind a `:` that whitespace or a
+ * quote follows, while the entry holds no separator yet. A colon that
+ * stands behind the separator of its entry stays inside the plain value
+ * that carries it, and so does a colon a plain character follows.
  */
-function startsNode(char, next) {
+function startsNode(char, next, entrySplit) {
   return char === '{' || char === '[' || char === ','
-    || (char === ':' && (next === undefined || isFlowSpace(next)));
+    || (char === ':' && !entrySplit && (isFlowSpace(next) || isFlowQuote(next)));
 }
 
-/** Whether the character starts an anchor, an alias or a tag property. */
+/** Whether the character starts an anchor or a tag property. */
 function isNodePropertyStart(char) {
-  return char === '&' || char === '*' || char === '!';
+  return char === '&' || char === '!';
+}
+
+/** Whether the character ends a property: whitespace or a flow delimiter. */
+function endsNodeProperty(char) {
+  return isFlowSpace(char) || opensFlow(char) || closesFlow(char) || char === ',';
 }
 
 /**
  * The index of the character that ends the property that starts at the
- * given index: the whitespace behind the token, or the end of the text. A
- * property holds no whitespace, so the token runs to the next space.
+ * given index, or the end of the text. A property holds no whitespace and
+ * no flow delimiter, so the token runs to the first one of them.
  */
 function nodePropertyEnd(text, start) {
   let index = start + 1;
-  while (index < text.length && !isFlowSpace(text[index])) index += 1;
+  while (index < text.length && !endsNodeProperty(text[index])) index += 1;
   return index;
 }
 
@@ -321,8 +327,9 @@ function plainFlowValueEnd(text, start) {
 
 /**
  * The place the value starts: the first character behind the whitespace and
- * the anchor, alias or tag property that may stand in front of it. The
- * property belongs to the node, not to the value the reader reads.
+ * the anchor or tag property that may stand in front of it. The property
+ * belongs to the node, not to the value the reader reads, while an alias is
+ * a value of its own and stays one.
  */
 function flowValueStart(text, start) {
   let index = start;
@@ -359,8 +366,10 @@ function flowValueAfter(text, start) {
 function flowEntryCuts(text, start) {
   const cuts = [];
   let depth = 0;
-  // Whether the next character stands where a node of the mapping starts.
+  // Whether the next character stands where a node of the mapping starts,
+  // and whether the entry holds its key: value separator already.
   let atNodeStart = true;
+  let entrySplit = false;
   let index = start;
   while (index < text.length) {
     const char = text[index];
@@ -377,7 +386,9 @@ function flowEntryCuts(text, start) {
       index = nodePropertyEnd(text, index);
       continue;
     }
-    atNodeStart = startsNode(char, text[index + 1]);
+    const nodeStart = startsNode(char, text[index + 1], entrySplit);
+    atNodeStart = nodeStart;
+    if (nodeStart) entrySplit = char === ':';
     depth += flowDepthDelta(char);
     if (depth === 0) return [...cuts, index];
     if (char === ',' && depth === 1) cuts.push(index);

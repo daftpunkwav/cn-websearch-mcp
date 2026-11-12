@@ -243,6 +243,10 @@ const REJECTED: [string, string, string][] = [
   ['a flow mapping whose plain value carries a colon before an apostrophe', workflowFlowItem("{ name: a:'b, run: npm ci }"), '--ignore-scripts'],
   ['a flow mapping whose anchored value carries a closing brace', workflowFlowItem("{ name: &x 'a}b', run: npm ci }"), '--ignore-scripts'],
   ['a flow mapping whose run value is tagged', workflowFlowItem("{ run: !!str 'npm ci' }"), '--ignore-scripts'],
+  ['a flow mapping whose quoted value follows its colon directly', workflowFlowItem("{ name:'a}b', run: npm ci }"), '--ignore-scripts'],
+  ['a flow mapping whose quoted value with a comma follows its colon directly', workflowFlowItem("{ name:'a,b', run: npm ci }"), '--ignore-scripts'],
+  ['a flow mapping whose anchored value ends at a comma', workflowFlowItem('{ name: &x, run: npm ci }'), '--ignore-scripts'],
+  ['a flow mapping whose run value is anchored', workflowFlowItem("{ run: &x 'npm ci' }"), '--ignore-scripts'],
   ['a command behind a comment in a flow mapping', workflowFlowItem('{ run: npm ci } # install'), '--ignore-scripts'],
 ];
 
@@ -326,6 +330,9 @@ const ACCEPTED: [string, string][] = [
   ['a flow mapping whose plain value carries a colon before an apostrophe and keeps its protection', workflowFlowItem("{ name: a:'b, run: npm ci --ignore-scripts }")],
   ['a flow mapping whose anchored value carries a closing brace and keeps its protection', workflowFlowItem("{ name: &x 'a}b', run: npm ci --ignore-scripts }")],
   ['a flow mapping whose tagged run value keeps its protection', workflowFlowItem("{ run: !!str 'npm ci --ignore-scripts' }")],
+  ['a flow mapping whose quoted value follows its colon directly and keeps its protection', workflowFlowItem("{ name:'a}b', run: npm ci --ignore-scripts }")],
+  ['a flow mapping whose quoted value with a comma follows its colon directly and keeps its protection', workflowFlowItem("{ name:'a,b', run: npm ci --ignore-scripts }")],
+  ['a flow mapping whose anchored value ends at a comma and keeps its protection', workflowFlowItem('{ name: &x, run: npm ci --ignore-scripts }')],
   ['a flow mapping whose run value is followed by a sequence entry', workflowFlowItem('{ run: npm ci --ignore-scripts, ids: [1, 2] }')],
   ['a flow mapping with a run: entry outside the steps: list', [
     'jobs:',
@@ -372,5 +379,14 @@ describe('workflow hardening gate', () => {
   it('leaves a file that is not a workflow file alone', () => {
     const result = runCheckerOn({ 'notes.txt': 'npm ci' });
     expect(result.code).toBe(0);
+  });
+
+  it('reads the alias a flow run value holds as its value', () => {
+    // An alias is a value of its own, not a property of the node behind it,
+    // so the reader counts the command even though the alias is all the
+    // line spells out.
+    const result = runChecker(workflowFlowItem('{ run: *cmd }'));
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain('1 commands checked');
   });
 });
