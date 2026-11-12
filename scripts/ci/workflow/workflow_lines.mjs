@@ -207,6 +207,16 @@ const ESCAPED_CHARACTERS = new Map([
   ['L', '\u2028'], ['P', '\u2029'],
 ]);
 
+/** Whether the escape names a character by its hexadecimal code point. */
+function isHexadecimalEscape(spelling) {
+  return spelling[0] === 'x' || spelling[0] === 'u' || spelling[0] === 'U';
+}
+
+/** The character the hexadecimal escape names. */
+function characterOfHexadecimalEscape(spelling) {
+  return String.fromCodePoint(parseInt(spelling.slice(1), 16));
+}
+
 /**
  * The text a double-quoted value holds: every YAML escape in it stands for
  * the character it names, so a key or a value written with escapes is read
@@ -217,9 +227,7 @@ function decodeEscapes(text) {
   return text.replace(
     /\\(0|a|b|t|n|v|f|r|e| |"|\/|\\|N|_|L|P|x[0-9a-fA-F]{2}|u[0-9a-fA-F]{4}|U[0-9a-fA-F]{8})/g,
     (escape, spelling) => {
-      if (spelling[0] === 'x' || spelling[0] === 'u' || spelling[0] === 'U') {
-        return String.fromCodePoint(parseInt(spelling.slice(1), 16));
-      }
+      if (isHexadecimalEscape(spelling)) return characterOfHexadecimalEscape(spelling);
       return ESCAPED_CHARACTERS.get(spelling) ?? escape;
     },
   );
