@@ -239,6 +239,10 @@ const REJECTED: [string, string, string][] = [
   ['a flow mapping whose plain value carries an apostrophe', workflowFlowItem("{ name: install it's fine, run: npm ci }"), '--ignore-scripts'],
   ['a flow mapping whose value with an apostrophe follows the run entry', workflowFlowItem("{ run: npm ci, name: install it's fine }"), '--ignore-scripts'],
   ['a flow mapping whose run value is quoted with single quotes', workflowFlowItem("{ run: 'npm ci' }"), '--ignore-scripts'],
+  ['a flow mapping whose quoted sequence value carries a closing brace', workflowFlowItem("{ ids: ['a}b'], run: npm ci }"), '--ignore-scripts'],
+  ['a flow mapping whose plain value carries a colon before an apostrophe', workflowFlowItem("{ name: a:'b, run: npm ci }"), '--ignore-scripts'],
+  ['a flow mapping whose anchored value carries a closing brace', workflowFlowItem("{ name: &x 'a}b', run: npm ci }"), '--ignore-scripts'],
+  ['a flow mapping whose run value is tagged', workflowFlowItem("{ run: !!str 'npm ci' }"), '--ignore-scripts'],
   ['a command behind a comment in a flow mapping', workflowFlowItem('{ run: npm ci } # install'), '--ignore-scripts'],
 ];
 
@@ -318,6 +322,10 @@ const ACCEPTED: [string, string][] = [
   ['a run: entry of a mapping nested in a flow mapping', workflowFlowItem('{ with: { run: npm ci }, run: npm ci --ignore-scripts }')],
   ['a flow mapping whose plain value carries an apostrophe and keeps its protection', workflowFlowItem("{ name: install it's fine, run: npm ci --ignore-scripts }")],
   ['a flow mapping whose value with an apostrophe follows a run entry that keeps its protection', workflowFlowItem("{ run: npm ci --ignore-scripts, name: install it's fine }")],
+  ['a flow mapping whose quoted sequence value carries a closing brace and keeps its protection', workflowFlowItem("{ ids: ['a}b'], run: npm ci --ignore-scripts }")],
+  ['a flow mapping whose plain value carries a colon before an apostrophe and keeps its protection', workflowFlowItem("{ name: a:'b, run: npm ci --ignore-scripts }")],
+  ['a flow mapping whose anchored value carries a closing brace and keeps its protection', workflowFlowItem("{ name: &x 'a}b', run: npm ci --ignore-scripts }")],
+  ['a flow mapping whose tagged run value keeps its protection', workflowFlowItem("{ run: !!str 'npm ci --ignore-scripts' }")],
   ['a flow mapping whose run value is followed by a sequence entry', workflowFlowItem('{ run: npm ci --ignore-scripts, ids: [1, 2] }')],
   ['a flow mapping with a run: entry outside the steps: list', [
     'jobs:',

@@ -29,9 +29,9 @@
  * - A flow mapping is read on the line it starts. The value of its run:
  *   entry ends at the comma or the brace that closes the entry, and a
  *   quoted value ends at its closing quote.
- * - A quote opens a span in a flow mapping only where an entry or a value
- *   starts, so an apostrophe behind a plain character stays a character of
- *   the value, and the mapping behind the apostrophe is still read.
+ * - A quote opens a span in a flow mapping only where a node starts, so an
+ *   apostrophe behind a plain character stays a character of the value, and
+ *   the mapping behind the apostrophe is still read.
  */
 
 import {
@@ -230,18 +230,54 @@ function closesFlow(char) {
   return char === '}' || char === ']';
 }
 
-/** Whether the character leaves the next one where an entry or a value starts. */
-function startsEntryOrValue(char) {
-  return char === '{' || char === ',' || char === ':';
+/**
+ * Whether the character starts a node of the flow collection: an entry or a
+ * value starts behind `{`, `[` or `,`, and behind a `:` that whitespace (or
+ * the end of the text) follows. A colon a plain character follows stays
+ * inside the plain value that carries it.
+ */
+function startsNode(char, next) {
+  return char === '{' || char === '[' || char === ','
+    || (char === ':' && (next === undefined || isFlowSpace(next)));
+}
+
+/** Whether the character starts an anchor, an alias or a tag property. */
+function isNodePropertyStart(char) {
+  return char === '&' || char === '*' || char === '!';
 }
 
 /**
- * Whether the quote at the given character opens a quoted span: a quote
- * opens one only where an entry or a value starts, so an apostrophe behind
- * a plain character stays a character of the value.
+ * The index of the character that ends the property that starts at the
+ * given index: the whitespace behind the token, or the end of the text. A
+ * property holds no whitespace, so the token runs to the next space.
  */
-function opensQuotedSpan(char, atEntryStart) {
-  return isFlowQuote(char) && atEntryStart;
+function nodePropertyEnd(text, start) {
+  let index = start + 1;
+  while (index < text.length && !isFlowSpace(text[index])) index += 1;
+  return index;
+}
+
+/**
+ * Whether the character at a node start begins an anchor, alias or tag
+ * property: the property belongs to the node that follows it, so the scan
+ * steps over it to keep the quote behind it at a node start.
+ */
+function opensNodeProperty(char, atNodeStart) {
+  return atNodeStart && isNodePropertyStart(char);
+}
+
+/**
+ * Whether the character at a node start opens a quoted value: a quote opens
+ * a span only where a node starts, so an apostrophe behind a plain
+ * character stays a character of the value.
+ */
+function opensQuotedSpan(char, atNodeStart) {
+  return isFlowQuote(char) && atNodeStart;
+}
+
+/** The depth the character adds to the nesting of the flow collection. */
+function flowDepthDelta(char) {
+  return (opensFlow(char) ? 1 : 0) - (closesFlow(char) ? 1 : 0);
 }
 
 /**
@@ -284,13 +320,27 @@ function plainFlowValueEnd(text, start) {
 }
 
 /**
+ * The place the value starts: the first character behind the whitespace and
+ * the anchor, alias or tag property that may stand in front of it. The
+ * property belongs to the node, not to the value the reader reads.
+ */
+function flowValueStart(text, start) {
+  let index = start;
+  while (index < text.length && isFlowSpace(text[index])) index += 1;
+  while (isNodePropertyStart(text[index])) {
+    index = nodePropertyEnd(text, index);
+    while (index < text.length && isFlowSpace(text[index])) index += 1;
+  }
+  return index;
+}
+
+/**
  * The value of a flow entry, cut where the entry ends: a quoted value ends
  * at its closing quote, and a plain value at the comma or the brace that
  * closes the entry.
  */
 function flowValueAfter(text, start) {
-  let index = start;
-  while (index < text.length && isFlowSpace(text[index])) index += 1;
+  const index = flowValueStart(text, start);
   if (isFlowQuote(text[index])) {
     return unquoteValue(text.slice(index, closingQuoteOf(text, index)));
   }
@@ -301,16 +351,16 @@ function flowValueAfter(text, start) {
  * The places the entries of the flow mapping that starts at the given index
  * are cut at: every comma of the body and the brace that closes the
  * mapping, or null when the mapping is not wholly on the line. A quoted
- * span or a structure nested in the body belongs to the entry that carries
- * it, so a comma inside either cuts no entry. A quote opens a span only
- * where an entry or a value starts, after `{`, `,` or `:`, so an apostrophe
- * behind a plain character stays a character of the value.
+ * span, a property or a structure nested in the body belongs to the entry
+ * that carries it, so a comma inside any of them cuts no entry. A quote
+ * opens a span only where a node starts, so an apostrophe behind a plain
+ * character stays a character of the value.
  */
 function flowEntryCuts(text, start) {
   const cuts = [];
   let depth = 0;
-  // Whether the next character stands where an entry or a value starts.
-  let atEntryStart = false;
+  // Whether the next character stands where a node of the mapping starts.
+  let atNodeStart = true;
   let index = start;
   while (index < text.length) {
     const char = text[index];
@@ -318,13 +368,17 @@ function flowEntryCuts(text, start) {
       index += 1;
       continue;
     }
-    if (opensQuotedSpan(char, atEntryStart)) {
+    if (opensQuotedSpan(char, atNodeStart)) {
       index = closingQuoteOf(text, index);
-      atEntryStart = false;
+      atNodeStart = false;
       continue;
     }
-    atEntryStart = startsEntryOrValue(char);
-    depth += (opensFlow(char) ? 1 : 0) - (closesFlow(char) ? 1 : 0);
+    if (opensNodeProperty(char, atNodeStart)) {
+      index = nodePropertyEnd(text, index);
+      continue;
+    }
+    atNodeStart = startsNode(char, text[index + 1]);
+    depth += flowDepthDelta(char);
     if (depth === 0) return [...cuts, index];
     if (char === ',' && depth === 1) cuts.push(index);
     index += 1;
