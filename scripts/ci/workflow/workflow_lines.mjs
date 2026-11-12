@@ -230,6 +230,20 @@ function closesFlow(char) {
   return char === '}' || char === ']';
 }
 
+/** Whether the character leaves the next one where an entry or a value starts. */
+function startsEntryOrValue(char) {
+  return char === '{' || char === ',' || char === ':';
+}
+
+/**
+ * Whether the quote at the given character opens a quoted span: a quote
+ * opens one only where an entry or a value starts, so an apostrophe behind
+ * a plain character stays a character of the value.
+ */
+function opensQuotedSpan(char, atEntryStart) {
+  return isFlowQuote(char) && atEntryStart;
+}
+
 /**
  * The index behind the closing quote of the quoted value that starts at the
  * given index. A backslash in a double-quoted value holds the character
@@ -304,12 +318,12 @@ function flowEntryCuts(text, start) {
       index += 1;
       continue;
     }
-    if (isFlowQuote(char) && atEntryStart) {
+    if (opensQuotedSpan(char, atEntryStart)) {
       index = closingQuoteOf(text, index);
       atEntryStart = false;
       continue;
     }
-    atEntryStart = char === '{' || char === ',' || char === ':';
+    atEntryStart = startsEntryOrValue(char);
     depth += (opensFlow(char) ? 1 : 0) - (closesFlow(char) ? 1 : 0);
     if (depth === 0) return [...cuts, index];
     if (char === ',' && depth === 1) cuts.push(index);
