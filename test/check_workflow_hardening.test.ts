@@ -251,6 +251,7 @@ const REJECTED: [string, string, string][] = [
   ['a flow mapping whose quoted run key holds the colon directly', workflowFlowItem("{'run': npm ci}"), '--ignore-scripts'],
   ['a flow mapping whose run key escapes a letter', workflowFlowItem('{ "\\u0072un": npm ci }'), '--ignore-scripts'],
   ['a flow mapping whose run value escapes a letter', workflowFlowItem('{ run: "npm \\u0063i" }'), '--ignore-scripts'],
+  ['a flow mapping whose run value escapes beyond the code points', workflowFlowItem('{ run: "npm \\UFFFFFFFF ci" }'), '--ignore-scripts'],
   ['a command behind a comment in a flow mapping', workflowFlowItem('{ run: npm ci } # install'), '--ignore-scripts'],
 ];
 
@@ -341,6 +342,9 @@ const ACCEPTED: [string, string][] = [
   ['a flow mapping whose quoted run key holds the colon directly and keeps its protection', workflowFlowItem("{'run': npm ci --ignore-scripts}")],
   ['a flow mapping whose run key escapes a letter and keeps its protection', workflowFlowItem('{ "\\u0072un": npm ci --ignore-scripts }')],
   ['a quoted run value that escapes a letter and keeps its protection', workflowQuoted('npm \\u0063i --ignore-scripts')],
+  ['a flow mapping whose run value escapes beyond the code points and keeps its protection', workflowFlowItem('{ run: "npm \\UFFFFFFFF ci --ignore-scripts" }')],
+  ['a flow mapping whose plain value carries a double quote in the middle', workflowFlowItem('{ name: say "hi", run: npm ci --ignore-scripts }')],
+  ['a flow mapping whose quoted key sits apart from its colon', workflowFlowItem("{ 'run' : npm ci --ignore-scripts }")],
   ['a flow mapping whose run value is followed by a sequence entry', workflowFlowItem('{ run: npm ci --ignore-scripts, ids: [1, 2] }')],
   ['a flow mapping with a run: entry outside the steps: list', [
     'jobs:',

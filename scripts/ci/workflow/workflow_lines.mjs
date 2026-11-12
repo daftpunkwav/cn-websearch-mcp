@@ -212,16 +212,29 @@ function isHexadecimalEscape(spelling) {
   return spelling[0] === 'x' || spelling[0] === 'u' || spelling[0] === 'U';
 }
 
-/** The character the hexadecimal escape names. */
+/** The highest code point a character carries. */
+const MAX_CODE_POINT = 0x10FFFF;
+
+/** Whether the value names a character a text can hold. */
+function namesCharacter(value) {
+  return value <= MAX_CODE_POINT;
+}
+
+/**
+ * The character the hexadecimal escape names, or the escape as it is
+ * written when the value behind it names no character a text can hold.
+ */
 function characterOfHexadecimalEscape(spelling) {
-  return String.fromCodePoint(parseInt(spelling.slice(1), 16));
+  const value = parseInt(spelling.slice(1), 16);
+  if (!namesCharacter(value)) return `\\${spelling}`;
+  return String.fromCodePoint(value);
 }
 
 /**
  * The text a double-quoted value holds: every YAML escape in it stands for
  * the character it names, so a key or a value written with escapes is read
- * as the text the client reads. An escape the table does not name stays as
- * it is written.
+ * as the text the client reads. An escape the table does not name, or one
+ * that names no character a text can hold, stays as it is written.
  */
 function decodeEscapes(text) {
   return text.replace(
