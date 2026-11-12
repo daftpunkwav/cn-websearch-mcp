@@ -29,9 +29,9 @@
  * - A flow mapping is read on the line it starts. The value of its run:
  *   entry ends at the comma or the brace that closes the entry, and a
  *   quoted value ends at its closing quote.
- * - A quote anywhere in a flow mapping opens a span the reader steps over,
- *   so an apostrophe inside a plain value is read as the start of a span,
- *   and the mapping behind it is not read.
+ * - A quote opens a span in a flow mapping only where an entry or a value
+ *   starts, so an apostrophe behind a plain character stays a character of
+ *   the value, and the mapping behind the apostrophe is still read.
  */
 
 import {
@@ -288,11 +288,15 @@ function flowValueAfter(text, start) {
  * are cut at: every comma of the body and the brace that closes the
  * mapping, or null when the mapping is not wholly on the line. A quoted
  * span or a structure nested in the body belongs to the entry that carries
- * it, so a comma inside either cuts no entry.
+ * it, so a comma inside either cuts no entry. A quote opens a span only
+ * where an entry or a value starts, after `{`, `,` or `:`, so an apostrophe
+ * behind a plain character stays a character of the value.
  */
 function flowEntryCuts(text, start) {
   const cuts = [];
   let depth = 0;
+  // Whether the next character stands where an entry or a value starts.
+  let atEntryStart = false;
   let index = start;
   while (index < text.length) {
     const char = text[index];
@@ -300,10 +304,12 @@ function flowEntryCuts(text, start) {
       index += 1;
       continue;
     }
-    if (isFlowQuote(char)) {
+    if (isFlowQuote(char) && atEntryStart) {
       index = closingQuoteOf(text, index);
+      atEntryStart = false;
       continue;
     }
+    atEntryStart = char === '{' || char === ',' || char === ':';
     depth += (opensFlow(char) ? 1 : 0) - (closesFlow(char) ? 1 : 0);
     if (depth === 0) return [...cuts, index];
     if (char === ',' && depth === 1) cuts.push(index);
